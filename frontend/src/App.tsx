@@ -1318,7 +1318,48 @@ function InfoSidebar({ state }: { state: GameState }) {
 }
 
 function ItemText({ extra, item }: { item: Item; extra?: string }) {
-  return <div className="flex-1 min-w-0"><div className="flex flex-wrap gap-3 items-center mb-1"><h3 className="text-lg font-bold truncate">{item.name}</h3><span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span><span className="text-[#616161] text-sm">{STATUS_MAP[item.status]}</span><span className="text-[#C8A97E] text-sm">{CONDITION_MAP[item.condition] || item.condition}</span>{extra && <span className="text-[#9E9E9E] text-sm">{extra}</span>}{item.showcase_price && <span className="text-[#C8A97E] text-sm">橱窗 ${item.showcase_price.toLocaleString()}</span>}</div><p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p><div className="flex flex-wrap gap-5 text-xs text-[#616161] mt-2"><span>{categoryLabel(item.category)}</span><span>{item.era}</span><span>市场 ${item.market_value.toLocaleString()}</span><span>鉴定 {item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品'}</span></div>{(item.special_effects?.length > 0 || item.authentication_tips?.length > 0) && <div className="flex flex-wrap gap-3 text-xs text-[#9E9E9E] mt-2">{item.special_effects?.slice(0, 2).map((effect, index) => <span key={`effect-${index}`}>亮点：{effect}</span>)}{item.authentication_tips?.slice(0, 2).map((tip, index) => <span key={`tip-${index}`}>鉴别：{tip}</span>)}</div>}</div>;
+  const condition = CONDITION_MAP[item.condition] || item.condition;
+  const status = STATUS_MAP[item.status] || item.status;
+  const appraisal = item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品';
+
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="mb-2 space-y-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 className="text-lg font-bold truncate text-[#E0E0E0]">{item.name}</h3>
+          {item.showcase_price && <span className="ui-text text-sm text-[#C8A97E]">橱窗 ${item.showcase_price.toLocaleString()}</span>}
+          {extra && <span className="ui-text text-sm text-[#9E9E9E]">{extra}</span>}
+        </div>
+        <div className="ui-text flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+          <ItemMeta label="稀有度" value={item.rarity_cn} valueClassName={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'} />
+          <ItemMeta label="位置" value={status} valueClassName="text-[#9E9E9E]" />
+          <ItemMeta label="成色" value={condition} valueClassName="text-[#C8A97E]" />
+        </div>
+      </div>
+      <p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p>
+      <div className="ui-text flex flex-wrap gap-x-5 gap-y-1 text-xs text-[#616161] mt-2">
+        <span>类别：{categoryLabel(item.category)}</span>
+        <span>年代：{item.era}</span>
+        <span>市场估值：${item.market_value.toLocaleString()}</span>
+        <span>鉴定：{appraisal}</span>
+      </div>
+      {(item.special_effects?.length > 0 || item.authentication_tips?.length > 0) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9E9E9E] mt-2">
+          {item.special_effects?.slice(0, 2).map((effect, index) => <span key={`effect-${index}`}>亮点：{effect}</span>)}
+          {item.authentication_tips?.slice(0, 2).map((tip, index) => <span key={`tip-${index}`}>鉴别：{tip}</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemMeta({ label, value, valueClassName = 'text-[#E0E0E0]' }: { label: string; value: React.ReactNode; valueClassName?: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 border-l border-[#2A2D34] pl-3 first:border-l-0 first:pl-0">
+      <span className="tracking-[0.18em] text-[#616161]">{label}</span>
+      <span className={`font-semibold ${valueClassName}`}>{value}</span>
+    </span>
+  );
 }
 
 function ListPage({ children, subtitle, title }: { children: React.ReactNode; title: string; subtitle: string }) {
