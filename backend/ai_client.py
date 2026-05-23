@@ -152,8 +152,9 @@ class AIClient:
     async def generate_customer_profile(self, role: str, trait: str, item_name: str, category: str) -> Dict[str, Any]:
         if not self.available():
             return {}
-        system_prompt = f"""你是《当铺代理人》的顾客生成器。顾客角色：{role}，性格：{trait}，围绕物品【{item_name}】分类 {category}。
-严格输出 JSON：{{"name":"中文姓名或市井称呼","age":整数,"appearance":"外貌衣着","backstory":"来当铺原因，60字内","transaction_prefs":["交易偏好"],"persuasion_points":["容易被说服的点"],"fraud_intent":布尔}}。"""
+        role_cn = "买家（来店里从你手上买走这件货，不要写「带来」「典当」「出售给当铺」等卖家口吻）" if role == "buyer" else "卖家（带着这件货来卖给你，不要写「想买」「逛店收购」等买家口吻）"
+        system_prompt = f"""你是《当铺代理人》的顾客生成器。顾客角色：{role_cn}，性格：{trait}，围绕物品【{item_name}】分类 {category}。
+严格输出 JSON：{{"name":"中文姓名或市井称呼","age":整数,"appearance":"外貌衣着","backstory":"来当铺原因，60字内，必须与买卖角色一致","transaction_prefs":["交易偏好"],"persuasion_points":["容易被说服的点"],"fraud_intent":布尔}}。"""
         try:
             result = await self._chat_json(system_prompt, "生成顾客。", timeout=12.0)
             return result if isinstance(result, dict) else {}

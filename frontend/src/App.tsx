@@ -1015,7 +1015,11 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
         </div>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
-        <Chat speaker={customer.name} avatarUrl={customer.avatar_url}>掌柜的，我今天带来【{customer.item.name}】。{customer.role === 'seller' ? '你给个价。' : '你打算卖多少钱？'}</Chat>
+        <Chat speaker={customer.name} avatarUrl={customer.avatar_url}>
+          {customer.role === 'seller'
+            ? `掌柜的，我今天带来【${customer.item.name}】。你给个价。`
+            : `掌柜的，我听说你这儿有件【${customer.item.name}】。你打算卖多少钱？`}
+        </Chat>
         {customer.dialogue_history.map((turn, idx) => (
           <Chat key={idx} speaker={turn.role === 'player' ? '你' : customer.name} right={turn.role === 'player'} avatarUrl={turn.role === 'customer' ? customer.avatar_url : undefined}>
             {turn.content}
