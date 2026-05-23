@@ -123,7 +123,6 @@ async def get_engine(player: Dict[str, Any]) -> GameStateManager:
 
 def commit_state(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
     state.shop_name = state.shop_name or player["shop_name"]
-    state.process_due_repairs()
     save_state(player["id"], state)
     return state.to_dict()
 
@@ -258,16 +257,12 @@ def me(player: Dict[str, Any] = Depends(current_player)):
 @app.get("/api/state")
 async def get_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    if state.process_due_repairs():
-        save_state(player["id"], state)
     return state.to_dict()
 
 
 @app.get("/api/cloud/state")
 async def cloud_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    if state.process_due_repairs():
-        save_state(player["id"], state)
     return state.to_dict()
 
 

@@ -62,7 +62,7 @@ interface Item {
   special_effects: string[];
   authentication_tips: string[];
   repair_difficulty: number;
-  repair_finishes_at: number | null;
+  repair_days_remaining: number;
   repair_success_bonus: number;
   display_slot: number | null;
   showcase_price: number | null;
@@ -100,7 +100,7 @@ interface GameState {
   staff: Record<string, boolean>;
   staff_info: Record<string, { name_cn: string; hire_cost: number; daily_salary: number; desc: string }>;
   appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; xp: number }>;
-  repair_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; hours_delta: number; success_bonus: number; xp: number }>;
+  repair_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; days_delta: number; success_bonus: number; xp: number }>;
   skills: Record<string, { level: number; xp: number }>;
   skill_info: Record<string, { name_cn: string; desc: string }>;
   facilities: Record<string, number>;
@@ -233,26 +233,6 @@ function computeAppraisalPreview(
 
 function formatAppraisalPercent(rate: number): string {
   return `${Math.round(rate * 100)}%`;
-}
-
-/** 与 backend/game_state.py _repair_duration_hours 保持一致 */
-function computeRepairDurationHours(
-  repairDifficulty: number,
-  workshopLevel: number,
-  method: { hours_delta?: number; days_delta?: number }
-) {
-  const hoursDelta = method.hours_delta ?? method.days_delta ?? 0;
-  return Math.max(1, Math.min(6, repairDifficulty - Math.floor(workshopLevel / 2) + hoursDelta));
-}
-
-function formatRepairRemaining(finishesAt: number | null): string {
-  if (!finishesAt) return '计算中';
-  const seconds = Math.max(0, Math.ceil(finishesAt - Date.now() / 1000));
-  if (seconds <= 0) return '即将完成';
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.ceil((seconds % 3600) / 60);
-  if (hours > 0) return minutes > 0 && minutes < 60 ? `${hours} 小时 ${minutes} 分` : `${hours} 小时`;
-  return `${Math.max(1, minutes)} 分钟`;
 }
 
 function categoryLabel(category: string): string {
@@ -527,23 +507,6 @@ export default function App() {
     if (!player || activeTab !== 'market') return;
     loadMarket().catch((err) => setErrorMsg(err.message));
   }, [player, activeTab, marketSort]);
-
-  const hasRepairingItems = Boolean(state?.inventory.some((item) => item.status === 'repairing'));
-
-  useEffect(() => {
-    if (!player || !hasRepairingItems) return;
-    const syncRepairs = async () => {
-      try {
-        const fresh = await apiGet<GameState>('/api/state');
-        setState(fresh);
-      } catch {
-        // 后台同步失败时忽略，避免打断游玩。
-      }
-    };
-    syncRepairs();
-    const timer = setInterval(syncRepairs, 30_000);
-    return () => clearInterval(timer);
-  }, [player, hasRepairingItems]);
 
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1149,13 +1112,6 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
 
 function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setShowcasePrice }: { state: GameState; listingPrice: Record<string, number>; repairMethod: Record<string, string>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void> }) {
   const activeItems = state.inventory.filter((item) => item.status !== 'sold');
-  const hasRepairingItems = activeItems.some((item) => item.status === 'repairing');
-  const [, setRepairClock] = useState(0);
-  useEffect(() => {
-    if (!hasRepairingItems) return;
-    const timer = setInterval(() => setRepairClock((value) => value + 1), 60_000);
-    return () => clearInterval(timer);
-  }, [hasRepairingItems]);
   const repairPreview = (item: Item) => {
     const method = state.repair_methods[repairMethod[item.id] || 'standard'] || state.repair_methods.standard;
     const nextCondition = item.condition === 'Poor' ? 'Good' : item.condition === 'Good' ? 'Mint' : item.condition;
@@ -1164,8 +1120,8 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
     const baseCost = Math.max(60, Math.round(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (state.facilities.restoration_workshop - 1) - 0.03 * (state.skills.restoration.level - 1))));
     const staffCost = state.staff.restorer ? Math.round(baseCost * 0.75) : baseCost;
     const cost = Math.max(30, Math.round(staffCost * method.cost_multiplier));
-    const hours = computeRepairDurationHours(item.repair_difficulty, state.facilities.restoration_workshop, method);
-    return { cost, hours, method, nextCondition, nextValue };
+    const days = Math.max(1, item.repair_difficulty - Math.floor(state.facilities.restoration_workshop / 2) + method.days_delta);
+    return { cost, days, method, nextCondition, nextValue };
   };
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
@@ -1182,8 +1138,8 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
             <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="input-field !h-9 !px-3 w-[120px]"><option value="conservative">保守修复</option><option value="standard">标准修复</option><option value="premium">高阶修复</option></select>
             <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
-            {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，市场估值约 ${repairPreview(item).nextValue.toLocaleString()}，费用约 ${repairPreview(item).cost.toLocaleString()} / 约 {repairPreview(item).hours} 小时</div>}
-            {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {formatRepairRemaining(item.repair_finishes_at)}（实时倒计时，到期自动完成）</div>}
+            {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，市场估值约 ${repairPreview(item).nextValue.toLocaleString()}，费用约 ${repairPreview(item).cost.toLocaleString()} / {repairPreview(item).days} 天</div>}
+            {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {item.repair_days_remaining} 天，营业结算后推进进度。</div>}
           </div>
         </div>
       ))}
