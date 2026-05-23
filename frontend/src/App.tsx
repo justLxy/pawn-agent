@@ -212,6 +212,29 @@ const CATEGORY_MAP: Record<string, string> = {
   Historical: '历史藏品'
 };
 
+/** 与 backend/game_state.py appraise_active_item 保持一致 */
+function computeAppraisalPreview(
+  marketValue: number,
+  method: { cost_multiplier: number; accuracy_bonus: number },
+  appraisalSkillLevel: number,
+  appraisalRoomLevel: number,
+  hasAppraiser: boolean
+) {
+  const baseCost = Math.max(120, Math.round(marketValue * 0.06));
+  const discount = 0.08 * (appraisalRoomLevel - 1) + (hasAppraiser ? 0.35 : 0);
+  const cost = Math.max(80, Math.round(baseCost * method.cost_multiplier * (1 - Math.min(0.65, discount))));
+  const fakeDetectionRate = Math.min(
+    0.98,
+    Math.max(0.35, 0.65 + appraisalSkillLevel * 0.035 + appraisalRoomLevel * 0.04 + (hasAppraiser ? 0.15 : 0) + method.accuracy_bonus)
+  );
+  const valueErrorMargin = Math.max(0.03, 0.24 - appraisalSkillLevel * 0.015 - appraisalRoomLevel * 0.02 - Math.max(0, method.accuracy_bonus));
+  return { cost, fakeDetectionRate, valueErrorMargin };
+}
+
+function formatAppraisalPercent(rate: number): string {
+  return `${Math.round(rate * 100)}%`;
+}
+
 function categoryLabel(category: string): string {
   return CATEGORY_MAP[category] || category;
 }
@@ -989,10 +1012,21 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
     setMessage(customer.role === 'seller' ? `我出 ${price} 元，现金马上给你。` : `这件货 ${price} 元给你，附带来源说明。`);
   };
   const selectedAppraisal = state.appraisal_methods[appraisalMethod] || state.appraisal_methods.standard;
-  const appraisalBaseCost = Math.max(120, Math.round(customer.item.market_value * 0.06));
-  const appraisalDiscount = 0.08 * (state.facilities.appraisal_room - 1) + (state.staff.appraiser ? 0.35 : 0);
-  const appraisalCost = Math.max(80, Math.round(appraisalBaseCost * selectedAppraisal.cost_multiplier * (1 - Math.min(0.65, appraisalDiscount))));
-  const accuracyText = appraisalMethod === 'visual' ? '准确率较低' : appraisalMethod === 'forensic' ? '准确率最高' : '准确率均衡';
+  const appraisalSkillLevel = state.skills.appraisal?.level ?? 1;
+  const appraisalRoomLevel = state.facilities.appraisal_room ?? 1;
+  const appraisalContext = {
+    marketValue: customer.item.market_value,
+    skillLevel: appraisalSkillLevel,
+    roomLevel: appraisalRoomLevel,
+    hasAppraiser: Boolean(state.staff.appraiser)
+  };
+  const appraisalPreview = computeAppraisalPreview(
+    appraisalContext.marketValue,
+    selectedAppraisal,
+    appraisalContext.skillLevel,
+    appraisalContext.roomLevel,
+    appraisalContext.hasAppraiser
+  );
   const tradeMode = customer.role === 'seller'
     ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
     : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
@@ -1032,15 +1066,25 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
         <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.85)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(1.12)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
         <form onSubmit={onNegotiate} className="flex gap-3"><input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." /><button disabled={loading} className="btn-primary">谈判</button></form>
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
-          <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[150px]">
-            {Object.entries(state.appraisal_methods).map(([key, info]) => <option key={key} value={key}>{info.name_cn}</option>)}
+          <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[180px]">
+            {Object.entries(state.appraisal_methods).map(([key, info]) => {
+              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser);
+              return (
+                <option key={key} value={key}>
+                  {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
+                </option>
+              );
+            })}
           </select>
           <button onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
           <button onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
           <button onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
         </div>
-        <p className="mt-2 text-xs text-[#616161] font-sans">
-          {selectedAppraisal.name_cn}：预计 ${appraisalCost.toLocaleString()}，{accuracyText}。{selectedAppraisal.desc}
+        <p className="mt-2 text-xs text-[#616161] font-sans leading-relaxed">
+          {selectedAppraisal.name_cn}：预计 ${appraisalPreview.cost.toLocaleString()}；
+          赝品识破率 {formatAppraisalPercent(appraisalPreview.fakeDetectionRate)}（若为赝品时判定为假）；
+          估值误差 ±{formatAppraisalPercent(appraisalPreview.valueErrorMargin)}。
+          {selectedAppraisal.desc}
         </p>
       </div>
     </div>
