@@ -771,7 +771,7 @@ class GameStateManager:
 
         dialogue = "合作愉快，这笔买卖就这么定了！"
         customer.dialogue_history.append({"role": "customer", "content": dialogue})
-        self.transaction_log.append({"day": self.day, "type": tx_type, "item": item.name, "amount": price})
+        self.transaction_log.append({"day": self.day, "type": tx_type, "item": item.name, "amount": -price if tx_type == "buy" else price})
         self.add_skill_xp("negotiation", 25)
         self.successful_trades += 1
         self.positive_reviews += 1 if random.random() < 0.75 else 0

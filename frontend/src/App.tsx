@@ -1154,6 +1154,11 @@ function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }
 }
 
 function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
+  const normalizeAmount = (entry: TransactionEntry) => {
+    const expenseTypes = new Set(['buy', 'market_buy', 'showcase_buy']);
+    if (expenseTypes.has(entry.type)) return -Math.abs(entry.amount);
+    return entry.amount;
+  };
   const shown = [...entries].reverse();
   const typeLabel: Record<string, string> = {
     buy: '收购物品',
@@ -1164,8 +1169,9 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
     showcase_buy: '橱窗购入',
     showcase_sell: '橱窗售出'
   };
-  const totalIn = entries.filter((entry) => entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
-  const totalOut = entries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+  const normalizedEntries = entries.map((entry) => ({ ...entry, amount: normalizeAmount(entry) }));
+  const totalIn = normalizedEntries.filter((entry) => entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
+  const totalOut = normalizedEntries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
   return (
     <ListPage title="过往交易记录" subtitle={`保留最近 ${entries.length} 条经营流水，方便复盘收购、出售、市场和橱窗交易。`}>
       <div className="grid grid-cols-3 gap-4 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
@@ -1176,18 +1182,19 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
       {shown.length === 0 ? (
         <div className="py-16 text-center text-[#616161]">还没有交易记录。完成收购或出售后，这里会留下流水。</div>
       ) : (
-        shown.map((entry, index) => (
-          <div key={`${entry.day}-${entry.type}-${entry.item}-${index}`} className="py-4 border-b border-[#2A2D34] grid grid-cols-[72px_1fr_110px] gap-4 items-center">
+        shown.map((entry, index) => {
+          const amount = normalizeAmount(entry);
+          return <div key={`${entry.day}-${entry.type}-${entry.item}-${index}`} className="py-4 border-b border-[#2A2D34] grid grid-cols-[72px_1fr_110px] gap-4 items-center">
             <span className="text-[#616161] text-sm">第 {entry.day} 天</span>
             <div className="min-w-0">
               <div className="font-bold truncate">【{entry.item}】</div>
               <div className="text-xs text-[#9E9E9E]">{typeLabel[entry.type] || entry.type}</div>
             </div>
-            <span className={`text-right font-sans font-bold ${entry.amount >= 0 ? 'text-[#4CAF50]' : 'text-[#F44336]'}`}>
-              {entry.amount >= 0 ? '+' : '-'}${Math.abs(entry.amount).toLocaleString()}
+            <span className={`text-right font-sans font-bold ${amount >= 0 ? 'text-[#4CAF50]' : 'text-[#F44336]'}`}>
+              {amount >= 0 ? '+' : '-'}${Math.abs(amount).toLocaleString()}
             </span>
-          </div>
-        ))
+          </div>;
+        })
       )}
     </ListPage>
   );
