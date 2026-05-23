@@ -10,7 +10,7 @@ from env_loader import load_env_file
 load_env_file()
 
 from ai_client import AIClient
-from auth import current_player, login_player, logout_player, register_player
+from auth import current_player, delete_player_account, login_player, logout_player, register_player
 from database import init_db
 from game_state import GameStateManager
 from online_services import (
@@ -147,6 +147,12 @@ async def login(req: AuthRequest):
 def logout(player: Dict[str, Any] = Depends(current_player)):
     logout_player(player["id"])
     return {"success": True}
+
+
+@app.delete("/api/auth/account")
+def delete_account(player: Dict[str, Any] = Depends(current_player)):
+    delete_player_account(player["id"])
+    return {"success": True, "message": "账号已注销。"}
 
 
 @app.get("/api/auth/me")

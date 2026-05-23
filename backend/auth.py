@@ -81,6 +81,12 @@ def logout_player(player_id: int) -> None:
         conn.execute("UPDATE players SET online = 0, token = NULL, last_seen = ? WHERE id = ?", (int(time.time()), player_id))
 
 
+def delete_player_account(player_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM leaderboard_snapshots WHERE player_id = ?", (player_id,))
+        conn.execute("DELETE FROM players WHERE id = ?", (player_id,))
+
+
 def get_player_by_token(token: str) -> Dict[str, Any]:
     with get_connection() as conn:
         player = conn.execute("SELECT * FROM players WHERE token = ?", (token,)).fetchone()

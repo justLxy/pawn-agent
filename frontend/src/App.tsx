@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   Store,
+  Trash2,
   TrendingUp,
   Users,
   Volume2,
@@ -213,6 +214,15 @@ async function apiPost<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined
   });
   if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '操作失败。');
+  return response.json();
+}
+
+async function apiDelete<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: tokenHeader()
+  });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '删除失败。');
   return response.json();
 }
 
@@ -470,6 +480,27 @@ export default function App() {
     setState(null);
   };
 
+  const deleteAccount = async () => {
+    if (!window.confirm('确定要永久注销账号吗？账号、云端存档、市场挂售和排行榜记录都会删除，且不可恢复。')) return;
+    setLoading(true);
+    try {
+      await apiDelete('/api/auth/account');
+      localStorage.removeItem(TOKEN_KEY);
+      setPlayer(null);
+      setState(null);
+      setLeaderboard(null);
+      setShowcase(null);
+      setListings([]);
+      setMyListings([]);
+      setTrades([]);
+      setSuccessMsg('账号已注销。');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '注销账号失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const restart = async () => {
     if (!window.confirm('确定要重开当前云端存档吗？')) return;
     setResetting(true);
@@ -645,6 +676,7 @@ export default function App() {
         <div className="flex items-center gap-1 md:gap-2">
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
+          <button onClick={deleteAccount} disabled={loading} className="btn-icon !w-9 !h-9 hover:!text-[#F44336]" title="注销账号"><Trash2 className="w-4 h-4" /></button>
           <button onClick={logout} className="btn-icon !w-9 !h-9" title="退出"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
