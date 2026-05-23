@@ -60,7 +60,7 @@ CUSTOMER_TRAITS = {
 
 STAFF_TYPES = {
     "appraiser": {"name_cn": "鉴定师", "hire_cost": 800, "daily_salary": 100, "desc": "提高鉴定准确度，并降低专业鉴定费用。"},
-    "restorer": {"name_cn": "修复师", "hire_cost": 1000, "daily_salary": 120, "desc": "每日推进修复进度，并降低修复失败风险。"},
+    "restorer": {"name_cn": "修复师", "hire_cost": 1000, "daily_salary": 120, "desc": "有概率缩短修复工时，并降低修复失败风险。"},
     "marketer": {"name_cn": "宣传员", "hire_cost": 600, "daily_salary": 80, "desc": "提高每日客流，并吸引更高价值顾客。"},
     "guard": {"name_cn": "保安", "hire_cost": 500, "daily_salary": 60, "desc": "降低抢劫、盗窃和纠纷带来的损失。"},
 }
@@ -105,9 +105,9 @@ APPRAISAL_METHODS = {
 }
 
 REPAIR_METHODS = {
-    "conservative": {"name_cn": "保守修复", "cost_multiplier": 0.85, "days_delta": 1, "success_bonus": 0.10, "xp": 25, "desc": "少动原貌，耗时略长，失败风险低。"},
-    "standard": {"name_cn": "标准修复", "cost_multiplier": 1.0, "days_delta": 0, "success_bonus": 0.0, "xp": 25, "desc": "按常规工序处理，成本和速度均衡。"},
-    "premium": {"name_cn": "高阶修复", "cost_multiplier": 1.55, "days_delta": -1, "success_bonus": 0.14, "xp": 40, "desc": "使用更好的材料和工艺，费用高但更快更稳。"},
+    "conservative": {"name_cn": "保守修复", "cost_multiplier": 0.85, "hours_delta": 1, "success_bonus": 0.10, "xp": 25, "desc": "少动原貌，耗时略长，失败风险低。"},
+    "standard": {"name_cn": "标准修复", "cost_multiplier": 1.0, "hours_delta": 0, "success_bonus": 0.0, "xp": 25, "desc": "按常规工序处理，成本和速度均衡。"},
+    "premium": {"name_cn": "高阶修复", "cost_multiplier": 1.55, "hours_delta": -1, "success_bonus": 0.14, "xp": 40, "desc": "使用更好的材料和工艺，费用高但更快更稳。"},
 }
 
 
@@ -174,7 +174,7 @@ class Item:
         self.purchase_price: Optional[int] = None
         self.selling_price: Optional[int] = None
         self.status = "stored"
-        self.repair_days_remaining = 0
+        self.repair_finishes_at: Optional[float] = None
         self.repair_success_bonus = 0.0
         self.display_slot: Optional[int] = None
         self.acquired_at = int(acquired_at if acquired_at is not None else time.time())
@@ -206,7 +206,7 @@ class Item:
             "special_effects": self.special_effects,
             "authentication_tips": self.authentication_tips,
             "repair_difficulty": self.repair_difficulty,
-            "repair_days_remaining": self.repair_days_remaining,
+            "repair_finishes_at": self.repair_finishes_at,
             "repair_success_bonus": self.repair_success_bonus,
             "display_slot": self.display_slot,
             "acquired_at": self.acquired_at,
@@ -243,8 +243,16 @@ class Item:
         item.purchase_price = data.get("purchase_price")
         item.selling_price = data.get("selling_price")
         item.status = data.get("status", "stored")
-        item.repair_days_remaining = int(data.get("repair_days_remaining", 0))
         item.repair_success_bonus = float(data.get("repair_success_bonus", 0.0))
+        finishes_at = data.get("repair_finishes_at")
+        if finishes_at is not None:
+            item.repair_finishes_at = float(finishes_at)
+        elif item.status == "repairing":
+            legacy_days = int(data.get("repair_days_remaining", 0))
+            legacy_hours = max(1, min(6, legacy_days if legacy_days > 0 else 1))
+            item.repair_finishes_at = time.time() + legacy_hours * 3600
+        else:
+            item.repair_finishes_at = None
         item.display_slot = data.get("display_slot")
         return item
 
@@ -699,17 +707,28 @@ class GameStateManager:
         self.cash -= cost
         item.status = "repairing"
         item.display_slot = None
-        item.repair_days_remaining = max(1, item.repair_difficulty - facility_level // 2 + int(method_info["days_delta"]))
+        repair_hours = self._repair_duration_hours(item, facility_level, method_info)
+        if self.staff["restorer"] and random.random() < 0.35:
+            repair_hours = max(1, repair_hours - 1)
+        item.repair_finishes_at = time.time() + repair_hours * 3600
         item.repair_success_bonus = float(method_info["success_bonus"])
         notes = ai_notes or [
             f"修复方案：{method_info['name_cn']}。{method_info['desc']}",
             f"损坏记录：{item.damage_report}",
-            f"预计 {item.repair_days_remaining} 天完成，工坊等级 Lv.{facility_level}。",
+            f"预计 {repair_hours} 小时完成，工坊等级 Lv.{facility_level}。",
         ]
         item.appraisal_notes = list(item.appraisal_notes) + notes
         self.daily_summary["upgrades"] += cost
         self.add_skill_xp("restoration", int(method_info["xp"]))
-        return {"success": True, "message": f"【{item.name}】已按【{method_info['name_cn']}】送入修复工坊，预计 {item.repair_days_remaining} 天完成。", "cost": cost, "method": method, "method_name": method_info["name_cn"], "notes": notes}
+        return {
+            "success": True,
+            "message": f"【{item.name}】已按【{method_info['name_cn']}】送入修复工坊，预计 {repair_hours} 小时完成。",
+            "cost": cost,
+            "method": method,
+            "method_name": method_info["name_cn"],
+            "repair_hours": repair_hours,
+            "notes": notes,
+        }
 
     async def async_start_repair(self, ai_client, item_id: str, method: str = "standard") -> Dict[str, Any]:
         item = self.get_item(item_id)
@@ -722,8 +741,8 @@ class GameStateManager:
         if self.staff["restorer"]:
             preview_cost = int(preview_cost * 0.75)
         preview_cost = max(30, int(preview_cost * method_info["cost_multiplier"]))
-        preview_days = max(1, item.repair_difficulty - facility_level // 2 + int(method_info["days_delta"]))
-        ai_notes = await ai_client.generate_repair_notes(item.to_dict(), method, preview_days, preview_cost)
+        preview_hours = self._repair_duration_hours(item, facility_level, method_info)
+        ai_notes = await ai_client.generate_repair_notes(item.to_dict(), method, preview_hours, preview_cost)
         return self.start_repair(item_id, method, ai_notes)
 
     def sell_item(self, item_id: str) -> Dict[str, Any]:
@@ -883,13 +902,21 @@ class GameStateManager:
         self.loan["principal"] -= amount
         return {"success": True, "message": f"已偿还贷款 ${amount}。"}
 
+    def _repair_duration_hours(self, item: Item, facility_level: int, method_info: Dict[str, Any]) -> int:
+        hours_delta = int(method_info.get("hours_delta", method_info.get("days_delta", 0)))
+        return max(1, min(6, item.repair_difficulty - facility_level // 2 + hours_delta))
+
+    def process_due_repairs(self) -> List[str]:
+        return self._process_repairs()
+
     def _process_repairs(self) -> List[str]:
         events: List[str] = []
+        now = time.time()
         for item in list(self.inventory):
             if item.status != "repairing":
                 continue
-            item.repair_days_remaining -= 1 + (1 if self.staff["restorer"] and random.random() < 0.35 else 0)
-            if item.repair_days_remaining > 0:
+            finishes_at = getattr(item, "repair_finishes_at", None)
+            if not finishes_at or now < finishes_at:
                 continue
             success_chance = min(0.97, 0.55 + self.skills["restoration"]["level"] * 0.035 + self.facilities["restoration_workshop"] * 0.06 + (0.12 if self.staff["restorer"] else 0) + float(getattr(item, "repair_success_bonus", 0.0)))
             old_condition = item.condition
@@ -903,7 +930,7 @@ class GameStateManager:
                 item.actual_value = max(10, int(item.actual_value * 0.92))
                 events.append(f"修复意外：【{item.name}】修复失败，价值略有受损。")
             item.status = "stored"
-            item.repair_days_remaining = 0
+            item.repair_finishes_at = None
             item.repair_success_bonus = 0.0
         return events
 

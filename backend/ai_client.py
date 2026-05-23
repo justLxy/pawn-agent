@@ -192,14 +192,14 @@ class AIClient:
             logger.warning("AI appraisal notes failed: %s", exc)
             return []
 
-    async def generate_repair_notes(self, item: Dict[str, Any], method: str, days: int, cost: int) -> List[str]:
+    async def generate_repair_notes(self, item: Dict[str, Any], method: str, hours: int, cost: int) -> List[str]:
         if not self.available():
             return []
         system_prompt = """你是当铺修复师。根据物品资料和玩家选择的修复方案，输出 JSON：{"notes":["修复步骤或风险"]}，3到5条。"""
         try:
             result = await self._chat_json(
                 system_prompt,
-                json.dumps({"item": item, "method": method, "days": days, "cost": cost}, ensure_ascii=False),
+                json.dumps({"item": item, "method": method, "hours": hours, "cost": cost}, ensure_ascii=False),
                 timeout=10.0,
             )
             notes = result.get("notes", [])
