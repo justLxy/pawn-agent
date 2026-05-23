@@ -82,6 +82,8 @@ interface Customer {
   persuasion_points: string[];
   patience: number;
   current_offer: number;
+  initial_offer: number;
+  limit_price: number;
   dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
 }
 
@@ -938,9 +940,23 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
   const appraisalDiscount = 0.08 * (state.facilities.appraisal_room - 1) + (state.staff.appraiser ? 0.35 : 0);
   const appraisalCost = Math.max(80, Math.round(appraisalBaseCost * selectedAppraisal.cost_multiplier * (1 - Math.min(0.65, appraisalDiscount))));
   const accuracyText = appraisalMethod === 'visual' ? '准确率较低' : appraisalMethod === 'forensic' ? '准确率最高' : '准确率均衡';
+  const tradeMode = customer.role === 'seller' ? '收购' : '出售';
+  const tradeHint = customer.role === 'seller' ? '顾客带货来卖，你要压到合适收购价。' : '顾客来店里买货，你要争取卖出高价。';
+  const limitLabel = customer.role === 'seller' ? '顾客心理底价' : '顾客心理上限';
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
-      <div className="text-center text-[#616161] font-sans text-xs mb-6">{customer.name} 走进店里，{customer.backstory}<br />{customer.trait_cn}，当前报价 ${customer.current_offer.toLocaleString()}</div>
+      <div className="text-center font-sans text-xs mb-6 space-y-2">
+        <div className="text-[#616161]">{customer.name} 走进店里，{customer.backstory}</div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <span className="text-[#C8A97E] font-bold tracking-widest">{tradeMode}</span>
+          <span className="text-[#9E9E9E]">{tradeHint}</span>
+          <span className="text-[#616161]">{customer.trait_cn}</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
+          <span className="text-[#E0E0E0]">当前报价 <b className="text-[#C8A97E]">${customer.current_offer.toLocaleString()}</b></span>
+          <span className="text-[#E0E0E0]">{limitLabel} <b className="text-[#D4B88A]">${customer.limit_price.toLocaleString()}</b></span>
+        </div>
+      </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
         <Chat speaker={customer.name} avatarUrl={customer.avatar_url}>掌柜的，我今天带来【{customer.item.name}】。{customer.role === 'seller' ? '你给个价。' : '你打算卖多少钱？'}</Chat>
         {customer.dialogue_history.map((turn, idx) => (
