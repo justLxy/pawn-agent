@@ -769,7 +769,7 @@ export default function App() {
             <div className="hidden md:block text-[11px] text-[#616161] font-sans">{player.ranking_badge || state.ranking_badge || '全服经营中'}</div>
           </div>
         </div>
-        <div className="hidden lg:flex items-center gap-8 font-sans text-sm text-[#9E9E9E]">
+        <div className="hidden md:flex items-center gap-4 lg:gap-8 font-sans text-xs lg:text-sm text-[#9E9E9E]">
           <span>第 {state.day} 天</span>
           <span>现金 ${state.cash.toLocaleString()}</span>
           <span>声誉 {state.reputation}</span>
@@ -777,7 +777,7 @@ export default function App() {
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
-          <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9 lg:hidden" title="信息栏"><Info className="w-4 h-4" /></button>
+          <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9 md:hidden" title="信息栏"><Info className="w-4 h-4" /></button>
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
           <button onClick={deleteAccount} disabled={loading} className="btn-icon !w-9 !h-9 hover:!text-[#F44336]" title="注销账号"><Trash2 className="w-4 h-4" /></button>
@@ -786,7 +786,7 @@ export default function App() {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        <aside className="hidden md:flex w-[230px] shrink-0 bg-[#14171C] border-r border-[#2A2D34] flex-col py-6 overflow-y-auto custom-scrollbar z-30">
+        <aside className="hidden md:flex w-[64px] xl:w-[240px] shrink-0 bg-[#14171C] border-r border-[#2A2D34] flex-col py-6 overflow-y-auto custom-scrollbar z-30 transition-all duration-300">
           <NavButton tab="lobby" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Store className="w-5 h-5" />} label="大堂柜台" />
           <NavButton tab="inventory" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Briefcase className="w-5 h-5" />} label="仓库藏品" />
           <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" />
@@ -866,7 +866,7 @@ export default function App() {
           )}
         </main>
 
-        <aside className="w-[300px] shrink-0 bg-[#14171C] border-l border-[#2A2D34] hidden lg:flex flex-col py-8 px-6 overflow-y-auto custom-scrollbar z-30">
+        <aside className="w-[280px] shrink-0 bg-[#14171C] border-l border-[#2A2D34] hidden md:flex flex-col py-8 px-6 overflow-y-auto custom-scrollbar z-30">
           <InfoSidebar state={state} />
         </aside>
       </div>
@@ -932,7 +932,12 @@ function Toast({ type, message, onClose }: { type: 'error' | 'success'; message:
 }
 
 function NavButton({ activeTab, icon, label, setActiveTab, tab }: { activeTab: ActiveTab; icon: React.ReactNode; label: string; setActiveTab: (tab: ActiveTab) => void; tab: ActiveTab }) {
-  return <button onClick={() => setActiveTab(tab)} className={`nav-item ${activeTab === tab ? 'active' : ''}`}>{icon}<span>{label}</span></button>;
+  return (
+    <button title={label} onClick={() => setActiveTab(tab)} className={`nav-item ${activeTab === tab ? 'active' : ''} !px-0 justify-center xl:!px-5 xl:justify-start`}>
+      <div className="shrink-0">{icon}</div>
+      <span className="hidden xl:inline">{label}</span>
+    </button>
+  );
 }
 
 function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
@@ -966,7 +971,7 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
 
 function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () => void }) {
   return (
-    <div className="lg:hidden fixed inset-0 z-[60]">
+    <div className="md:hidden fixed inset-0 z-[60]">
       <button aria-label="关闭信息栏" onClick={onClose} className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
       <aside className="absolute right-0 top-0 h-full w-[86vw] max-w-[360px] bg-[#14171C] border-l border-[#2A2D34] py-6 px-5 overflow-y-auto custom-scrollbar shadow-2xl animate-slide-right">
         <div className="flex items-center justify-between mb-6">
@@ -1128,7 +1133,7 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
       {activeItems.map((item) => (
         <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
           <ItemText item={item} />
-          <div className="xl:w-[460px] flex flex-wrap gap-2 justify-end">
+          <div className="w-full xl:w-[460px] flex flex-wrap gap-2 justify-start xl:justify-end mt-2 xl:mt-0">
             <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={listingPrice[item.id] ?? item.market_value} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || item.market_value })} />
             <button onClick={() => onList(item)} disabled={!['stored', 'displayed'].includes(item.status)} className="btn-secondary !h-9 !px-4">挂售</button>
             {item.status === 'displayed' ? <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="btn-secondary !h-9 !px-4">下架</button> : <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="btn-secondary !h-9 !px-4">展示</button>}
@@ -1154,23 +1159,25 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
     <ListPage title="玩家交易市场" subtitle="全服玩家互买互卖，寻找低价捡漏和高价倒卖机会。">
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 pb-4 border-b border-[#2A2D34] mb-2">
         <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
-          <div className="flex gap-6 border-b border-[#2A2D34] lg:border-b-0">
-            {(['browse', 'mine', 'trades'] as const).map((view) => <button key={view} onClick={() => setMarketView(view)} className={`pb-3 ${marketView === view ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{view === 'browse' ? '全服市场' : view === 'mine' ? '我的摊位' : '交易记录'}</button>)}
+          <div className="flex gap-6 border-b border-[#2A2D34] lg:border-b-0 overflow-x-auto custom-scrollbar pb-1">
+            {(['browse', 'mine', 'trades'] as const).map((view) => <button key={view} onClick={() => setMarketView(view)} className={`pb-2 whitespace-nowrap ${marketView === view ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{view === 'browse' ? '全服市场' : view === 'mine' ? '我的摊位' : '交易记录'}</button>)}
           </div>
-          <div className="flex gap-2 flex-1">
-            <div className="relative flex-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#616161]" /><input value={marketSearch} onChange={(event) => setMarketSearch(event.target.value)} className="input-field w-full" placeholder="搜索物品..." /></div>
-            <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option><option value="value_gap">价值差</option></select>
-            <button onClick={() => refresh()} className="btn-secondary !px-4">刷新</button>
+          <div className="flex flex-wrap sm:flex-nowrap gap-2 flex-1 mt-1 lg:mt-0">
+            <div className="relative w-full sm:flex-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#616161]" /><input value={marketSearch} onChange={(event) => setMarketSearch(event.target.value)} className="input-field w-full" placeholder="搜索物品..." /></div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field flex-1 sm:flex-none !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option><option value="value_gap">价值差</option></select>
+              <button onClick={() => refresh()} className="btn-secondary !px-4 flex-1 sm:flex-none">刷新</button>
+            </div>
           </div>
         </div>
       </div>
       {marketView === 'trades' ? trades.map((trade) => <div key={trade.id} className="py-4 border-b border-[#2A2D34] flex justify-between gap-4"><span>【{trade.item_name}】</span><span className="text-[#9E9E9E]">{trade.buyer_shop || '买家'} ↔ {trade.seller_shop || '卖家'}</span><span className="text-[#C8A97E]">${trade.price.toLocaleString()} / 税 ${trade.tax}</span></div>) : shown.map((listing) => (
         <div key={listing.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
           <ItemText item={listing.item} extra={listing.seller_online ? '卖家在线' : '卖家离线'} />
-          <div className="xl:w-[300px] flex items-center justify-end gap-5">
-            <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-right">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
-            <div className="text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div><div className="text-xs text-[#616161]">参考 ${listing.reference_price.toLocaleString()}</div></div>
-            {marketView === 'browse' ? <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4">购买</button> : <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4">下架</button>}
+          <div className="w-full xl:w-[300px] flex items-center justify-between xl:justify-end gap-5 mt-2 xl:mt-0">
+            <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-left xl:text-right">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
+            <div className="flex-1 text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div><div className="text-xs text-[#616161]">参考 ${listing.reference_price.toLocaleString()}</div></div>
+            {marketView === 'browse' ? <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4 shrink-0">购买</button> : <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4 shrink-0">下架</button>}
           </div>
         </div>
       ))}
@@ -1190,48 +1197,52 @@ function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }
   return (
     <ListPage title="全服排行榜" subtitle="10 秒自动刷新；点击当铺名或「参观橱窗」可浏览他人展示柜与在售藏品。前 100 名获每日声誉与稀有刷新奖励。">
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 border-b border-[#2A2D34] mb-2 flex justify-between gap-4">
-        <div className="flex gap-8 overflow-x-auto">
-          {(Object.keys(BOARD_LABEL) as BoardType[]).map((type) => <button key={type} onClick={() => setBoardType(type)} className={`pb-3 whitespace-nowrap ${boardType === type ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{BOARD_LABEL[type]}</button>)}
+        <div className="flex gap-4 sm:gap-8 overflow-x-auto custom-scrollbar pb-1">
+          {(Object.keys(BOARD_LABEL) as BoardType[]).map((type) => <button key={type} onClick={() => setBoardType(type)} className={`pb-2 whitespace-nowrap ${boardType === type ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{BOARD_LABEL[type]}</button>)}
         </div>
-        <button onClick={() => refresh()} className="text-[#9E9E9E] hover:text-[#C8A97E]" aria-label="刷新排行榜"><RefreshCw className="w-4 h-4" /></button>
+        <button onClick={() => refresh()} className="text-[#9E9E9E] hover:text-[#C8A97E] shrink-0" aria-label="刷新排行榜"><RefreshCw className="w-4 h-4" /></button>
       </div>
-      <div className="grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center pb-2 text-xs text-[#616161] font-sans border-b border-[#2A2D34]">
-        <span>排名</span>
-        <span>当铺</span>
-        <span>{scoreLabel}</span>
-        <span>声誉</span>
-        <span>状态</span>
-        <span className="text-right">操作</span>
-      </div>
-      {(data?.entries || []).map((entry) => (
-        <div
-          key={entry.player_id}
-          className={`py-4 border-b border-[#2A2D34] grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center transition-colors hover:bg-[rgba(255,255,255,0.02)] ${entry.rank <= 3 ? 'text-[#C8A97E]' : ''}`}
-        >
-          <span className="text-xl font-bold">#{entry.rank}</span>
-          <div className="min-w-0">
-            <button
-              type="button"
-              onClick={() => openShowcase(entry.player_id)}
-              className="truncate text-left text-[#E0E0E0] hover:text-[#C8A97E] underline decoration-[#2A2D34] underline-offset-4 hover:decoration-[#C8A97E]"
-            >
-              {entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}
-            </button>
-            <span className="mt-1 block text-[11px] text-[#616161]">点击浏览橱窗展览</span>
+      <div className="overflow-x-auto custom-scrollbar pb-4">
+        <div className="min-w-[600px]">
+          <div className="grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center pb-2 text-xs text-[#616161] font-sans border-b border-[#2A2D34]">
+            <span>排名</span>
+            <span>当铺</span>
+            <span>{scoreLabel}</span>
+            <span>声誉</span>
+            <span>状态</span>
+            <span className="text-right">操作</span>
           </div>
-          <span className="font-sans tabular-nums">${leaderboardScore(entry, boardType).toLocaleString()}</span>
-          <span className="text-sm text-[#9E9E9E]">声誉 {entry.reputation}</span>
-          <span className={`text-sm ${entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}`}>{entry.online ? '在线' : '离线'}</span>
-          <button
-            type="button"
-            onClick={() => openShowcase(entry.player_id)}
-            className="btn-secondary !h-8 !px-3 !text-xs inline-flex items-center justify-center gap-1.5 justify-self-end whitespace-nowrap"
-          >
-            <Store className="w-3.5 h-3.5 shrink-0" />
-            参观橱窗
-          </button>
+          {(data?.entries || []).map((entry) => (
+            <div
+              key={entry.player_id}
+              className={`py-4 border-b border-[#2A2D34] grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center transition-colors hover:bg-[rgba(255,255,255,0.02)] ${entry.rank <= 3 ? 'text-[#C8A97E]' : ''}`}
+            >
+              <span className="text-xl font-bold">#{entry.rank}</span>
+              <div className="min-w-0 pr-2">
+                <button
+                  type="button"
+                  onClick={() => openShowcase(entry.player_id)}
+                  className="truncate w-full text-left text-[#E0E0E0] hover:text-[#C8A97E] underline decoration-[#2A2D34] underline-offset-4 hover:decoration-[#C8A97E]"
+                >
+                  {entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}
+                </button>
+                <span className="mt-1 block text-[11px] text-[#616161] truncate">点击浏览橱窗展览</span>
+              </div>
+              <span className="font-sans tabular-nums">${leaderboardScore(entry, boardType).toLocaleString()}</span>
+              <span className="text-sm text-[#9E9E9E]">声誉 {entry.reputation}</span>
+              <span className={`text-sm ${entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}`}>{entry.online ? '在线' : '离线'}</span>
+              <button
+                type="button"
+                onClick={() => openShowcase(entry.player_id)}
+                className="btn-secondary !h-8 !px-3 !text-xs inline-flex items-center justify-center gap-1.5 justify-self-end whitespace-nowrap"
+              >
+                <Store className="w-3.5 h-3.5 shrink-0" />
+                参观橱窗
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
       {data?.my_rank && (
         <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex flex-wrap justify-between gap-3 text-[#C8A97E] font-sans">
           <span>我的排名 #{data.my_rank.rank}</span>
@@ -1264,7 +1275,7 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
   const totalOut = normalizedEntries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
   return (
     <ListPage title="过往交易记录" subtitle={`保留最近 ${entries.length} 条经营流水，方便复盘收购、出售、市场和橱窗交易。`}>
-      <div className="grid grid-cols-3 gap-4 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
         <Stat label="交易数" value={entries.length} />
         <Stat label="总流入" value={`$${totalIn.toLocaleString()}`} />
         <Stat label="总流出" value={`$${totalOut.toLocaleString()}`} />
@@ -1274,13 +1285,13 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
       ) : (
         shown.map((entry, index) => {
           const amount = normalizeAmount(entry);
-          return <div key={`${entry.day}-${entry.type}-${entry.item}-${index}`} className="py-4 border-b border-[#2A2D34] grid grid-cols-[72px_1fr_110px] gap-4 items-center">
-            <span className="text-[#616161] text-sm">第 {entry.day} 天</span>
+          return <div key={`${entry.day}-${entry.type}-${entry.item}-${index}`} className="py-4 border-b border-[#2A2D34] grid grid-cols-[60px_1fr_80px] sm:grid-cols-[72px_1fr_110px] gap-2 sm:gap-4 items-center">
+            <span className="text-[#616161] text-xs sm:text-sm">第 {entry.day} 天</span>
             <div className="min-w-0">
-              <div className="font-bold truncate">【{entry.item}】</div>
+              <div className="font-bold text-sm sm:text-base truncate">【{entry.item}】</div>
               <div className="text-xs text-[#9E9E9E]">{typeLabel[entry.type] || entry.type}</div>
             </div>
-            <span className={`text-right font-sans font-bold ${amount >= 0 ? 'text-[#4CAF50]' : 'text-[#F44336]'}`}>
+            <span className={`text-right font-sans font-bold text-sm sm:text-base ${amount >= 0 ? 'text-[#4CAF50]' : 'text-[#F44336]'}`}>
               {amount >= 0 ? '+' : '-'}${Math.abs(amount).toLocaleString()}
             </span>
           </div>;
@@ -1307,12 +1318,12 @@ function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ow
         showcase.items.map((item) => (
           <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
             <ItemText item={item} extra={item.showcase_price ? '可购买' : '仅展示'} />
-            <div className="xl:w-[260px] flex items-center justify-end gap-5">
-              <div className="text-right">
+            <div className="w-full xl:w-[260px] flex items-center justify-between xl:justify-end gap-5 mt-2 xl:mt-0">
+              <div className="text-left xl:text-right">
                 <div className="text-[#C8A97E] text-lg font-bold">{item.showcase_price ? `$${item.showcase_price.toLocaleString()}` : '非卖品'}</div>
                 <div className="text-xs text-[#616161]">市场 ${item.market_value.toLocaleString()}</div>
               </div>
-              {!showcase.owner.is_self && item.showcase_price && <button onClick={() => buy(showcase.owner.id, item.id)} className="btn-primary !h-9 !px-4">购买</button>}
+              {!showcase.owner.is_self && item.showcase_price && <button onClick={() => buy(showcase.owner.id, item.id)} className="btn-primary !h-9 !px-4 shrink-0">购买</button>}
             </div>
           </div>
         ))
@@ -1325,18 +1336,61 @@ function ManagementTab({ loanAmount, onAction, setLoanAmount, state }: { state: 
   return (
     <ListPage title="经营财务" subtitle="技能、贷款、税务和市场趋势共同影响长期竞争。">
       {Object.entries(state.skills).map(([key, skill]) => <div key={key} className="py-4 border-b border-[#2A2D34]"><div className="flex justify-between"><span>{state.skill_info[key]?.name_cn || key}</span><span className="text-[#C8A97E]">Lv.{skill.level}</span></div><div className="progress-bg mt-2"><div className="progress-fill" style={{ width: `${Math.min(100, (skill.xp / Math.max(100, skill.level * 100)) * 100)}%` }} /></div></div>)}
-      <div className="py-6 border-b border-[#2A2D34] flex flex-wrap gap-3 items-center"><span>贷款本金 ${state.loan.principal.toLocaleString()}</span><input type="number" value={loanAmount} onChange={(event) => setLoanAmount(parseInt(event.target.value) || 100)} className="input-field !h-9 w-[150px]" style={{ paddingLeft: 12 }} /><button onClick={() => onAction('/api/loan/borrow', { amount: loanAmount }, 'loan_result', '贷款到账。', 'cash')} className="btn-primary !h-9">借款</button><button onClick={() => onAction('/api/loan/repay', { amount: loanAmount }, 'loan_result', '还款成功。', 'cash')} className="btn-secondary !h-9">还款</button></div>
+      <div className="py-6 border-b border-[#2A2D34] flex flex-col sm:flex-row flex-wrap gap-3 sm:items-center">
+        <span>贷款本金 ${state.loan.principal.toLocaleString()}</span>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+          <input type="number" value={loanAmount} onChange={(event) => setLoanAmount(parseInt(event.target.value) || 100)} className="input-field !h-9 flex-1 sm:flex-none sm:w-[150px] min-w-[100px]" style={{ paddingLeft: 12 }} />
+          <button onClick={() => onAction('/api/loan/borrow', { amount: loanAmount }, 'loan_result', '贷款到账。', 'cash')} className="btn-primary !h-9 px-3 sm:px-4">借款</button>
+          <button onClick={() => onAction('/api/loan/repay', { amount: loanAmount }, 'loan_result', '还款成功。', 'cash')} className="btn-secondary !h-9 px-3 sm:px-4">还款</button>
+        </div>
+      </div>
       {Object.entries(state.market_trends).map(([category, trend]) => <div key={category} className="py-3 border-b border-[#2A2D34] flex justify-between"><span>{categoryLabel(category)}</span><span className="text-[#C8A97E]">{trend.toFixed(2)}x</span></div>)}
     </ListPage>
   );
 }
 
 function StaffTab({ onAction, state }: { state: GameState; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
-  return <ListPage title="员工管理" subtitle="专业人员会影响鉴定、修复、客流和安全。">{Object.entries(state.staff_info).map(([key, info]) => <div key={key} className="py-5 border-b border-[#2A2D34] flex justify-between gap-4"><div><h3 className="text-lg font-bold">{info.name_cn} {state.staff[key] && <span className="text-[#C8A97E] text-sm">在岗</span>}</h3><p className="text-[#9E9E9E] text-sm">{info.desc}</p><p className="text-[#616161] text-xs">签约 ${info.hire_cost} / 日薪 ${info.daily_salary}</p></div>{state.staff[key] ? <button onClick={() => onAction('/api/fire', { staff_type: key }, 'fire_result', '已解雇。', 'reject')} className="btn-secondary !h-9">解雇</button> : <button onClick={() => onAction('/api/hire', { staff_type: key }, 'hire_result', '雇佣成功。', 'upgrade')} className="btn-primary !h-9">雇佣</button>}</div>)}</ListPage>;
+  return (
+    <ListPage title="员工管理" subtitle="专业人员会影响鉴定、修复、客流和安全。">
+      {Object.entries(state.staff_info).map(([key, info]) => (
+        <div key={key} className="py-5 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-bold">{info.name_cn} {state.staff[key] && <span className="text-[#C8A97E] text-sm">在岗</span>}</h3>
+            <p className="text-[#9E9E9E] text-sm my-1">{info.desc}</p>
+            <p className="text-[#616161] text-xs">签约 ${info.hire_cost} / 日薪 ${info.daily_salary}</p>
+          </div>
+          {state.staff[key] ? (
+            <button onClick={() => onAction('/api/fire', { staff_type: key }, 'fire_result', '已解雇。', 'reject')} className="btn-secondary !h-9 w-full sm:w-auto shrink-0">解雇</button>
+          ) : (
+            <button onClick={() => onAction('/api/hire', { staff_type: key }, 'hire_result', '雇佣成功。', 'upgrade')} className="btn-primary !h-9 w-full sm:w-auto shrink-0">雇佣</button>
+          )}
+        </div>
+      ))}
+    </ListPage>
+  );
 }
 
 function UpgradesTab({ onAction, state }: { state: GameState; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
-  return <ListPage title="当铺升级" subtitle="声望和设施等级共同决定经营上限。"><div className="py-5 border-b border-[#2A2D34] flex justify-between"><div><h3 className="text-xl font-bold">声望 Lv.{state.shop_level}</h3><p className="text-[#9E9E9E]">{state.shop_upgrade_desc || '已达到最高声望。'}</p></div>{state.shop_upgrade_cost && <button onClick={() => onAction('/api/upgrade', undefined, 'upgrade_result', '升级成功。', 'upgrade')} className="btn-primary !h-9">${state.shop_upgrade_cost.toLocaleString()}</button>}</div>{Object.entries(state.facility_info).map(([key, info]) => <div key={key} className="py-5 border-b border-[#2A2D34] flex justify-between gap-4"><div><h3 className="text-lg font-bold">{info.name_cn} Lv.{state.facilities[key]}</h3><p className="text-[#9E9E9E] text-sm">{info.desc}</p></div><button disabled={info.upgrade_cost === null} onClick={() => onAction('/api/upgrade_facility', { facility: key }, 'upgrade_result', '设施升级成功。', 'upgrade')} className="btn-secondary !h-9">{info.upgrade_cost ? `$${info.upgrade_cost.toLocaleString()}` : '满级'}</button></div>)}</ListPage>;
+  return (
+    <ListPage title="当铺升级" subtitle="声望和设施等级共同决定经营上限。">
+      <div className="py-5 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+        <div>
+          <h3 className="text-xl font-bold">声望 Lv.{state.shop_level}</h3>
+          <p className="text-[#9E9E9E] mt-1 text-sm">{state.shop_upgrade_desc || '已达到最高声望。'}</p>
+        </div>
+        {state.shop_upgrade_cost && <button onClick={() => onAction('/api/upgrade', undefined, 'upgrade_result', '升级成功。', 'upgrade')} className="btn-primary !h-9 w-full sm:w-auto shrink-0">${state.shop_upgrade_cost.toLocaleString()}</button>}
+      </div>
+      {Object.entries(state.facility_info).map(([key, info]) => (
+        <div key={key} className="py-5 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+          <div>
+            <h3 className="text-lg font-bold">{info.name_cn} Lv.{state.facilities[key]}</h3>
+            <p className="text-[#9E9E9E] text-sm mt-1">{info.desc}</p>
+          </div>
+          <button disabled={info.upgrade_cost === null} onClick={() => onAction('/api/upgrade_facility', { facility: key }, 'upgrade_result', '设施升级成功。', 'upgrade')} className="btn-secondary !h-9 w-full sm:w-auto shrink-0">{info.upgrade_cost ? `$${info.upgrade_cost.toLocaleString()}` : '满级'}</button>
+        </div>
+      ))}
+    </ListPage>
+  );
 }
 
 function InfoSidebar({ state }: { state: GameState }) {
