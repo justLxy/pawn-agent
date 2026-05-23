@@ -19,7 +19,7 @@ import {
   X
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
 type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
@@ -585,6 +585,10 @@ export default function App() {
     await runStateAction('/api/showcase/price', { item_id: item.id, price }, 'showcase_result', '橱窗售价已更新。', 'cash');
   };
 
+  const clearShowcaseItemPrice = async (item: Item) => {
+    await runStateAction('/api/showcase/price', { item_id: item.id, price: null }, 'showcase_result', '橱窗售价已取消。', 'click');
+  };
+
   const buyShowcaseItem = async (ownerId: number, itemId: string) => {
     setLoading(true);
     try {
@@ -681,6 +685,7 @@ export default function App() {
               onAction={runStateAction}
               onList={listToMarket}
               onSetShowcasePrice={setShowcaseItemPrice}
+              onClearShowcasePrice={clearShowcaseItemPrice}
             />
           )}
           {activeTab === 'market' && (
@@ -857,7 +862,7 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
   );
 }
 
-function InventoryTab({ items, listingPrice, showcasePrice, onAction, onList, onSetShowcasePrice, setListingPrice, setShowcasePrice }: { items: Item[]; listingPrice: Record<string, number>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void> }) {
+function InventoryTab({ items, listingPrice, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setShowcasePrice }: { items: Item[]; listingPrice: Record<string, number>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void> }) {
   const activeItems = items.filter((item) => item.status !== 'sold');
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
@@ -870,6 +875,7 @@ function InventoryTab({ items, listingPrice, showcasePrice, onAction, onList, on
             {item.status === 'displayed' ? <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="btn-secondary !h-9 !px-4">下架</button> : <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="btn-secondary !h-9 !px-4">展示</button>}
             {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={showcasePrice[item.id] ?? item.showcase_price ?? item.market_value} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || item.market_value })} />}
             {item.status === 'displayed' && <button onClick={() => onSetShowcasePrice(item)} className="btn-secondary !h-9 !px-4">橱窗价</button>}
+            {item.status === 'displayed' && item.showcase_price && <button onClick={() => onClearShowcasePrice(item)} className="btn-secondary !h-9 !px-4">取消价</button>}
             <button onClick={() => onAction('/api/repair', { item_id: item.id }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
           </div>
