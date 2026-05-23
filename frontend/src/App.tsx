@@ -939,8 +939,8 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
   const appraisalCost = Math.max(80, Math.round(appraisalBaseCost * selectedAppraisal.cost_multiplier * (1 - Math.min(0.65, appraisalDiscount))));
   const accuracyText = appraisalMethod === 'visual' ? '准确率较低' : appraisalMethod === 'forensic' ? '准确率最高' : '准确率均衡';
   const tradeMode = customer.role === 'seller'
-    ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', action: '你出价' }
-    : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', action: '你开价' };
+    ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
+    : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
       <div className="mb-6 border-y border-[#2A2D34] py-4">
@@ -954,7 +954,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
             <p className="text-[#616161] text-xs mt-1">{tradeMode.tone}</p>
           </div>
           <div className="text-left sm:text-right">
-            <div className="text-xs text-[#616161]">{tradeMode.action}</div>
+            <div className="text-xs text-[#616161]">{tradeMode.priceLabel}</div>
             <div className="text-[#C8A97E] text-[28px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
           </div>
         </div>
