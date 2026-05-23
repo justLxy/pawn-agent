@@ -15,15 +15,18 @@ from database import init_db
 from game_state import GameStateManager
 from online_services import (
     buy_listing,
+    buy_showcase_item,
     ensure_player_state,
     get_leaderboard,
     get_market_listings,
     get_my_listings,
+    get_player_showcase,
     get_trade_logs,
     import_state as import_cloud_state,
     list_item,
     reset_player_data,
     save_state,
+    set_showcase_price,
     unlist_item,
     update_listing_price,
 )
@@ -95,6 +98,16 @@ class MarketListingRequest(BaseModel):
 class MarketPriceRequest(BaseModel):
     listing_id: str
     price: int
+
+
+class ShowcasePriceRequest(BaseModel):
+    item_id: str
+    price: Optional[int] = None
+
+
+class ShowcaseBuyRequest(BaseModel):
+    owner_id: int
+    item_id: str
 
 
 async def get_engine(player: Dict[str, Any]) -> GameStateManager:
@@ -426,6 +439,26 @@ def market_buy(req: MarketListingRequest, player: Dict[str, Any] = Depends(curre
 @app.get("/api/market/trades")
 def market_trades(player: Dict[str, Any] = Depends(current_player)):
     return {"trades": get_trade_logs(player["id"])}
+
+
+@app.get("/api/showcase/{owner_id}")
+def player_showcase(owner_id: int, player: Dict[str, Any] = Depends(current_player)):
+    return get_player_showcase(player["id"], owner_id)
+
+
+@app.post("/api/showcase/price")
+def showcase_price(req: ShowcasePriceRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = set_showcase_price(player["id"], req.item_id, req.price)
+    state = load_state_for_response(player)
+    return {"showcase_result": result, "state": state.to_dict()}
+
+
+@app.post("/api/showcase/buy")
+def showcase_buy(req: ShowcaseBuyRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = buy_showcase_item(player["id"], req.owner_id, req.item_id)
+    state = load_state_for_response(player)
+    showcase = get_player_showcase(player["id"], req.owner_id)
+    return {"showcase_result": result, "state": state.to_dict(), "showcase": showcase}
 
 
 def load_state_for_response(player: Dict[str, Any]) -> GameStateManager:

@@ -196,6 +196,110 @@ def update_listing_price(player_id: int, listing_id: str, price: int) -> Dict[st
     return {"success": True, "message": f"【{row['item_name']}】已改价为 ${price}。"}
 
 
+def _public_item(item: Item) -> Dict[str, Any]:
+    return item.to_dict()
+
+
+def set_showcase_price(player_id: int, item_id: str, price: Optional[int]) -> Dict[str, Any]:
+    state = load_state(player_id)
+    item = state.get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="未找到该展示品。")
+    if item.status != "displayed":
+        raise HTTPException(status_code=400, detail="只有展示柜里的物品可以设置橱窗售价。")
+    if price is None or price <= 0:
+        item.showcase_price = None
+        save_state(player_id, state)
+        return {"success": True, "message": f"【{item.name}】已取消橱窗售价。"}
+
+    ref = reference_price(item)
+    min_price = int(ref * 0.3)
+    max_price = int(ref * 3)
+    if price < min_price or price > max_price:
+        raise HTTPException(status_code=400, detail=f"橱窗售价必须在 ${min_price} - ${max_price} 内。")
+    item.showcase_price = int(price)
+    save_state(player_id, state)
+    return {"success": True, "message": f"【{item.name}】橱窗售价已设为 ${price}。"}
+
+
+def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
+    with get_connection() as conn:
+        owner = conn.execute("SELECT id, shop_name, online, reputation, ranking_badge FROM players WHERE id = ?", (owner_id,)).fetchone()
+        save = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (owner_id,)).fetchone()
+    if not owner or not save:
+        raise HTTPException(status_code=404, detail="未找到该玩家当铺。")
+
+    state = GameStateManager.from_dict(json.loads(save["state_json"]))
+    items = [_public_item(item) for item in state.inventory if item.status == "displayed"]
+    return {
+        "owner": {
+            "id": owner["id"],
+            "shop_name": state.shop_name or owner["shop_name"],
+            "online": bool(owner["online"]),
+            "reputation": state.reputation,
+            "ranking_badge": owner["ranking_badge"],
+            "is_self": viewer_id == owner_id,
+        },
+        "items": items,
+        "display_capacity": state.display_capacity(),
+    }
+
+
+def buy_showcase_item(buyer_id: int, owner_id: int, item_id: str) -> Dict[str, Any]:
+    if buyer_id == owner_id:
+        raise HTTPException(status_code=400, detail="不能购买自己橱窗里的物品。")
+    with transaction() as conn:
+        buyer_row = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (buyer_id,)).fetchone()
+        owner_row = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (owner_id,)).fetchone()
+        if not buyer_row or not owner_row:
+            raise HTTPException(status_code=404, detail="交易双方存档不完整。")
+
+        buyer = GameStateManager.from_dict(json.loads(buyer_row["state_json"]))
+        owner = GameStateManager.from_dict(json.loads(owner_row["state_json"]))
+        item = owner.get_item(item_id)
+        if not item or item.status != "displayed":
+            raise HTTPException(status_code=404, detail="该展示品已不在橱窗中。")
+        if not item.showcase_price:
+            raise HTTPException(status_code=400, detail="该展示品只展示不出售。")
+
+        price = int(item.showcase_price)
+        if buyer.cash < price:
+            raise HTTPException(status_code=400, detail="现金不足，无法购买该展示品。")
+
+        tax = int(price * MARKET_TAX_RATE)
+        owner_income = price - tax
+        original_purchase_price = int(item.purchase_price or 0)
+        owner.inventory = [existing for existing in owner.inventory if existing.id != item_id]
+        item.status = "stored"
+        item.display_slot = None
+        item.showcase_price = None
+        item.purchase_price = price
+        item.last_trade_at = int(time.time())
+        item.acquired_at = int(time.time())
+        buyer.cash -= price
+        buyer.inventory.append(item)
+        owner.cash += owner_income
+        buyer.transaction_log.append({"day": buyer.day, "type": "showcase_buy", "item": item.name, "amount": -price})
+        owner.transaction_log.append({"day": owner.day, "type": "showcase_sell", "item": item.name, "amount": owner_income})
+        buyer.successful_trades += 1
+        buyer.reputation += 1
+        owner.successful_trades += 1
+        owner.positive_reviews += 1
+        owner.reputation += 2
+        owner.total_profit += max(0, owner_income - original_purchase_price)
+        now = int(time.time())
+
+        conn.execute(
+            "INSERT INTO trade_logs (buyer_id, seller_id, listing_id, item_name, price, tax, trade_type, created_at) VALUES (?, ?, ?, ?, ?, ?, 'showcase_sale', ?)",
+            (buyer_id, owner_id, f"showcase:{item_id}", item.name, price, tax, now),
+        )
+        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(buyer.to_dict(), ensure_ascii=False), now, buyer_id))
+        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(owner.to_dict(), ensure_ascii=False), now, owner_id))
+        conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (buyer.reputation, buyer_id))
+        conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (owner.reputation, owner_id))
+    return {"success": True, "message": f"你从对方橱窗买下了【{item.name}】，支付 ${price}。", "tax": tax}
+
+
 def buy_listing(buyer_id: int, listing_id: str) -> Dict[str, Any]:
     with transaction() as conn:
         listing = conn.execute(

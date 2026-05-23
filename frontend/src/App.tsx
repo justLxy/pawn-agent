@@ -21,7 +21,7 @@ import {
 
 const API_BASE_URL = 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
-type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market';
+type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
 type MarketView = 'browse' | 'mine' | 'trades';
@@ -58,6 +58,7 @@ interface Item {
   repair_difficulty: number;
   repair_days_remaining: number;
   display_slot: number | null;
+  showcase_price: number | null;
 }
 
 interface Customer {
@@ -159,6 +160,19 @@ interface TradeLog {
   created_at: number;
 }
 
+interface ShowcaseData {
+  owner: {
+    id: number;
+    shop_name: string;
+    online: boolean;
+    reputation: number;
+    ranking_badge: string | null;
+    is_self: boolean;
+  };
+  items: Item[];
+  display_capacity: number;
+}
+
 const CONDITION_MAP: Record<string, string> = { Mint: '极佳', Good: '良好', Poor: '较差' };
 const STATUS_MAP: Record<ItemStatus, string> = { stored: '仓库', repairing: '修复中', displayed: '展示中', sold: '已售出', listed: '挂售中' };
 const RARITY_COLOR: Record<string, string> = { common: 'text-[#9E9E9E]', rare: 'text-[#64B5F6]', epic: 'text-[#C8A97E]', legendary: 'text-[#FFB74D]' };
@@ -209,8 +223,10 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [loanAmount, setLoanAmount] = useState(3000);
   const [listingPrice, setListingPrice] = useState<Record<string, number>>({});
+  const [showcasePrice, setShowcasePrice] = useState<Record<string, number>>({});
   const [boardType, setBoardType] = useState<BoardType>('assets');
   const [leaderboard, setLeaderboard] = useState<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null>(null);
+  const [showcase, setShowcase] = useState<ShowcaseData | null>(null);
   const [marketView, setMarketView] = useState<MarketView>('browse');
   const [marketSearch, setMarketSearch] = useState('');
   const [marketSort, setMarketSort] = useState('newest');
@@ -408,6 +424,16 @@ export default function App() {
     setTrades((await apiGet<{ trades: TradeLog[] }>('/api/market/trades')).trades);
   };
 
+  const openShowcase = async (ownerId: number) => {
+    try {
+      const data = await apiGet<ShowcaseData>(`/api/showcase/${ownerId}`);
+      setShowcase(data);
+      setActiveTab('showcase');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '无法打开玩家橱窗。');
+    }
+  };
+
   useEffect(() => {
     if (!player || activeTab !== 'leaderboard') return;
     loadLeaderboard().catch((err) => setErrorMsg(err.message));
@@ -455,6 +481,8 @@ export default function App() {
       setMessage('');
       setNegotiatingMsg(null);
       setListingPrice({});
+      setShowcasePrice({});
+      setShowcase(null);
       setLeaderboard(null);
       setListings([]);
       setMyListings([]);
@@ -552,6 +580,26 @@ export default function App() {
     await loadLeaderboard().catch(() => {});
   };
 
+  const setShowcaseItemPrice = async (item: Item) => {
+    const price = showcasePrice[item.id] ?? item.showcase_price ?? item.market_value;
+    await runStateAction('/api/showcase/price', { item_id: item.id, price }, 'showcase_result', '橱窗售价已更新。', 'cash');
+  };
+
+  const buyShowcaseItem = async (ownerId: number, itemId: string) => {
+    setLoading(true);
+    try {
+      const data = await apiPost<{ showcase_result: { message?: string }; state: GameState; showcase: ShowcaseData }>('/api/showcase/buy', { owner_id: ownerId, item_id: itemId });
+      setState(data.state);
+      setShowcase(data.showcase);
+      setSuccessMsg(data.showcase_result.message || '橱窗购买成功。');
+      playSound('cash');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '橱窗购买失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!player || !state) {
     return (
       <div className="h-screen w-screen bg-[#0D0F12] text-[#E0E0E0] flex items-center justify-center px-6">
@@ -627,9 +675,12 @@ export default function App() {
             <InventoryTab
               items={state.inventory}
               listingPrice={listingPrice}
+              showcasePrice={showcasePrice}
               setListingPrice={setListingPrice}
+              setShowcasePrice={setShowcasePrice}
               onAction={runStateAction}
               onList={listToMarket}
+              onSetShowcasePrice={setShowcaseItemPrice}
             />
           )}
           {activeTab === 'market' && (
@@ -645,11 +696,15 @@ export default function App() {
               setMarketView={setMarketView}
               refresh={loadMarket}
               buy={buyMarketItem}
+              openShowcase={openShowcase}
               onMarketAction={runStateAction}
             />
           )}
           {activeTab === 'leaderboard' && (
-            <LeaderboardTab boardType={boardType} setBoardType={setBoardType} data={leaderboard} refresh={loadLeaderboard} />
+            <LeaderboardTab boardType={boardType} setBoardType={setBoardType} data={leaderboard} refresh={loadLeaderboard} openShowcase={openShowcase} />
+          )}
+          {activeTab === 'showcase' && showcase && (
+            <ShowcaseTab showcase={showcase} buy={buyShowcaseItem} back={() => setActiveTab('market')} />
           )}
           {activeTab === 'management' && (
             <ManagementTab state={state} loanAmount={loanAmount} setLoanAmount={setLoanAmount} onAction={runStateAction} />
@@ -802,7 +857,7 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
   );
 }
 
-function InventoryTab({ items, listingPrice, onAction, onList, setListingPrice }: { items: Item[]; listingPrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void> }) {
+function InventoryTab({ items, listingPrice, showcasePrice, onAction, onList, onSetShowcasePrice, setListingPrice, setShowcasePrice }: { items: Item[]; listingPrice: Record<string, number>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void> }) {
   const activeItems = items.filter((item) => item.status !== 'sold');
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
@@ -813,6 +868,8 @@ function InventoryTab({ items, listingPrice, onAction, onList, setListingPrice }
             <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={listingPrice[item.id] ?? item.market_value} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || item.market_value })} />
             <button onClick={() => onList(item)} disabled={!['stored', 'displayed'].includes(item.status)} className="btn-secondary !h-9 !px-4">挂售</button>
             {item.status === 'displayed' ? <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="btn-secondary !h-9 !px-4">下架</button> : <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="btn-secondary !h-9 !px-4">展示</button>}
+            {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={showcasePrice[item.id] ?? item.showcase_price ?? item.market_value} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || item.market_value })} />}
+            {item.status === 'displayed' && <button onClick={() => onSetShowcasePrice(item)} className="btn-secondary !h-9 !px-4">橱窗价</button>}
             <button onClick={() => onAction('/api/repair', { item_id: item.id }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
           </div>
@@ -822,8 +879,8 @@ function InventoryTab({ items, listingPrice, onAction, onList, setListingPrice }
   );
 }
 
-function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: TradeLog[]; marketSearch: string; marketSort: string; marketView: MarketView; setMarketSearch: (value: string) => void; setMarketSort: (value: string) => void; setMarketView: (value: MarketView) => void; refresh: () => Promise<void>; buy: (id: string) => Promise<void>; onMarketAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
-  const { buy, listings, marketSearch, marketSort, marketView, myListings, onMarketAction, refresh, setMarketSearch, setMarketSort, setMarketView, trades } = props;
+function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: TradeLog[]; marketSearch: string; marketSort: string; marketView: MarketView; setMarketSearch: (value: string) => void; setMarketSort: (value: string) => void; setMarketView: (value: MarketView) => void; refresh: () => Promise<void>; buy: (id: string) => Promise<void>; openShowcase: (ownerId: number) => Promise<void>; onMarketAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+  const { buy, listings, marketSearch, marketSort, marketView, myListings, onMarketAction, openShowcase, refresh, setMarketSearch, setMarketSort, setMarketView, trades } = props;
   const shown = marketView === 'browse' ? listings : myListings;
   return (
     <ListPage title="玩家交易市场" subtitle="全服玩家互买互卖，寻找低价捡漏和高价倒卖机会。">
@@ -841,8 +898,9 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
       </div>
       {marketView === 'trades' ? trades.map((trade) => <div key={trade.id} className="py-4 border-b border-[#2A2D34] flex justify-between gap-4"><span>【{trade.item_name}】</span><span className="text-[#9E9E9E]">{trade.buyer_shop || '买家'} ↔ {trade.seller_shop || '卖家'}</span><span className="text-[#C8A97E]">${trade.price.toLocaleString()} / 税 ${trade.tax}</span></div>) : shown.map((listing) => (
         <div key={listing.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
-          <ItemText item={listing.item} extra={`${listing.seller_shop} ${listing.seller_online ? '在线' : '离线'}`} />
+          <ItemText item={listing.item} extra={listing.seller_online ? '卖家在线' : '卖家离线'} />
           <div className="xl:w-[300px] flex items-center justify-end gap-5">
+            <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-right">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
             <div className="text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div><div className="text-xs text-[#616161]">参考 ${listing.reference_price.toLocaleString()}</div></div>
             {marketView === 'browse' ? <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4">购买</button> : <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4">下架</button>}
           </div>
@@ -852,7 +910,7 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
   );
 }
 
-function LeaderboardTab({ boardType, data, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void> }) {
+function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void> }) {
   return (
     <ListPage title="全服排行榜" subtitle="10 秒自动刷新，前 100 名获得每日声誉与稀有刷新奖励。">
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 border-b border-[#2A2D34] mb-2 flex justify-between gap-4">
@@ -864,13 +922,44 @@ function LeaderboardTab({ boardType, data, refresh, setBoardType }: { boardType:
       {(data?.entries || []).map((entry) => (
         <div key={entry.player_id} className={`py-4 border-b border-[#2A2D34] grid grid-cols-[60px_1fr_120px_100px_80px] gap-4 items-center ${entry.rank <= 3 ? 'text-[#C8A97E]' : ''}`}>
           <span className="text-xl font-bold">#{entry.rank}</span>
-          <span className="truncate">{entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}</span>
+          <button onClick={() => openShowcase(entry.player_id)} className="truncate text-left hover:text-[#C8A97E]">{entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}</button>
           <span>${entry.assets.toLocaleString()}</span>
           <span>声誉 {entry.reputation}</span>
           <span className={entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{entry.online ? '在线' : '离线'}</span>
         </div>
       ))}
       {data?.my_rank && <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex justify-between text-[#C8A97E]"><span>我的排名 #{data.my_rank.rank}</span><span>{data.my_rank.shop_name}</span><span>分数 {data.my_rank.score.toLocaleString()}</span></div>}
+    </ListPage>
+  );
+}
+
+function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ownerId: number, itemId: string) => Promise<void>; back: () => void }) {
+  return (
+    <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。只能购买标有橱窗售价的展示品。`}>
+      <div className="flex items-center justify-between border-b border-[#2A2D34] pb-4 mb-2">
+        <div className="text-sm text-[#9E9E9E]">
+          <span className={showcase.owner.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{showcase.owner.online ? '在线' : '离线'}</span>
+          <span className="mx-3">声誉 {showcase.owner.reputation}</span>
+          {showcase.owner.ranking_badge && <span className="text-[#C8A97E]">{showcase.owner.ranking_badge}</span>}
+        </div>
+        <button onClick={back} className="btn-secondary !h-9 !px-4">返回市场</button>
+      </div>
+      {showcase.items.length === 0 ? (
+        <div className="py-16 text-center text-[#616161]">这家当铺暂时没有公开展示的藏品。</div>
+      ) : (
+        showcase.items.map((item) => (
+          <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
+            <ItemText item={item} extra={item.showcase_price ? '可购买' : '仅展示'} />
+            <div className="xl:w-[260px] flex items-center justify-end gap-5">
+              <div className="text-right">
+                <div className="text-[#C8A97E] text-lg font-bold">{item.showcase_price ? `$${item.showcase_price.toLocaleString()}` : '非卖品'}</div>
+                <div className="text-xs text-[#616161]">市场 ${item.market_value.toLocaleString()}</div>
+              </div>
+              {!showcase.owner.is_self && item.showcase_price && <button onClick={() => buy(showcase.owner.id, item.id)} className="btn-primary !h-9 !px-4">购买</button>}
+            </div>
+          </div>
+        ))
+      )}
     </ListPage>
   );
 }
@@ -905,7 +994,7 @@ function InfoSidebar({ state }: { state: GameState }) {
 }
 
 function ItemText({ extra, item }: { item: Item; extra?: string }) {
-  return <div className="flex-1 min-w-0"><div className="flex flex-wrap gap-3 items-center mb-1"><h3 className="text-lg font-bold truncate">{item.name}</h3><span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span><span className="text-[#616161] text-sm">{STATUS_MAP[item.status]}</span><span className="text-[#C8A97E] text-sm">{CONDITION_MAP[item.condition] || item.condition}</span>{extra && <span className="text-[#9E9E9E] text-sm">{extra}</span>}</div><p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p><div className="flex flex-wrap gap-5 text-xs text-[#616161] mt-2"><span>{categoryLabel(item.category)}</span><span>市场 ${item.market_value.toLocaleString()}</span><span>鉴定 {item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品'}</span></div></div>;
+  return <div className="flex-1 min-w-0"><div className="flex flex-wrap gap-3 items-center mb-1"><h3 className="text-lg font-bold truncate">{item.name}</h3><span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span><span className="text-[#616161] text-sm">{STATUS_MAP[item.status]}</span><span className="text-[#C8A97E] text-sm">{CONDITION_MAP[item.condition] || item.condition}</span>{extra && <span className="text-[#9E9E9E] text-sm">{extra}</span>}{item.showcase_price && <span className="text-[#C8A97E] text-sm">橱窗 ${item.showcase_price.toLocaleString()}</span>}</div><p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p><div className="flex flex-wrap gap-5 text-xs text-[#616161] mt-2"><span>{categoryLabel(item.category)}</span><span>市场 ${item.market_value.toLocaleString()}</span><span>鉴定 {item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品'}</span></div></div>;
 }
 
 function ListPage({ children, subtitle, title }: { children: React.ReactNode; title: string; subtitle: string }) {

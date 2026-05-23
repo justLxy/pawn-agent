@@ -133,6 +133,7 @@ class Item:
         item_id: Optional[str] = None,
         acquired_at: Optional[int] = None,
         last_trade_at: Optional[int] = None,
+        showcase_price: Optional[int] = None,
     ):
         self.id = item_id or str(uuid.uuid4())[:8]
         self.name = name
@@ -157,6 +158,7 @@ class Item:
         self.display_slot: Optional[int] = None
         self.acquired_at = int(acquired_at if acquired_at is not None else time.time())
         self.last_trade_at = last_trade_at
+        self.showcase_price = showcase_price
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -183,6 +185,7 @@ class Item:
             "display_slot": self.display_slot,
             "acquired_at": self.acquired_at,
             "last_trade_at": self.last_trade_at,
+            "showcase_price": self.showcase_price,
         }
 
     @classmethod
@@ -202,6 +205,7 @@ class Item:
             item_id=data.get("id"),
             acquired_at=data.get("acquired_at"),
             last_trade_at=data.get("last_trade_at"),
+            showcase_price=data.get("showcase_price"),
         )
         item.appraised_value = data.get("appraised_value")
         item.is_appraised_fake = data.get("is_appraised_fake")
@@ -560,6 +564,7 @@ class GameStateManager:
             return {"error": "该物品并未展示。"}
         item.status = "stored"
         item.display_slot = None
+        item.showcase_price = None
         return {"success": True, "message": f"【{item.name}】已收入仓库。"}
 
     def start_repair(self, item_id: str) -> Dict[str, Any]:
