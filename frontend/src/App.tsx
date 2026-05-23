@@ -23,7 +23,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
-type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase';
+type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
 type MarketView = 'browse' | 'mine' | 'trades';
@@ -96,6 +96,7 @@ interface GameState {
   ranking_reward_bonus: number;
   inventory: Item[];
   sold_items: Item[];
+  transaction_log: TransactionEntry[];
   staff: Record<string, boolean>;
   staff_info: Record<string, { name_cn: string; hire_cost: number; daily_salary: number; desc: string }>;
   appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; xp: number }>;
@@ -127,6 +128,13 @@ interface GameState {
   display_capacity: number;
   shop_upgrade_cost: number | null;
   shop_upgrade_desc: string | null;
+}
+
+interface TransactionEntry {
+  day: number;
+  type: string;
+  item: string;
+  amount: number;
 }
 
 interface Listing {
@@ -705,6 +713,7 @@ export default function App() {
           <NavButton tab="inventory" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Briefcase className="w-5 h-5" />} label="仓库藏品" />
           <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" />
           <NavButton tab="leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} icon={<ListOrdered className="w-5 h-5" />} label="全服排行" />
+          <NavButton tab="history" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Clock className="w-5 h-5" />} label="交易记录" />
           <NavButton tab="management" activeTab={activeTab} setActiveTab={setActiveTab} icon={<TrendingUp className="w-5 h-5" />} label="经营财务" />
           <NavButton tab="staff" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Users className="w-5 h-5" />} label="员工管理" />
           <NavButton tab="upgrades" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Crown className="w-5 h-5" />} label="当铺升级" />
@@ -761,6 +770,9 @@ export default function App() {
           )}
           {activeTab === 'leaderboard' && (
             <LeaderboardTab boardType={boardType} setBoardType={setBoardType} data={leaderboard} refresh={loadLeaderboard} openShowcase={openShowcase} />
+          )}
+          {activeTab === 'history' && (
+            <HistoryTab entries={state.transaction_log || []} />
           )}
           {activeTab === 'showcase' && showcase && (
             <ShowcaseTab showcase={showcase} buy={buyShowcaseItem} back={() => setActiveTab('market')} />
@@ -851,6 +863,7 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'inventory', label: '仓库', icon: <Briefcase className="w-5 h-5" /> },
     { tab: 'market', label: '市场', icon: <Landmark className="w-5 h-5" /> },
     { tab: 'leaderboard', label: '排行', icon: <ListOrdered className="w-5 h-5" /> },
+    { tab: 'history', label: '流水', icon: <Clock className="w-5 h-5" /> },
     { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
     { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
     { tab: 'upgrades', label: '升级', icon: <Crown className="w-5 h-5" /> }
@@ -1050,6 +1063,46 @@ function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }
         </div>
       ))}
       {data?.my_rank && <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex justify-between text-[#C8A97E]"><span>我的排名 #{data.my_rank.rank}</span><span>{data.my_rank.shop_name}</span><span>分数 {data.my_rank.score.toLocaleString()}</span></div>}
+    </ListPage>
+  );
+}
+
+function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
+  const shown = [...entries].reverse();
+  const typeLabel: Record<string, string> = {
+    buy: '收购物品',
+    sell: '顾客购买',
+    direct_sell: '系统出售',
+    market_buy: '市场购入',
+    market_sell: '市场售出',
+    showcase_buy: '橱窗购入',
+    showcase_sell: '橱窗售出'
+  };
+  const totalIn = entries.filter((entry) => entry.amount > 0).reduce((sum, entry) => sum + entry.amount, 0);
+  const totalOut = entries.filter((entry) => entry.amount < 0).reduce((sum, entry) => sum + Math.abs(entry.amount), 0);
+  return (
+    <ListPage title="过往交易记录" subtitle={`保留最近 ${entries.length} 条经营流水，方便复盘收购、出售、市场和橱窗交易。`}>
+      <div className="grid grid-cols-3 gap-4 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
+        <Stat label="交易数" value={entries.length} />
+        <Stat label="总流入" value={`$${totalIn.toLocaleString()}`} />
+        <Stat label="总流出" value={`$${totalOut.toLocaleString()}`} />
+      </div>
+      {shown.length === 0 ? (
+        <div className="py-16 text-center text-[#616161]">还没有交易记录。完成收购或出售后，这里会留下流水。</div>
+      ) : (
+        shown.map((entry, index) => (
+          <div key={`${entry.day}-${entry.type}-${entry.item}-${index}`} className="py-4 border-b border-[#2A2D34] grid grid-cols-[72px_1fr_110px] gap-4 items-center">
+            <span className="text-[#616161] text-sm">第 {entry.day} 天</span>
+            <div className="min-w-0">
+              <div className="font-bold truncate">【{entry.item}】</div>
+              <div className="text-xs text-[#9E9E9E]">{typeLabel[entry.type] || entry.type}</div>
+            </div>
+            <span className={`text-right font-sans font-bold ${entry.amount >= 0 ? 'text-[#4CAF50]' : 'text-[#F44336]'}`}>
+              {entry.amount >= 0 ? '+' : '-'}${Math.abs(entry.amount).toLocaleString()}
+            </span>
+          </div>
+        ))
+      )}
     </ListPage>
   );
 }

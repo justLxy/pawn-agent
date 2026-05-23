@@ -1124,7 +1124,7 @@ class GameStateManager:
             "shop_level": self.shop_level,
             "inventory": [i.to_dict() for i in self.inventory],
             "sold_items": [i.to_dict() for i in self.sold_items],
-            "transaction_log": self.transaction_log[-30:],
+            "transaction_log": self.transaction_log[-120:],
             "staff": self.staff,
             "skills": self.skills,
             "skill_info": SKILL_INFO,
