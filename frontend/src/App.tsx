@@ -6,6 +6,7 @@ import {
   CheckCircle,
   Clock,
   Crown,
+  Info,
   Landmark,
   ListOrdered,
   LogOut,
@@ -252,6 +253,7 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const musicContextRef = useRef<AudioContext | null>(null);
   const musicNodesRef = useRef<{ oscillators: OscillatorNode[]; intervals: number[]; gain: GainNode } | null>(null);
@@ -677,6 +679,7 @@ export default function App() {
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
+          <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9 lg:hidden" title="信息栏"><Info className="w-4 h-4" /></button>
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
           <button onClick={deleteAccount} disabled={loading} className="btn-icon !w-9 !h-9 hover:!text-[#F44336]" title="注销账号"><Trash2 className="w-4 h-4" /></button>
@@ -761,6 +764,7 @@ export default function App() {
           <InfoSidebar state={state} />
         </aside>
       </div>
+      {mobileInfoOpen && <MobileInfoDrawer state={state} onClose={() => setMobileInfoOpen(false)} />}
       <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
@@ -850,6 +854,21 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
         ))}
       </div>
     </nav>
+  );
+}
+
+function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () => void }) {
+  return (
+    <div className="lg:hidden fixed inset-0 z-[60]">
+      <button aria-label="关闭信息栏" onClick={onClose} className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
+      <aside className="absolute right-0 top-0 h-full w-[86vw] max-w-[360px] bg-[#14171C] border-l border-[#2A2D34] py-6 px-5 overflow-y-auto custom-scrollbar shadow-2xl animate-slide-right">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-[#C8A97E] font-bold text-lg">当铺信息</h2>
+          <button onClick={onClose} className="btn-icon !w-9 !h-9" title="关闭"><X className="w-4 h-4" /></button>
+        </div>
+        <InfoSidebar state={state} />
+      </aside>
+    </div>
   );
 }
 
