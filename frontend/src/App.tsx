@@ -1178,25 +1178,67 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
   );
 }
 
+function leaderboardScore(entry: LeaderboardEntry, boardType: BoardType): number {
+  if (boardType === 'reputation') return entry.reputation;
+  if (boardType === 'profit') return entry.profit;
+  if (boardType === 'collection') return entry.collection;
+  return entry.assets;
+}
+
 function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void> }) {
+  const scoreLabel = BOARD_LABEL[boardType];
   return (
-    <ListPage title="全服排行榜" subtitle="10 秒自动刷新，前 100 名获得每日声誉与稀有刷新奖励。">
+    <ListPage title="全服排行榜" subtitle="10 秒自动刷新；点击当铺名或「参观橱窗」可浏览他人展示柜与在售藏品。前 100 名获每日声誉与稀有刷新奖励。">
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 border-b border-[#2A2D34] mb-2 flex justify-between gap-4">
         <div className="flex gap-8 overflow-x-auto">
           {(Object.keys(BOARD_LABEL) as BoardType[]).map((type) => <button key={type} onClick={() => setBoardType(type)} className={`pb-3 whitespace-nowrap ${boardType === type ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{BOARD_LABEL[type]}</button>)}
         </div>
-        <button onClick={() => refresh()} className="text-[#9E9E9E] hover:text-[#C8A97E]"><RefreshCw className="w-4 h-4" /></button>
+        <button onClick={() => refresh()} className="text-[#9E9E9E] hover:text-[#C8A97E]" aria-label="刷新排行榜"><RefreshCw className="w-4 h-4" /></button>
+      </div>
+      <div className="grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center pb-2 text-xs text-[#616161] font-sans border-b border-[#2A2D34]">
+        <span>排名</span>
+        <span>当铺</span>
+        <span>{scoreLabel}</span>
+        <span>声誉</span>
+        <span>状态</span>
+        <span className="text-right">操作</span>
       </div>
       {(data?.entries || []).map((entry) => (
-        <div key={entry.player_id} className={`py-4 border-b border-[#2A2D34] grid grid-cols-[60px_1fr_120px_100px_80px] gap-4 items-center ${entry.rank <= 3 ? 'text-[#C8A97E]' : ''}`}>
+        <div
+          key={entry.player_id}
+          className={`py-4 border-b border-[#2A2D34] grid grid-cols-[52px_minmax(0,1fr)_108px_80px_64px_104px] gap-3 sm:gap-4 items-center transition-colors hover:bg-[rgba(255,255,255,0.02)] ${entry.rank <= 3 ? 'text-[#C8A97E]' : ''}`}
+        >
           <span className="text-xl font-bold">#{entry.rank}</span>
-          <button onClick={() => openShowcase(entry.player_id)} className="truncate text-left hover:text-[#C8A97E]">{entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}</button>
-          <span>${entry.assets.toLocaleString()}</span>
-          <span>声誉 {entry.reputation}</span>
-          <span className={entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{entry.online ? '在线' : '离线'}</span>
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => openShowcase(entry.player_id)}
+              className="truncate text-left text-[#E0E0E0] hover:text-[#C8A97E] underline decoration-[#2A2D34] underline-offset-4 hover:decoration-[#C8A97E]"
+            >
+              {entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}
+            </button>
+            <span className="mt-1 block text-[11px] text-[#616161]">点击浏览橱窗展览</span>
+          </div>
+          <span className="font-sans tabular-nums">${leaderboardScore(entry, boardType).toLocaleString()}</span>
+          <span className="text-sm text-[#9E9E9E]">声誉 {entry.reputation}</span>
+          <span className={`text-sm ${entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}`}>{entry.online ? '在线' : '离线'}</span>
+          <button
+            type="button"
+            onClick={() => openShowcase(entry.player_id)}
+            className="btn-secondary !h-8 !px-3 !text-xs inline-flex items-center justify-center gap-1.5 justify-self-end whitespace-nowrap"
+          >
+            <Store className="w-3.5 h-3.5 shrink-0" />
+            参观橱窗
+          </button>
         </div>
       ))}
-      {data?.my_rank && <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex justify-between text-[#C8A97E]"><span>我的排名 #{data.my_rank.rank}</span><span>{data.my_rank.shop_name}</span><span>分数 {data.my_rank.score.toLocaleString()}</span></div>}
+      {data?.my_rank && (
+        <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex flex-wrap justify-between gap-3 text-[#C8A97E] font-sans">
+          <span>我的排名 #{data.my_rank.rank}</span>
+          <span>{data.my_rank.shop_name}</span>
+          <span>{scoreLabel} {leaderboardScore(data.my_rank, boardType).toLocaleString()}</span>
+        </div>
+      )}
     </ListPage>
   );
 }
