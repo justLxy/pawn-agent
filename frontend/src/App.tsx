@@ -179,6 +179,14 @@ interface TradeLog {
   created_at: number;
 }
 
+interface NegotiationStreamPayload {
+  negotiation: { patience_change: number };
+  deal_completed: boolean;
+  walk_out_completed: boolean;
+  deal_result?: { message?: string };
+  state: GameState;
+}
+
 interface ShowcaseData {
   owner: {
     id: number;
@@ -594,7 +602,7 @@ export default function App() {
     }
 
     const previousState = state;
-    setState({
+    const optimisticState: GameState = {
       ...state,
       active_customer: {
         ...state.active_customer,
@@ -603,12 +611,59 @@ export default function App() {
           { role: 'player', content: playerMessage }
         ]
       }
-    });
+    };
+    setState(optimisticState);
     setMessage('');
     setLoading(true);
     setNegotiatingMsg('对方正在思索...');
     try {
-      const data = await apiPost<{ negotiation: { patience_change: number }; deal_completed: boolean; walk_out_completed: boolean; deal_result?: { message?: string }; state: GameState }>('/api/negotiate', { message: playerMessage });
+      const response = await fetch(`${API_BASE_URL}/api/negotiate/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+        body: JSON.stringify({ message: playerMessage })
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '谈判失败。');
+      if (!response.body) throw new Error('当前浏览器不支持流式谈判。');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const streamResult: { finalPayload?: NegotiationStreamPayload } = {};
+      let streamedDialogue = '';
+      const updateStreamedDialogue = (content: string) => {
+        streamedDialogue += content;
+        setNegotiatingMsg(null);
+        setState((current) => {
+          if (!current?.active_customer) return current;
+          const history = [...current.active_customer.dialogue_history];
+          const last = history[history.length - 1];
+          if (last?.role === 'customer') {
+            history[history.length - 1] = { role: 'customer', content: streamedDialogue };
+          } else {
+            history.push({ role: 'customer', content: streamedDialogue });
+          }
+          return { ...current, active_customer: { ...current.active_customer, dialogue_history: history } };
+        });
+      };
+      const handleLine = (line: string) => {
+        if (!line.trim()) return;
+        const eventData = JSON.parse(line);
+        if (eventData.type === 'chunk') updateStreamedDialogue(String(eventData.content || ''));
+        if (eventData.type === 'final') streamResult.finalPayload = eventData.payload as NegotiationStreamPayload;
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        lines.forEach(handleLine);
+      }
+      buffer += decoder.decode();
+      if (buffer.trim()) handleLine(buffer);
+      if (!streamResult.finalPayload) throw new Error('谈判流式响应未完成。');
+
+      const data = streamResult.finalPayload;
       setState(data.state);
       setNegotiatingMsg(null);
       if (data.negotiation.patience_change < 0) playSound('patience_down');

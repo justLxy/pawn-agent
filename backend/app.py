@@ -1,8 +1,10 @@
+import json
 import logging
 from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from env_loader import load_env_file
@@ -169,6 +171,53 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
     }
 
 
+def apply_negotiation_outcome(
+    player: Dict[str, Any],
+    state: GameStateManager,
+    ai_response: Dict[str, Any],
+    player_offer: Optional[int],
+    intent: str,
+) -> Dict[str, Any]:
+    customer = state.active_customer
+    if not customer:
+        raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
+    dialogue = ai_response["dialogue"]
+    new_offer = int(ai_response["new_offer"])
+    patience_change = int(ai_response["patience_change"])
+    accepted = bool(ai_response["accepted"])
+    walk_out = bool(ai_response["walk_out"])
+    if accepted:
+        patience_change = max(0, patience_change)
+
+    customer.patience = max(0, customer.patience + patience_change)
+    if customer.patience == 0:
+        walk_out = True
+    customer.dialogue_history.append({"role": "customer", "content": dialogue})
+    customer.current_offer = new_offer
+    state.add_skill_xp("negotiation", 12)
+    if intent in ["persuade", "question"]:
+        state.add_skill_xp("charm", 8)
+
+    negotiation_summary = {
+        "dialogue": dialogue,
+        "patience_change": patience_change,
+        "remaining_patience": customer.patience,
+        "new_offer": new_offer,
+        "accepted": accepted,
+        "walk_out": walk_out,
+        "parsed_offer": ai_response.get("parsed_offer", player_offer),
+        "intent": intent,
+    }
+
+    if accepted:
+        deal_result = state.deal()
+        return {"negotiation": negotiation_summary, "deal_completed": True, "deal_result": deal_result, "state": commit_state(player, state)}
+    if walk_out:
+        state.select_next_customer()
+        return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
+    return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
+
+
 @app.post("/api/auth/register")
 async def register(req: AuthRequest):
     auth = register_player(req.username, req.password, req.shop_name or req.username)
@@ -280,42 +329,77 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         dialogue_history=customer.dialogue_history,
     )
     ai_response = sanitize_negotiation_result(state, ai_response, player_offer, intent)
+    return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
 
-    dialogue = ai_response["dialogue"]
-    new_offer = int(ai_response["new_offer"])
-    patience_change = int(ai_response["patience_change"])
-    accepted = bool(ai_response["accepted"])
-    walk_out = bool(ai_response["walk_out"])
-    if accepted:
-        patience_change = max(0, patience_change)
 
-    customer.patience = max(0, customer.patience + patience_change)
-    if customer.patience == 0:
-        walk_out = True
-    customer.dialogue_history.append({"role": "customer", "content": dialogue})
-    customer.current_offer = new_offer
-    state.add_skill_xp("negotiation", 12)
-    if intent in ["persuade", "question"]:
-        state.add_skill_xp("charm", 8)
+@app.post("/api/negotiate/stream")
+async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(current_player)):
+    state = await get_engine(player)
+    if not state.active_customer:
+        raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
+    if state.day_ended:
+        raise HTTPException(status_code=400, detail="今天营业已结束，请等明天开门。")
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="请输入谈判内容。")
 
-    negotiation_summary = {
-        "dialogue": dialogue,
-        "patience_change": patience_change,
-        "remaining_patience": customer.patience,
-        "new_offer": new_offer,
-        "accepted": accepted,
-        "walk_out": walk_out,
-        "parsed_offer": ai_response.get("parsed_offer", player_offer),
-        "intent": intent,
-    }
+    customer = state.active_customer
+    parsed = await ai_client.parse_player_negotiation(req.message, req.player_offer)
+    player_offer = parsed.get("offer")
+    intent = parsed.get("intent", "persuade")
+    if player_offer is not None and player_offer <= 0:
+        raise HTTPException(status_code=400, detail="报价必须大于0元！")
+    if customer.role == "seller" and player_offer is not None and player_offer > state.cash:
+        raise HTTPException(status_code=400, detail=f"现金不足，你当前最多只能出 ${state.cash}。")
 
-    if accepted:
-        deal_result = state.deal()
-        return {"negotiation": negotiation_summary, "deal_completed": True, "deal_result": deal_result, "state": commit_state(player, state)}
-    if walk_out:
-        state.select_next_customer()
-        return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
-    return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
+    player_message = req.message.strip()
+    customer.dialogue_history.append({"role": "player", "content": player_message})
+    effective_offer = player_offer if player_offer is not None else customer.current_offer
+    rule_response = ai_client._calculate_algorithmic_fallback(
+        role=customer.role,
+        trait=customer.trait,
+        limit_price=customer.limit_price,
+        current_offer=customer.current_offer,
+        player_offer=effective_offer,
+        patience=customer.patience,
+        intent=intent,
+        negotiation_level=state.skills["negotiation"]["level"],
+        charm_level=state.skills["charm"]["level"],
+    )
+    ai_response = sanitize_negotiation_result(state, rule_response, player_offer, intent)
+
+    async def stream():
+        def line(payload: Dict[str, Any]) -> str:
+            return json.dumps(payload, ensure_ascii=False) + "\n"
+
+        yield line({"type": "start"})
+        streamed_dialogue = ""
+        try:
+            async for chunk in ai_client.stream_negotiation_dialogue(
+                customer_name=customer.name,
+                trait_desc=customer.to_dict()["trait_desc"],
+                role=customer.role,
+                item_name=customer.item.name,
+                player_message=player_message,
+                new_offer=int(ai_response["new_offer"]),
+                accepted=bool(ai_response["accepted"]),
+                walk_out=bool(ai_response["walk_out"]),
+                dialogue_history=customer.dialogue_history,
+            ):
+                streamed_dialogue += chunk
+                yield line({"type": "chunk", "content": chunk})
+        except Exception as exc:
+            logger.warning("Negotiation dialogue stream failed: %s", exc)
+
+        if not streamed_dialogue.strip():
+            streamed_dialogue = str(ai_response.get("dialogue") or "嗯，我再想想这个价。")
+            for index in range(0, len(streamed_dialogue), 8):
+                yield line({"type": "chunk", "content": streamed_dialogue[index:index + 8]})
+
+        ai_response["dialogue"] = streamed_dialogue.strip()[:320]
+        payload = apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
+        yield line({"type": "final", "payload": payload})
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @app.post("/api/deal")
