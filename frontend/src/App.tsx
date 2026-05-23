@@ -660,7 +660,7 @@ export default function App() {
           <NavButton tab="upgrades" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Crown className="w-5 h-5" />} label="当铺升级" />
         </aside>
 
-        <main className="flex-1 bg-[#0D0F12] p-4 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col">
+        <main className="flex-1 bg-[#0D0F12] p-4 pb-28 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col">
           {activeTab === 'lobby' && (
             <LobbyTab
               state={state}
@@ -726,6 +726,7 @@ export default function App() {
           <InfoSidebar state={state} />
         </aside>
       </div>
+      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
     </div>
   );
 }
@@ -787,6 +788,34 @@ function Toast({ type, message, onClose }: { type: 'error' | 'success'; message:
 
 function NavButton({ activeTab, icon, label, setActiveTab, tab }: { activeTab: ActiveTab; icon: React.ReactNode; label: string; setActiveTab: (tab: ActiveTab) => void; tab: ActiveTab }) {
   return <button onClick={() => setActiveTab(tab)} className={`nav-item ${activeTab === tab ? 'active' : ''}`}>{icon}<span>{label}</span></button>;
+}
+
+function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiveTab: (tab: ActiveTab) => void }) {
+  const items: Array<{ tab: ActiveTab; label: string; icon: React.ReactNode }> = [
+    { tab: 'lobby', label: '大堂', icon: <Store className="w-5 h-5" /> },
+    { tab: 'inventory', label: '仓库', icon: <Briefcase className="w-5 h-5" /> },
+    { tab: 'market', label: '市场', icon: <Landmark className="w-5 h-5" /> },
+    { tab: 'leaderboard', label: '排行', icon: <ListOrdered className="w-5 h-5" /> },
+    { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
+    { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
+    { tab: 'upgrades', label: '升级', icon: <Crown className="w-5 h-5" /> }
+  ];
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#14171C]/95 backdrop-blur border-t border-[#2A2D34] px-2 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
+      <div className="flex gap-2 overflow-x-auto custom-scrollbar">
+        {items.map((item) => (
+          <button
+            key={item.tab}
+            onClick={() => setActiveTab(item.tab)}
+            className={`min-w-[72px] h-[58px] flex flex-col items-center justify-center gap-1 border-b font-sans text-xs transition-colors ${activeTab === item.tab ? 'text-[#C8A97E] border-[#C8A97E] bg-[rgba(200,169,126,0.08)]' : 'text-[#9E9E9E] border-transparent'}`}
+          >
+            {item.icon}
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
 }
 
 function LobbyTab({ appraising, chatEndRef, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setMessage, state }: { state: GameState; loading: boolean; appraising: boolean; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
