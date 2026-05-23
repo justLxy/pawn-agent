@@ -82,8 +82,6 @@ interface Customer {
   persuasion_points: string[];
   patience: number;
   current_offer: number;
-  initial_offer: number;
-  limit_price: number;
   dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
 }
 
@@ -940,21 +938,25 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
   const appraisalDiscount = 0.08 * (state.facilities.appraisal_room - 1) + (state.staff.appraiser ? 0.35 : 0);
   const appraisalCost = Math.max(80, Math.round(appraisalBaseCost * selectedAppraisal.cost_multiplier * (1 - Math.min(0.65, appraisalDiscount))));
   const accuracyText = appraisalMethod === 'visual' ? '准确率较低' : appraisalMethod === 'forensic' ? '准确率最高' : '准确率均衡';
-  const tradeMode = customer.role === 'seller' ? '收购' : '出售';
-  const tradeHint = customer.role === 'seller' ? '顾客带货来卖，你要压到合适收购价。' : '顾客来店里买货，你要争取卖出高价。';
-  const limitLabel = customer.role === 'seller' ? '顾客心理底价' : '顾客心理上限';
+  const tradeMode = customer.role === 'seller'
+    ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', action: '你出价' }
+    : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', action: '你开价' };
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
-      <div className="text-center font-sans text-xs mb-6 space-y-2">
-        <div className="text-[#616161]">{customer.name} 走进店里，{customer.backstory}</div>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <span className="text-[#C8A97E] font-bold tracking-widest">{tradeMode}</span>
-          <span className="text-[#9E9E9E]">{tradeHint}</span>
-          <span className="text-[#616161]">{customer.trait_cn}</span>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
-          <span className="text-[#E0E0E0]">当前报价 <b className="text-[#C8A97E]">${customer.current_offer.toLocaleString()}</b></span>
-          <span className="text-[#E0E0E0]">{limitLabel} <b className="text-[#D4B88A]">${customer.limit_price.toLocaleString()}</b></span>
+      <div className="mb-6 border-y border-[#2A2D34] py-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-[#C8A97E] text-sm tracking-[0.25em]">{tradeMode.label}</span>
+              <span className="text-[#616161] text-xs">{customer.trait_cn} / 耐心 {customer.patience}</span>
+            </div>
+            <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.name} 走进店里，{customer.backstory}</p>
+            <p className="text-[#616161] text-xs mt-1">{tradeMode.tone}</p>
+          </div>
+          <div className="text-left sm:text-right">
+            <div className="text-xs text-[#616161]">{tradeMode.action}</div>
+            <div className="text-[#C8A97E] text-[28px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
