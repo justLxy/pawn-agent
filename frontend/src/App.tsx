@@ -1037,7 +1037,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
     : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
-      <div className="mb-6 border-y border-[#2A2D34] py-4">
+      <div className="mb-6 border-b border-[#2A2D34] pb-4 pt-4 md:pt-8 -mt-4 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans">
           <div>
             <div className="flex items-center gap-3 mb-1">
