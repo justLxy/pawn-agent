@@ -131,6 +131,44 @@ def state_response(player: Dict[str, Any], state: GameStateManager, result_key: 
     return {result_key: result, "state": commit_state(player, state)}
 
 
+def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, Any], player_offer: Optional[int], intent: str) -> Dict[str, Any]:
+    customer = state.active_customer
+    if not customer:
+        return ai_response
+    skill_relief = 0.015 * state.skills["negotiation"]["level"] + 0.01 * state.skills["charm"]["level"]
+    effective_offer = player_offer
+    if effective_offer is None and intent == "accept":
+        effective_offer = customer.current_offer
+    if effective_offer is not None:
+        effective_offer = int(effective_offer)
+    if customer.role == "seller":
+        acceptable_price = int(customer.limit_price * (1 - skill_relief))
+        upper = max(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
+        if effective_offer is not None and effective_offer >= acceptable_price:
+            accepted = True
+            new_offer = effective_offer
+        else:
+            accepted = False
+            new_offer = min(upper, max(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
+    else:
+        acceptable_price = int(customer.limit_price * (1 + skill_relief))
+        lower = min(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
+        if effective_offer is not None and effective_offer <= acceptable_price:
+            accepted = True
+            new_offer = effective_offer
+        else:
+            accepted = False
+            new_offer = max(lower, min(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
+    return {
+        **ai_response,
+        "dialogue": str(ai_response.get("dialogue", ""))[:320],
+        "new_offer": max(1, int(new_offer)),
+        "accepted": accepted,
+        "walk_out": False if accepted else bool(ai_response.get("walk_out", False)),
+        "parsed_offer": effective_offer,
+    }
+
+
 @app.post("/api/auth/register")
 async def register(req: AuthRequest):
     auth = register_player(req.username, req.password, req.shop_name or req.username)
@@ -241,25 +279,15 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         charm_level=state.skills["charm"]["level"],
         dialogue_history=customer.dialogue_history,
     )
+    ai_response = sanitize_negotiation_result(state, ai_response, player_offer, intent)
 
     dialogue = ai_response["dialogue"]
     new_offer = int(ai_response["new_offer"])
     patience_change = int(ai_response["patience_change"])
     accepted = bool(ai_response["accepted"])
     walk_out = bool(ai_response["walk_out"])
-    effective_offer = ai_response.get("parsed_offer", player_offer)
-    if effective_offer is not None:
-        effective_offer = int(effective_offer)
-        skill_relief = 0.015 * state.skills["negotiation"]["level"] + 0.01 * state.skills["charm"]["level"]
-        if customer.role == "seller":
-            rule_accepted = effective_offer >= int(customer.limit_price * (1 - skill_relief))
-        else:
-            rule_accepted = effective_offer <= int(customer.limit_price * (1 + skill_relief))
-        if rule_accepted:
-            accepted = True
-            walk_out = False
-            new_offer = effective_offer
-            patience_change = max(0, patience_change)
+    if accepted:
+        patience_change = max(0, patience_change)
 
     customer.patience = max(0, customer.patience + patience_change)
     if customer.patience == 0:
