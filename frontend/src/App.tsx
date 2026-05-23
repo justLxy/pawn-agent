@@ -532,10 +532,13 @@ export default function App() {
     setLoading(true);
     try {
       const data = await apiPost<Record<string, any>>(path, body);
-      if (data.state) setState(data.state as GameState);
+      const nextState = data.state || (typeof data.cash === 'number' && typeof data.day === 'number' ? data : null);
+      if (nextState) setState(nextState as GameState);
       playSound(sound);
+      setErrorMsg(null);
       setSuccessMsg(data[resultKey]?.message || fallback);
     } catch (err) {
+      setSuccessMsg(null);
       setErrorMsg(err instanceof Error ? err.message : '操作失败。');
     } finally {
       setLoading(false);
@@ -871,12 +874,12 @@ function LobbyTab({ appraising, chatEndRef, loading, message, negotiatingMsg, on
             <div className="space-y-2">{state.pending_event.choices.map((choice) => <button key={choice.id} onClick={() => onAction('/api/event/choice', { choice_id: choice.id }, 'event_result', '事件已处理。')} className="w-full text-left py-3 border-b border-[#2A2D34] hover:text-[#C8A97E]">{choice.label}<span className="block text-xs text-[#616161]">{choice.effect}</span></button>)}</div>
           </div>
         )}
-        <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={!!state.pending_event} className="btn-primary w-full md:w-auto">开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></button>
+        <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={loading || !!state.pending_event} className="btn-primary w-full md:w-auto">开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></button>
       </div>
     );
   }
   if (!customer) {
-    return <div className="flex-1 flex flex-col items-center justify-center text-center"><Clock className="w-12 h-12 text-[#616161] mb-6" /><h1 className="text-[32px] font-bold mb-4">今日打烊</h1><button onClick={() => onAction('/api/end_day', undefined, 'summary', '结算完成。', 'deal')} className="btn-primary">营业结算</button></div>;
+    return <div className="flex-1 flex flex-col items-center justify-center text-center"><Clock className="w-12 h-12 text-[#616161] mb-6" /><h1 className="text-[32px] font-bold mb-4">今日打烊</h1><button onClick={() => onAction('/api/end_day', undefined, 'summary', '结算完成。', 'deal')} disabled={loading} className="btn-primary">营业结算</button></div>;
   }
   const quickOffer = (ratio: number) => {
     const price = Math.max(1, Math.round(customer.current_offer * ratio));

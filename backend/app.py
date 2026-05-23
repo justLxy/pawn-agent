@@ -388,7 +388,7 @@ async def next_day(player: Dict[str, Any] = Depends(current_player)):
     result = await state.async_advance_to_next_day(ai_client)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    return commit_state(player, state)
+    return {"result": {"success": True, "message": "新的一天开始了。"}, "state": commit_state(player, state)}
 
 
 @app.get("/api/leaderboard")
