@@ -351,7 +351,7 @@ async def undisplay_item(req: ItemRequest, player: Dict[str, Any] = Depends(curr
 @app.post("/api/repair")
 async def repair_item(req: ItemRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(player, state, "repair_result", await state.async_start_repair(ai_client, req.item_id, req.method or "standard"))
+    return state_response(player, state, "repair_result", state.start_repair(req.item_id, req.method or "standard"))
 
 
 @app.post("/api/sell")
