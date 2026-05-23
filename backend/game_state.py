@@ -480,12 +480,18 @@ class GameStateManager:
         return customer
 
     async def async_advance_to_next_day(self, ai_client):
+        import asyncio
+
         if self.pending_event:
             return {"error": "还有未处理的随机事件，请先做出选择。"}
         self.day += 1
         self.initialize_day()
-        await self.async_initialize_day(ai_client)
-        return {"success": True}
+        try:
+            await asyncio.wait_for(self.async_initialize_day(ai_client), timeout=3.0)
+            return {"success": True, "message": "新的一天开始了。"}
+        except Exception:
+            self.initialize_day_fast()
+            return {"success": True, "message": "新的一天开始了。AI 预生成较慢，已先用本地顾客开门。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:
