@@ -68,6 +68,11 @@ class FireRequest(BaseModel):
 
 class ItemRequest(BaseModel):
     item_id: str
+    method: Optional[str] = None
+
+
+class AppraiseRequest(BaseModel):
+    method: Optional[str] = "standard"
 
 
 class FacilityRequest(BaseModel):
@@ -298,9 +303,9 @@ async def reject_customer(player: Dict[str, Any] = Depends(current_player)):
 
 
 @app.post("/api/appraise")
-async def appraise_item(player: Dict[str, Any] = Depends(current_player)):
+async def appraise_item(req: Optional[AppraiseRequest] = None, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(player, state, "appraise_result", state.appraise_active_item())
+    return state_response(player, state, "appraise_result", await state.async_appraise_active_item(ai_client, (req.method if req else "standard") or "standard"))
 
 
 @app.post("/api/display")
@@ -318,7 +323,7 @@ async def undisplay_item(req: ItemRequest, player: Dict[str, Any] = Depends(curr
 @app.post("/api/repair")
 async def repair_item(req: ItemRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(player, state, "repair_result", state.start_repair(req.item_id))
+    return state_response(player, state, "repair_result", await state.async_start_repair(ai_client, req.item_id, req.method or "standard"))
 
 
 @app.post("/api/sell")
@@ -372,7 +377,7 @@ async def choose_event(req: EventChoiceRequest, player: Dict[str, Any] = Depends
 @app.post("/api/end_day")
 async def end_day(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    summary = state.end_day()
+    summary = await state.async_end_day(ai_client)
     if "error" in summary:
         raise HTTPException(status_code=400, detail=summary["error"])
     return {"summary": summary, "state": commit_state(player, state)}

@@ -98,6 +98,18 @@ RARITY_INFO = {
 CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
 
+APPRAISAL_METHODS = {
+    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.55, "accuracy_bonus": -0.08, "xp": 20, "desc": "速度快、费用低，但对高仿赝品不够稳。"},
+    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.0, "accuracy_bonus": 0.0, "xp": 35, "desc": "检查材质、工艺和市场记录，成本与准确度均衡。"},
+    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 1.8, "accuracy_bonus": 0.12, "xp": 55, "desc": "显微痕迹、来源链和多项检测一起做，贵但更可靠。"},
+}
+
+REPAIR_METHODS = {
+    "conservative": {"name_cn": "保守修复", "cost_multiplier": 0.85, "days_delta": 1, "success_bonus": 0.10, "xp": 25, "desc": "少动原貌，耗时略长，失败风险低。"},
+    "standard": {"name_cn": "标准修复", "cost_multiplier": 1.0, "days_delta": 0, "success_bonus": 0.0, "xp": 25, "desc": "按常规工序处理，成本和速度均衡。"},
+    "premium": {"name_cn": "高阶修复", "cost_multiplier": 1.55, "days_delta": -1, "success_bonus": 0.14, "xp": 40, "desc": "使用更好的材料和工艺，费用高但更快更稳。"},
+}
+
 
 def clamp(value: int, lower: int, upper: int) -> int:
     return max(lower, min(upper, value))
@@ -134,6 +146,10 @@ class Item:
         acquired_at: Optional[int] = None,
         last_trade_at: Optional[int] = None,
         showcase_price: Optional[int] = None,
+        era: Optional[str] = None,
+        damage_report: Optional[str] = None,
+        special_effects: Optional[List[str]] = None,
+        authentication_tips: Optional[List[str]] = None,
     ):
         self.id = item_id or str(uuid.uuid4())[:8]
         self.name = name
@@ -146,6 +162,10 @@ class Item:
         self.rarity = rarity if rarity in RARITY_INFO else "common"
         self.story = story or f"{name} 的来历仍有些扑朔迷离，等待进一步鉴定。"
         self.hidden_attrs = hidden_attrs or []
+        self.era = era or "年代不明"
+        self.damage_report = damage_report or f"{condition} 成色，细节仍需专业检查。"
+        self.special_effects = special_effects or []
+        self.authentication_tips = authentication_tips or []
         self.repair_difficulty = clamp(int(repair_difficulty), 1, 5)
 
         self.appraised_value: Optional[int] = None
@@ -155,6 +175,7 @@ class Item:
         self.selling_price: Optional[int] = None
         self.status = "stored"
         self.repair_days_remaining = 0
+        self.repair_success_bonus = 0.0
         self.display_slot: Optional[int] = None
         self.acquired_at = int(acquired_at if acquired_at is not None else time.time())
         self.last_trade_at = last_trade_at
@@ -180,8 +201,13 @@ class Item:
             "rarity_cn": RARITY_INFO[self.rarity]["name_cn"],
             "story": self.story,
             "hidden_attrs": self.hidden_attrs,
+            "era": self.era,
+            "damage_report": self.damage_report,
+            "special_effects": self.special_effects,
+            "authentication_tips": self.authentication_tips,
             "repair_difficulty": self.repair_difficulty,
             "repair_days_remaining": self.repair_days_remaining,
+            "repair_success_bonus": self.repair_success_bonus,
             "display_slot": self.display_slot,
             "acquired_at": self.acquired_at,
             "last_trade_at": self.last_trade_at,
@@ -206,6 +232,10 @@ class Item:
             acquired_at=data.get("acquired_at"),
             last_trade_at=data.get("last_trade_at"),
             showcase_price=data.get("showcase_price"),
+            era=data.get("era"),
+            damage_report=data.get("damage_report"),
+            special_effects=list(data.get("special_effects", [])),
+            authentication_tips=list(data.get("authentication_tips", [])),
         )
         item.appraised_value = data.get("appraised_value")
         item.is_appraised_fake = data.get("is_appraised_fake")
@@ -214,6 +244,7 @@ class Item:
         item.selling_price = data.get("selling_price")
         item.status = data.get("status", "stored")
         item.repair_days_remaining = int(data.get("repair_days_remaining", 0))
+        item.repair_success_bonus = float(data.get("repair_success_bonus", 0.0))
         item.display_slot = data.get("display_slot")
         return item
 
@@ -237,6 +268,8 @@ class Customer:
         current_offer: Optional[int] = None,
         initial_offer: Optional[int] = None,
         limit_price: Optional[int] = None,
+        transaction_prefs: Optional[List[str]] = None,
+        persuasion_points: Optional[List[str]] = None,
     ):
         self.name = name
         self.trait = trait if trait in CUSTOMER_TRAITS else "hesitant"
@@ -246,6 +279,8 @@ class Customer:
         self.appearance = appearance or random.choice(["穿着旧呢大衣", "拎着磨旧皮箱", "戴着金边眼镜", "神色匆忙", "衣着体面"])
         self.backstory = backstory or self._default_backstory()
         self.fraud_intent = bool(fraud_intent if fraud_intent is not None else (item.is_fake and self.trait in ["fraud", "hardball"]))
+        self.transaction_prefs = transaction_prefs or self._default_transaction_prefs()
+        self.persuasion_points = persuasion_points or self._default_persuasion_points()
         self.avatar_url = avatar_url or customer_avatar_url(self.name, self.trait)
         self.dialogue_history = dialogue_history or []
 
@@ -265,6 +300,25 @@ class Customer:
         if self.role == "seller":
             return f"{self.name} 说这件 {self.item.name} 是家里旧物，急需换成现金。"
         return f"{self.name} 最近在搜罗 {self.item.category} 藏品，听说你的铺子里有门道。"
+
+    def _default_transaction_prefs(self) -> List[str]:
+        if self.trait == "eager":
+            return ["希望尽快成交", "更看重现金到手速度"]
+        if self.trait == "hardball":
+            return ["不喜欢被明显压价", "需要看到专业依据"]
+        if self.trait == "fraud":
+            return ["回避细节追问", "偏好快速成交"]
+        return ["愿意听取来源与行情分析", "对礼貌沟通更有耐心"]
+
+    def _default_persuasion_points(self) -> List[str]:
+        points = {
+            "hardball": ["用市场行情说服", "强调长期合作"],
+            "eager": ["承诺立即付款", "减少流程拖延"],
+            "hesitant": ["解释鉴定依据", "给出安全感"],
+            "fraud": ["追问来源细节", "提出专业鉴定"],
+            "expert": ["引用成色和稀缺度", "尊重对方专业判断"],
+        }
+        return points.get(self.trait, ["保持礼貌", "给出合理理由"])
 
     def _calculate_prices(self) -> tuple[int, int]:
         perceived_value = self.item.market_value
@@ -304,6 +358,8 @@ class Customer:
             "appearance": self.appearance,
             "backstory": self.backstory,
             "fraud_intent": self.fraud_intent,
+            "transaction_prefs": self.transaction_prefs,
+            "persuasion_points": self.persuasion_points,
             "avatar_url": self.avatar_url,
             "patience": self.patience,
             "current_offer": self.current_offer,
@@ -331,6 +387,8 @@ class Customer:
             current_offer=data.get("current_offer"),
             initial_offer=data.get("initial_offer"),
             limit_price=data.get("limit_price"),
+            transaction_prefs=list(data.get("transaction_prefs") or []),
+            persuasion_points=list(data.get("persuasion_points") or []),
         )
 
 
@@ -412,7 +470,7 @@ class GameStateManager:
         if role == "seller":
             category = random.choice(list(ITEM_TEMPLATES.keys()))
             template = random.choice(ITEM_TEMPLATES[category])
-            item = self._generate_item_from_template(template, category, None, None)
+            item = self._generate_item_from_template(template, category)
         else:
             displayed = [i for i in saleable_items if i.status == "displayed"]
             item = random.choice(displayed or saleable_items)
@@ -444,7 +502,8 @@ class GameStateManager:
         }
         return random.choices(list(weights.keys()), weights=list(weights.values()), k=1)[0]
 
-    def _generate_item_from_template(self, template: Dict[str, Any], category: str, name: Optional[str], desc: Optional[str]) -> Item:
+    def _generate_item_from_template(self, template: Dict[str, Any], category: str, ai_item: Optional[Dict[str, Any]] = None) -> Item:
+        ai_item = ai_item or {}
         condition = random.choices(["Poor", "Good", "Mint"], weights=[35, 45, 20], k=1)[0]
         raw_value = template["mint_val"] if condition == "Mint" else template["good_val"] if condition == "Good" else template["poor_val"]
         rarity = self._choose_rarity()
@@ -453,22 +512,27 @@ class GameStateManager:
         if is_fake:
             value = max(15, int(value * random.uniform(0.10, 0.22)))
         market_value = int(value * self.market_trends.get(category, 1.0))
-        hidden_attrs = random.sample(
+        hidden_attrs = ai_item.get("hidden_attrs") if isinstance(ai_item.get("hidden_attrs"), list) else random.sample(
             ["有隐蔽修补痕迹", "附带可疑来源传闻", "材质检测点较多", "可能存在名人关联", "同类市场近期波动明显"],
             k=random.randint(1, 2),
         )
-        story = f"{desc or template['desc']} 据说几经转手，上一任藏家留下了含糊的来源说明。"
+        desc = str(ai_item.get("desc") or template["desc"])
+        story = str(ai_item.get("story") or f"{desc} 据说几经转手，上一任藏家留下了含糊的来源说明。")
         return Item(
-            name=name or template["name"],
+            name=str(ai_item.get("name") or template["name"]),
             category=category,
             condition=condition,
             is_fake=is_fake,
             actual_value=value,
             market_value=market_value,
-            description=desc or template["desc"],
+            description=desc,
             rarity=rarity,
             story=story,
-            hidden_attrs=hidden_attrs,
+            hidden_attrs=[str(value) for value in hidden_attrs],
+            era=str(ai_item.get("era") or random.choice(["民国时期", "20世纪末", "清末民初", "近现代", "年代仍待考证"])),
+            damage_report=str(ai_item.get("damage_report") or f"{condition} 成色，局部磨损与包浆需要进一步确认。"),
+            special_effects=[str(value) for value in (ai_item.get("special_effects") if isinstance(ai_item.get("special_effects"), list) else ["适合展示吸引收藏客"])],
+            authentication_tips=[str(value) for value in (ai_item.get("authentication_tips") if isinstance(ai_item.get("authentication_tips"), list) else ["观察材质老化", "核对款识与来源"])],
             repair_difficulty=random.randint(1, 5),
         )
 
@@ -482,13 +546,31 @@ class GameStateManager:
         if role == "seller":
             category = random.choice(list(ITEM_TEMPLATES.keys()))
             template = random.choice(ITEM_TEMPLATES[category])
-            ai_item = await ai_client.generate_item_details(category)
-            item = self._generate_item_from_template(template, category, ai_item.get("name"), ai_item.get("desc"))
+            preview_condition = random.choice(["Poor", "Good", "Mint"])
+            preview_rarity = self._choose_rarity()
+            ai_item = await ai_client.generate_deep_item(category, preview_rarity, preview_condition, template["good_val"])
+            if not ai_item:
+                ai_item = await ai_client.generate_item_details(category)
+            item = self._generate_item_from_template(template, category, ai_item)
         else:
             displayed = [i for i in saleable_items if i.status == "displayed"]
             item = random.choice(displayed or saleable_items)
 
-        customer = Customer(name=name, trait=trait, role=role, item=item, shop_level=self.shop_level, marketer_active=self.staff["marketer"])
+        profile = await ai_client.generate_customer_profile(role, trait, item.name, item.category)
+        customer = Customer(
+            name=str(profile.get("name") or name),
+            trait=trait,
+            role=role,
+            item=item,
+            shop_level=self.shop_level,
+            marketer_active=self.staff["marketer"],
+            age=profile.get("age"),
+            appearance=profile.get("appearance"),
+            backstory=profile.get("backstory"),
+            fraud_intent=profile.get("fraud_intent"),
+            transaction_prefs=[str(value) for value in profile.get("transaction_prefs", [])] if isinstance(profile.get("transaction_prefs"), list) else None,
+            persuasion_points=[str(value) for value in profile.get("persuasion_points", [])] if isinstance(profile.get("persuasion_points"), list) else None,
+        )
         charm_bonus = self.skills["charm"]["level"] // 2
         customer.patience = clamp(customer.patience + charm_bonus, 1, 8)
         return customer
@@ -510,32 +592,47 @@ class GameStateManager:
             data["xp"] -= data["level"] * 100
             data["level"] += 1
 
-    def appraise_active_item(self) -> Dict[str, Any]:
+    def appraise_active_item(self, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
         if not self.active_customer:
             return {"error": "当前没有顾客。"}
+        method_info = APPRAISAL_METHODS.get(method, APPRAISAL_METHODS["standard"])
         item = self.active_customer.item
         facility_level = self.facilities["appraisal_room"]
         skill_level = self.skills["appraisal"]["level"]
         base_cost = max(40, int(item.market_value * 0.025))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
-        cost = max(20, int(base_cost * (1 - min(0.65, discount))))
+        cost = max(10, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.65, discount))))
         if self.cash < cost:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
         self.cash -= cost
         self.daily_summary["upgrades"] += cost
-        accuracy = min(0.97, 0.65 + skill_level * 0.035 + facility_level * 0.04 + (0.15 if self.staff["appraiser"] else 0))
+        accuracy = min(0.98, max(0.35, 0.65 + skill_level * 0.035 + facility_level * 0.04 + (0.15 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
         detects_fake = item.is_fake and random.random() < accuracy
         item.is_appraised_fake = detects_fake if item.is_fake else False
-        error_margin = max(0.04, 0.24 - skill_level * 0.015 - facility_level * 0.02)
+        error_margin = max(0.03, 0.24 - skill_level * 0.015 - facility_level * 0.02 - max(0, method_info["accuracy_bonus"]))
         item.appraised_value = max(10, int(item.actual_value * random.uniform(1 - error_margin, 1 + error_margin)))
-        item.appraisal_notes = [
+        fallback_notes = [
+            f"鉴定方法：{method_info['name_cn']}。{method_info['desc']}",
             f"观察成色：{item.condition}，修复难度 {item.repair_difficulty}/5。",
             f"市场趋势系数：{self.market_trends.get(item.category, 1.0):.2f}。",
+            f"年代线索：{item.era}；损坏记录：{item.damage_report}",
             "鉴定结论仍受技能和设备影响。" if item.is_fake and not detects_fake else "关键鉴定点已记录。",
         ]
-        self.add_skill_xp("appraisal", 35)
-        return {"success": True, "cost": cost, "is_fake": item.is_appraised_fake, "appraised_value": item.appraised_value, "notes": item.appraisal_notes}
+        item.appraisal_notes = ai_notes or fallback_notes
+        self.add_skill_xp("appraisal", int(method_info["xp"]))
+        return {"success": True, "cost": cost, "method": method, "method_name": method_info["name_cn"], "is_fake": item.is_appraised_fake, "appraised_value": item.appraised_value, "notes": item.appraisal_notes}
+
+    async def async_appraise_active_item(self, ai_client, method: str = "standard") -> Dict[str, Any]:
+        result = self.appraise_active_item(method)
+        if "error" in result or not self.active_customer:
+            return result
+        item = self.active_customer.item
+        ai_notes = await ai_client.generate_appraisal_notes(item.to_dict(), method, bool(result["is_fake"]), int(result["appraised_value"]))
+        if ai_notes:
+            item.appraisal_notes = ai_notes
+            result["notes"] = ai_notes
+        return result
 
     def get_item(self, item_id: str) -> Optional[Item]:
         return next((item for item in self.inventory if item.id == item_id), None)
@@ -567,7 +664,7 @@ class GameStateManager:
         item.showcase_price = None
         return {"success": True, "message": f"【{item.name}】已收入仓库。"}
 
-    def start_repair(self, item_id: str) -> Dict[str, Any]:
+    def start_repair(self, item_id: str, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
         item = self.get_item(item_id)
         if not item:
             return {"error": "未找到该物品。"}
@@ -576,21 +673,45 @@ class GameStateManager:
         if item.condition == "Mint":
             return {"error": "该物品已经是最佳成色。"}
 
+        method_info = REPAIR_METHODS.get(method, REPAIR_METHODS["standard"])
         facility_level = self.facilities["restoration_workshop"]
         skill_level = self.skills["restoration"]["level"]
         cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
         if self.staff["restorer"]:
             cost = int(cost * 0.75)
+        cost = max(30, int(cost * method_info["cost_multiplier"]))
         if self.cash < cost:
             return {"error": f"修复资金不足，需要 ${cost}。"}
 
         self.cash -= cost
         item.status = "repairing"
         item.display_slot = None
-        item.repair_days_remaining = max(1, item.repair_difficulty - facility_level // 2)
+        item.repair_days_remaining = max(1, item.repair_difficulty - facility_level // 2 + int(method_info["days_delta"]))
+        item.repair_success_bonus = float(method_info["success_bonus"])
+        notes = ai_notes or [
+            f"修复方案：{method_info['name_cn']}。{method_info['desc']}",
+            f"损坏记录：{item.damage_report}",
+            f"预计 {item.repair_days_remaining} 天完成，工坊等级 Lv.{facility_level}。",
+        ]
+        item.appraisal_notes = list(item.appraisal_notes) + notes
         self.daily_summary["upgrades"] += cost
-        self.add_skill_xp("restoration", 25)
-        return {"success": True, "message": f"【{item.name}】已送入修复工坊，预计 {item.repair_days_remaining} 天完成。", "cost": cost}
+        self.add_skill_xp("restoration", int(method_info["xp"]))
+        return {"success": True, "message": f"【{item.name}】已按【{method_info['name_cn']}】送入修复工坊，预计 {item.repair_days_remaining} 天完成。", "cost": cost, "method": method, "method_name": method_info["name_cn"], "notes": notes}
+
+    async def async_start_repair(self, ai_client, item_id: str, method: str = "standard") -> Dict[str, Any]:
+        item = self.get_item(item_id)
+        if not item:
+            return {"error": "未找到该物品。"}
+        method_info = REPAIR_METHODS.get(method, REPAIR_METHODS["standard"])
+        facility_level = self.facilities["restoration_workshop"]
+        skill_level = self.skills["restoration"]["level"]
+        preview_cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
+        if self.staff["restorer"]:
+            preview_cost = int(preview_cost * 0.75)
+        preview_cost = max(30, int(preview_cost * method_info["cost_multiplier"]))
+        preview_days = max(1, item.repair_difficulty - facility_level // 2 + int(method_info["days_delta"]))
+        ai_notes = await ai_client.generate_repair_notes(item.to_dict(), method, preview_days, preview_cost)
+        return self.start_repair(item_id, method, ai_notes)
 
     def sell_item(self, item_id: str) -> Dict[str, Any]:
         item = self.get_item(item_id)
@@ -743,7 +864,7 @@ class GameStateManager:
             item.repair_days_remaining -= 1 + (1 if self.staff["restorer"] and random.random() < 0.35 else 0)
             if item.repair_days_remaining > 0:
                 continue
-            success_chance = min(0.95, 0.55 + self.skills["restoration"]["level"] * 0.035 + self.facilities["restoration_workshop"] * 0.06 + (0.12 if self.staff["restorer"] else 0))
+            success_chance = min(0.97, 0.55 + self.skills["restoration"]["level"] * 0.035 + self.facilities["restoration_workshop"] * 0.06 + (0.12 if self.staff["restorer"] else 0) + float(getattr(item, "repair_success_bonus", 0.0)))
             old_condition = item.condition
             if random.random() < success_chance:
                 item.condition = CONDITION_UPGRADE.get(item.condition, item.condition)
@@ -756,12 +877,13 @@ class GameStateManager:
                 events.append(f"修复意外：【{item.name}】修复失败，价值略有受损。")
             item.status = "stored"
             item.repair_days_remaining = 0
+            item.repair_success_bonus = 0.0
         return events
 
     def _generate_pending_event(self) -> Optional[Dict[str, Any]]:
         if random.random() > 0.42:
             return None
-        event_type = random.choice(["theft", "celebrity", "market", "legal", "staff"])
+        event_type = random.choice(["theft", "scam", "celebrity", "market", "legal", "staff"])
         if event_type == "theft":
             return {
                 "id": str(uuid.uuid4())[:8],
@@ -770,6 +892,16 @@ class GameStateManager:
                 "choices": [
                     {"id": "guard", "label": "让保安和安全系统处理", "effect": "安全等级越高，损失越低。"},
                     {"id": "cash", "label": "花钱请街坊巡夜", "effect": "支付一笔费用，但基本避免损失。"},
+                ],
+            }
+        if event_type == "scam":
+            return {
+                "id": str(uuid.uuid4())[:8],
+                "title": "可疑典当",
+                "description": "一名顾客留下了过于完美的来源故事，但票据编号和物品磨损对不上。",
+                "choices": [
+                    {"id": "inspect", "label": "追加鉴定并追问来源", "effect": "花费少量现金，可能避免诈骗并获得鉴定经验。"},
+                    {"id": "decline", "label": "直接谢绝这笔买卖", "effect": "稳妥避险，但可能错过机会。"},
                 ],
             }
         if event_type == "celebrity":
@@ -812,12 +944,85 @@ class GameStateManager:
             ],
         }
 
+    def _normalize_ai_event(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not event or not isinstance(event.get("choices"), list):
+            return None
+        choices = []
+        for index, choice in enumerate(event["choices"][:2]):
+            if not isinstance(choice, dict):
+                continue
+            choices.append(
+                {
+                    "id": str(choice.get("id") or f"choice_{index + 1}"),
+                    "label": str(choice.get("label") or "谨慎处理"),
+                    "effect": str(choice.get("effect") or "结果取决于当铺当前状态。"),
+                    "cash_delta": int(choice.get("cash_delta") or 0),
+                    "reputation_delta": int(choice.get("reputation_delta") or 0),
+                    "skill": choice.get("skill") if choice.get("skill") in SKILL_INFO else None,
+                    "skill_xp": int(choice.get("skill_xp") or 0),
+                }
+            )
+        if len(choices) < 2:
+            return None
+        return {
+            "id": str(uuid.uuid4())[:8],
+            "title": str(event.get("title") or "突发事件"),
+            "description": str(event.get("description") or "当铺里发生了一件需要你判断的事。"),
+            "type": str(event.get("type") or "ai"),
+            "ai_generated": True,
+            "choices": choices,
+        }
+
+    async def async_end_day(self, ai_client) -> Dict[str, Any]:
+        summary = self.end_day()
+        if "error" in summary:
+            return summary
+        if self.pending_event:
+            ai_event = self._normalize_ai_event(
+                await ai_client.generate_random_event(
+                    {
+                        "shop_level": self.shop_level,
+                        "cash": self.cash,
+                        "day": self.day,
+                        "reputation": self.reputation,
+                    }
+                )
+            )
+            if ai_event:
+                self.pending_event = ai_event
+                if self.daily_summary["events"] and self.daily_summary["events"][-1].startswith("待处理事件："):
+                    self.daily_summary["events"][-1] = f"待处理事件：{ai_event['title']}。"
+        return self.daily_summary
+
     def resolve_event(self, choice_id: str) -> Dict[str, Any]:
         if not self.pending_event:
             return {"error": "当前没有待处理事件。"}
         event = self.pending_event
         title = event["title"]
         message = ""
+        if event.get("ai_generated"):
+            choice = next((item for item in event.get("choices", []) if item.get("id") == choice_id), None)
+            if not choice:
+                return {"error": "未知的事件选择。"}
+            cash_delta = int(choice.get("cash_delta") or 0)
+            reputation_delta = int(choice.get("reputation_delta") or 0)
+            self.cash += cash_delta
+            self.reputation += reputation_delta
+            if cash_delta > 0:
+                self.daily_summary["revenue"] += cash_delta
+            skill = choice.get("skill")
+            if skill in SKILL_INFO:
+                self.add_skill_xp(skill, int(choice.get("skill_xp") or 0))
+            message = f"{choice.get('label')}：{choice.get('effect')}"
+            if cash_delta:
+                message += f"，现金{'+' if cash_delta > 0 else ''}${cash_delta}"
+            if reputation_delta:
+                message += f"，声誉{'+' if reputation_delta > 0 else ''}{reputation_delta}"
+            self.daily_summary["events"].append(f"{title}：{message}")
+            self.pending_event = None
+            self.daily_summary["ending_cash"] = self.cash
+            self.daily_summary["net_profit"] = self.cash - self.daily_summary.get("starting_cash", self.cash)
+            return {"success": True, "message": message}
         if title == "夜间异响":
             if choice_id == "guard":
                 mitigation = self.facilities["security"] + (2 if self.staff["guard"] else 0)
@@ -828,6 +1033,19 @@ class GameStateManager:
                 loss = random.randint(250, 650)
                 self.cash -= loss
                 message = f"街坊帮忙巡夜，支付了 ${loss} 茶水钱。"
+        elif title == "可疑典当":
+            if choice_id == "inspect":
+                cost = random.randint(120, 360)
+                self.cash -= cost
+                self.add_skill_xp("appraisal", 45)
+                if random.random() < 0.65 + self.skills["appraisal"]["level"] * 0.03:
+                    self.reputation += 2
+                    message = f"你识破了伪造来源，支出 ${cost}，声誉提升。"
+                else:
+                    message = f"追加鉴定没有找到实锤，但你支出 ${cost} 稳住了风险。"
+            else:
+                self.add_skill_xp("negotiation", 20)
+                message = "你礼貌谢绝了这笔可疑交易，没有留下风险。"
         elif title == "名人来访":
             gain = random.randint(500, 1800) if choice_id == "host" else random.randint(250, 700)
             self.cash += gain
@@ -933,6 +1151,8 @@ class GameStateManager:
             "shop_upgrade_cost": SHOP_UPGRADE_COSTS.get(self.shop_level + 1, {}).get("cost", None),
             "shop_upgrade_desc": SHOP_UPGRADE_COSTS.get(self.shop_level + 1, {}).get("desc", None),
             "staff_info": STAFF_TYPES,
+            "appraisal_methods": APPRAISAL_METHODS,
+            "repair_methods": REPAIR_METHODS,
         }
 
     def facility_info_for_state(self) -> Dict[str, Dict[str, Any]]:

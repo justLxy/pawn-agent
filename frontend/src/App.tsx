@@ -57,8 +57,13 @@ interface Item {
   rarity_cn: string;
   story: string;
   hidden_attrs: string[];
+  era: string;
+  damage_report: string;
+  special_effects: string[];
+  authentication_tips: string[];
   repair_difficulty: number;
   repair_days_remaining: number;
+  repair_success_bonus: number;
   display_slot: number | null;
   showcase_price: number | null;
 }
@@ -73,6 +78,8 @@ interface Customer {
   appearance: string;
   backstory: string;
   avatar_url: string;
+  transaction_prefs: string[];
+  persuasion_points: string[];
   patience: number;
   current_offer: number;
   dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
@@ -91,6 +98,8 @@ interface GameState {
   sold_items: Item[];
   staff: Record<string, boolean>;
   staff_info: Record<string, { name_cn: string; hire_cost: number; daily_salary: number; desc: string }>;
+  appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; xp: number }>;
+  repair_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; days_delta: number; success_bonus: number; xp: number }>;
   skills: Record<string, { level: number; xp: number }>;
   skill_info: Record<string, { name_cn: string; desc: string }>;
   facilities: Record<string, number>;
@@ -235,6 +244,8 @@ export default function App() {
   const [loanAmount, setLoanAmount] = useState(3000);
   const [listingPrice, setListingPrice] = useState<Record<string, number>>({});
   const [showcasePrice, setShowcasePrice] = useState<Record<string, number>>({});
+  const [appraisalMethod, setAppraisalMethod] = useState('standard');
+  const [repairMethod, setRepairMethod] = useState<Record<string, string>>({});
   const [boardType, setBoardType] = useState<BoardType>('assets');
   const [leaderboard, setLeaderboard] = useState<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null>(null);
   const [showcase, setShowcase] = useState<ShowcaseData | null>(null);
@@ -515,6 +526,7 @@ export default function App() {
       setNegotiatingMsg(null);
       setListingPrice({});
       setShowcasePrice({});
+      setRepairMethod({});
       setShowcase(null);
       setLeaderboard(null);
       setListings([]);
@@ -550,11 +562,11 @@ export default function App() {
   const appraiseActiveItem = async () => {
     setAppraising(true);
     try {
-      const data = await apiPost<{ appraise_result: { cost: number; is_fake: boolean; appraised_value: number; notes?: string[] }; state: GameState }>('/api/appraise');
+      const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; is_fake: boolean; appraised_value: number; notes?: string[] }; state: GameState }>('/api/appraise', { method: appraisalMethod });
       setState(data.state);
       playSound('appraise');
       const result = data.appraise_result;
-      setSuccessMsg(`鉴定完成：${result.is_fake ? '赝品' : '正品'}，估值 $${result.appraised_value.toLocaleString()}，花费 $${result.cost.toLocaleString()}。`);
+      setSuccessMsg(`${result.method_name || '鉴定'}完成：${result.is_fake ? '赝品' : '正品'}，估值 $${result.appraised_value.toLocaleString()}，花费 $${result.cost.toLocaleString()}。`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '鉴定失败。');
     } finally {
@@ -706,7 +718,9 @@ export default function App() {
               message={message}
               negotiatingMsg={negotiatingMsg}
               appraising={appraising}
+              appraisalMethod={appraisalMethod}
               setMessage={setMessage}
+              setAppraisalMethod={setAppraisalMethod}
               onNegotiate={negotiate}
               onAppraise={appraiseActiveItem}
               chatEndRef={chatEndRef}
@@ -718,7 +732,9 @@ export default function App() {
               items={state.inventory}
               listingPrice={listingPrice}
               showcasePrice={showcasePrice}
+              repairMethod={repairMethod}
               setListingPrice={setListingPrice}
+              setRepairMethod={setRepairMethod}
               setShowcasePrice={setShowcasePrice}
               onAction={runStateAction}
               onList={listToMarket}
@@ -872,7 +888,7 @@ function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () =>
   );
 }
 
-function LobbyTab({ appraising, chatEndRef, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setMessage, state }: { state: GameState; loading: boolean; appraising: boolean; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
   if (state.day_ended) {
     return (
@@ -920,7 +936,14 @@ function LobbyTab({ appraising, chatEndRef, loading, message, negotiatingMsg, on
       <div className="border-t border-[#2A2D34] pt-4">
         <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.85)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(1.12)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
         <form onSubmit={onNegotiate} className="flex gap-3"><input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." /><button disabled={loading} className="btn-primary">谈判</button></form>
-        <div className="flex gap-2 mt-3"><button onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button><button onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button><button onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button></div>
+        <div className="flex flex-col sm:flex-row gap-2 mt-3">
+          <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[150px]">
+            {Object.entries(state.appraisal_methods).map(([key, info]) => <option key={key} value={key}>{info.name_cn}</option>)}
+          </select>
+          <button onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
+          <button onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
+          <button onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
+        </div>
       </div>
     </div>
   );
@@ -945,7 +968,7 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
   );
 }
 
-function InventoryTab({ items, listingPrice, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setShowcasePrice }: { items: Item[]; listingPrice: Record<string, number>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void> }) {
+function InventoryTab({ items, listingPrice, repairMethod, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setShowcasePrice }: { items: Item[]; listingPrice: Record<string, number>; repairMethod: Record<string, string>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void> }) {
   const activeItems = items.filter((item) => item.status !== 'sold');
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
@@ -959,7 +982,8 @@ function InventoryTab({ items, listingPrice, showcasePrice, onAction, onClearSho
             {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={showcasePrice[item.id] ?? item.showcase_price ?? item.market_value} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || item.market_value })} />}
             {item.status === 'displayed' && <button onClick={() => onSetShowcasePrice(item)} className="btn-secondary !h-9 !px-4">橱窗价</button>}
             {item.status === 'displayed' && item.showcase_price && <button onClick={() => onClearShowcasePrice(item)} className="btn-secondary !h-9 !px-4">取消价</button>}
-            <button onClick={() => onAction('/api/repair', { item_id: item.id }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
+            <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="input-field !h-9 !px-3 w-[120px]"><option value="conservative">保守修复</option><option value="standard">标准修复</option><option value="premium">高阶修复</option></select>
+            <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
           </div>
         </div>
@@ -1077,13 +1101,22 @@ function InfoSidebar({ state }: { state: GameState }) {
     <>
       <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">资产</h3>
       <div className="space-y-3 text-sm mb-10"><Stat label="现金" value={`$${state.cash.toLocaleString()}`} /><Stat label="声誉" value={state.reputation} /><Stat label="盈利" value={`$${state.total_profit.toLocaleString()}`} /><Stat label="贷款" value={`$${state.loan.principal.toLocaleString()}`} /></div>
-      {customer && <><h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">顾客</h3><div className="flex items-center gap-3 mb-8"><img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34]" referrerPolicy="no-referrer" /><div><div className="font-bold">{customer.name}</div><div className="text-xs text-[#9E9E9E]">{customer.trait_cn} / 耐心 {customer.patience}</div></div></div><h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">物证</h3><div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} /><Stat label="市场估值" value={`$${customer.item.market_value.toLocaleString()}`} />{customer.item.appraised_value !== null && <Stat label="鉴定估值" value={`$${customer.item.appraised_value.toLocaleString()}`} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={customer.item.is_appraised_fake ? '赝品' : '正品'} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p>{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div></>}
+      {customer && <>
+        <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">顾客</h3>
+        <div className="flex items-center gap-3 mb-4"><img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34]" referrerPolicy="no-referrer" /><div><div className="font-bold">{customer.name}</div><div className="text-xs text-[#9E9E9E]">{customer.trait_cn} / 耐心 {customer.patience}</div></div></div>
+        <div className="space-y-2 text-xs text-[#9E9E9E] mb-8">
+          {customer.transaction_prefs?.slice(0, 2).map((pref, index) => <p key={`pref-${index}`}>偏好：{pref}</p>)}
+          {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
+        </div>
+        <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">物证</h3>
+        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} /><Stat label="市场估值" value={`$${customer.item.market_value.toLocaleString()}`} />{customer.item.appraised_value !== null && <Stat label="鉴定估值" value={`$${customer.item.appraised_value.toLocaleString()}`} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={customer.item.is_appraised_fake ? '赝品' : '正品'} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
+      </>}
     </>
   );
 }
 
 function ItemText({ extra, item }: { item: Item; extra?: string }) {
-  return <div className="flex-1 min-w-0"><div className="flex flex-wrap gap-3 items-center mb-1"><h3 className="text-lg font-bold truncate">{item.name}</h3><span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span><span className="text-[#616161] text-sm">{STATUS_MAP[item.status]}</span><span className="text-[#C8A97E] text-sm">{CONDITION_MAP[item.condition] || item.condition}</span>{extra && <span className="text-[#9E9E9E] text-sm">{extra}</span>}{item.showcase_price && <span className="text-[#C8A97E] text-sm">橱窗 ${item.showcase_price.toLocaleString()}</span>}</div><p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p><div className="flex flex-wrap gap-5 text-xs text-[#616161] mt-2"><span>{categoryLabel(item.category)}</span><span>市场 ${item.market_value.toLocaleString()}</span><span>鉴定 {item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品'}</span></div></div>;
+  return <div className="flex-1 min-w-0"><div className="flex flex-wrap gap-3 items-center mb-1"><h3 className="text-lg font-bold truncate">{item.name}</h3><span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span><span className="text-[#616161] text-sm">{STATUS_MAP[item.status]}</span><span className="text-[#C8A97E] text-sm">{CONDITION_MAP[item.condition] || item.condition}</span>{extra && <span className="text-[#9E9E9E] text-sm">{extra}</span>}{item.showcase_price && <span className="text-[#C8A97E] text-sm">橱窗 ${item.showcase_price.toLocaleString()}</span>}</div><p className="text-[#9E9E9E] text-sm leading-relaxed line-clamp-2">{item.story || item.description}</p><div className="flex flex-wrap gap-5 text-xs text-[#616161] mt-2"><span>{categoryLabel(item.category)}</span><span>{item.era}</span><span>市场 ${item.market_value.toLocaleString()}</span><span>鉴定 {item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品'}</span></div>{(item.special_effects?.length > 0 || item.authentication_tips?.length > 0) && <div className="flex flex-wrap gap-3 text-xs text-[#9E9E9E] mt-2">{item.special_effects?.slice(0, 2).map((effect, index) => <span key={`effect-${index}`}>亮点：{effect}</span>)}{item.authentication_tips?.slice(0, 2).map((tip, index) => <span key={`tip-${index}`}>鉴别：{tip}</span>)}</div>}</div>;
 }
 
 function ListPage({ children, subtitle, title }: { children: React.ReactNode; title: string; subtitle: string }) {

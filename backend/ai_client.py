@@ -92,10 +92,89 @@ class AIClient:
             elif raw.startswith("```"):
                 raw = raw[3:-3].strip()
             parsed = json.loads(raw)
-            return {"name": parsed.get("name", ""), "desc": parsed.get("desc", "")}
+            return {
+                "name": parsed.get("name", ""),
+                "desc": parsed.get("desc", ""),
+                "story": parsed.get("story", ""),
+                "era": parsed.get("era", ""),
+                "damage_report": parsed.get("damage_report", ""),
+                "hidden_attrs": parsed.get("hidden_attrs", []),
+                "special_effects": parsed.get("special_effects", []),
+                "authentication_tips": parsed.get("authentication_tips", []),
+            }
         except Exception as exc:
             logger.warning("Failed to parse AI item JSON: %s - %s", exc, raw)
             return {}
+
+    async def generate_deep_item(self, category: str, rarity: str, condition: str, value_hint: int) -> Dict[str, Any]:
+        if not self.available():
+            return {}
+        system_prompt = f"""你是《当铺代理人》的物品生成器。生成一件当铺交易物品，分类 {category}，稀有度 {rarity}，成色 {condition}，价值约 {value_hint}。
+严格输出 JSON：{{"name":"物品名","desc":"30字内描述","story":"80字内历史故事","era":"年代/时期","damage_report":"损坏情况","hidden_attrs":["隐藏属性"],"special_effects":["经营影响或收藏亮点"],"authentication_tips":["真伪鉴别要点"]}}。"""
+        try:
+            result = await self._chat_json(system_prompt, "生成物品。", timeout=15.0)
+            return result if isinstance(result, dict) else {}
+        except Exception as exc:
+            logger.warning("AI deep item generation failed: %s", exc)
+            return {}
+
+    async def generate_customer_profile(self, role: str, trait: str, item_name: str, category: str) -> Dict[str, Any]:
+        if not self.available():
+            return {}
+        system_prompt = f"""你是《当铺代理人》的顾客生成器。顾客角色：{role}，性格：{trait}，围绕物品【{item_name}】分类 {category}。
+严格输出 JSON：{{"name":"中文姓名或市井称呼","age":整数,"appearance":"外貌衣着","backstory":"来当铺原因，60字内","transaction_prefs":["交易偏好"],"persuasion_points":["容易被说服的点"],"fraud_intent":布尔}}。"""
+        try:
+            result = await self._chat_json(system_prompt, "生成顾客。", timeout=12.0)
+            return result if isinstance(result, dict) else {}
+        except Exception as exc:
+            logger.warning("AI customer profile generation failed: %s", exc)
+            return {}
+
+    async def generate_random_event(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.available():
+            return {}
+        system_prompt = f"""你是《当铺代理人》的随机事件导演。根据状态生成一个当铺经营随机事件。
+状态：当铺等级 {context.get("shop_level")}，现金 {context.get("cash")}，天数 {context.get("day")}，声誉 {context.get("reputation")}。
+事件类型可包含抢劫、诈骗、名人来访、稀有物品出现、市场波动、法律纠纷、员工问题。
+严格输出 JSON：{{"title":"事件标题","description":"80字内描述","type":"theft|scam|celebrity|rare_item|market|legal|staff","choices":[{{"id":"a","label":"选择文案","effect":"预期效果","cash_delta":整数,"reputation_delta":整数,"skill":"negotiation|appraisal|restoration|charm|commerce|null","skill_xp":整数}}]}}。必须给 2 个 choices。"""
+        try:
+            result = await self._chat_json(system_prompt, "生成事件。", timeout=14.0)
+            return result if isinstance(result, dict) else {}
+        except Exception as exc:
+            logger.warning("AI event generation failed: %s", exc)
+            return {}
+
+    async def generate_appraisal_notes(self, item: Dict[str, Any], method: str, is_fake_result: bool, appraised_value: int) -> List[str]:
+        if not self.available():
+            return []
+        system_prompt = """你是当铺鉴定师。根据物品资料和玩家选择的鉴定方法，输出 JSON：{"notes":["鉴定步骤或发现"]}，3到5条，文字短而有画面感。"""
+        try:
+            result = await self._chat_json(
+                system_prompt,
+                json.dumps({"item": item, "method": method, "is_fake_result": is_fake_result, "appraised_value": appraised_value}, ensure_ascii=False),
+                timeout=10.0,
+            )
+            notes = result.get("notes", [])
+            return [str(note) for note in notes[:5]] if isinstance(notes, list) else []
+        except Exception as exc:
+            logger.warning("AI appraisal notes failed: %s", exc)
+            return []
+
+    async def generate_repair_notes(self, item: Dict[str, Any], method: str, days: int, cost: int) -> List[str]:
+        if not self.available():
+            return []
+        system_prompt = """你是当铺修复师。根据物品资料和玩家选择的修复方案，输出 JSON：{"notes":["修复步骤或风险"]}，3到5条。"""
+        try:
+            result = await self._chat_json(
+                system_prompt,
+                json.dumps({"item": item, "method": method, "days": days, "cost": cost}, ensure_ascii=False),
+                timeout=10.0,
+            )
+            notes = result.get("notes", [])
+            return [str(note) for note in notes[:5]] if isinstance(notes, list) else []
+        except Exception as exc:
+            logger.warning("AI repair notes failed: %s", exc)
+            return []
 
     async def parse_player_negotiation(self, message: str, explicit_offer: Optional[int] = None) -> Dict[str, Any]:
         if explicit_offer and explicit_offer > 0:
