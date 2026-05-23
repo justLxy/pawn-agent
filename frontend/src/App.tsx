@@ -920,6 +920,11 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
     const price = Math.max(1, Math.round(customer.current_offer * ratio));
     setMessage(customer.role === 'seller' ? `我出 ${price} 元，现金马上给你。` : `这件货 ${price} 元给你，附带来源说明。`);
   };
+  const selectedAppraisal = state.appraisal_methods[appraisalMethod] || state.appraisal_methods.standard;
+  const appraisalBaseCost = Math.max(120, Math.round(customer.item.market_value * 0.06));
+  const appraisalDiscount = 0.08 * (state.facilities.appraisal_room - 1) + (state.staff.appraiser ? 0.35 : 0);
+  const appraisalCost = Math.max(80, Math.round(appraisalBaseCost * selectedAppraisal.cost_multiplier * (1 - Math.min(0.65, appraisalDiscount))));
+  const accuracyText = appraisalMethod === 'visual' ? '准确率较低' : appraisalMethod === 'forensic' ? '准确率最高' : '准确率均衡';
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
       <div className="text-center text-[#616161] font-sans text-xs mb-6">{customer.name} 走进店里，{customer.backstory}<br />{customer.trait_cn}，当前报价 ${customer.current_offer.toLocaleString()}</div>
@@ -944,6 +949,9 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
           <button onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
           <button onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
         </div>
+        <p className="mt-2 text-xs text-[#616161] font-sans">
+          {selectedAppraisal.name_cn}：预计 ${appraisalCost.toLocaleString()}，{accuracyText}。{selectedAppraisal.desc}
+        </p>
       </div>
     </div>
   );

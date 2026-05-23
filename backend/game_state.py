@@ -99,9 +99,9 @@ CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
 
 APPRAISAL_METHODS = {
-    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.55, "accuracy_bonus": -0.08, "xp": 20, "desc": "速度快、费用低，但对高仿赝品不够稳。"},
-    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.0, "accuracy_bonus": 0.0, "xp": 35, "desc": "检查材质、工艺和市场记录，成本与准确度均衡。"},
-    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 1.8, "accuracy_bonus": 0.12, "xp": 55, "desc": "显微痕迹、来源链和多项检测一起做，贵但更可靠。"},
+    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.65, "accuracy_bonus": -0.10, "xp": 20, "desc": "速度快、费用最低，适合低价值物品；对高仿赝品不够稳。"},
+    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.15, "accuracy_bonus": 0.0, "xp": 35, "desc": "检查材质、工艺和市场记录，适合大多数交易。"},
+    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 2.45, "accuracy_bonus": 0.14, "xp": 60, "desc": "显微痕迹、来源链和多项检测一起做，贵但最可靠。"},
 }
 
 REPAIR_METHODS = {
@@ -599,9 +599,9 @@ class GameStateManager:
         item = self.active_customer.item
         facility_level = self.facilities["appraisal_room"]
         skill_level = self.skills["appraisal"]["level"]
-        base_cost = max(40, int(item.market_value * 0.025))
+        base_cost = max(120, int(item.market_value * 0.06))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
-        cost = max(10, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.65, discount))))
+        cost = max(80, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.65, discount))))
         if self.cash < cost:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
