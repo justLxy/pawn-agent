@@ -643,6 +643,13 @@ class GameStateManager:
     def get_item(self, item_id: str) -> Optional[Item]:
         return next((item for item in self.inventory if item.id == item_id), None)
 
+    def active_buyer_wants_item(self, item_id: str) -> bool:
+        return bool(
+            self.active_customer
+            and self.active_customer.role == "buyer"
+            and self.active_customer.item.id == item_id
+        )
+
     def display_capacity(self) -> int:
         return 2 + self.facilities["showcase"] * 2
 
@@ -726,6 +733,8 @@ class GameStateManager:
         if item.status not in ["stored", "displayed"]:
             return {"error": "该物品当前不能直接出售。"}
 
+        active_buyer_waiting = self.active_buyer_wants_item(item_id)
+        active_buyer_name = self.active_customer.name if active_buyer_waiting and self.active_customer else ""
         commerce = self.skills["commerce"]["level"]
         showcase_bonus = 0.04 * self.facilities["showcase"] if item.status == "displayed" else 0
         rarity_bonus = {"common": 0.0, "rare": 0.06, "epic": 0.12, "legendary": 0.2}[item.rarity]
@@ -734,12 +743,18 @@ class GameStateManager:
         self.cash += price
         item.selling_price = price
         item.status = "sold"
+        item.display_slot = None
+        item.showcase_price = None
         self.inventory = [i for i in self.inventory if i.id != item_id]
         self.sold_items.append(item)
         self.daily_summary["revenue"] += price
         self.transaction_log.append({"day": self.day, "type": "direct_sell", "item": item.name, "amount": price})
         self.add_skill_xp("commerce", 35)
-        return {"success": True, "message": f"你通过渠道卖出了【{item.name}】，收入 ${price}。", "price": price}
+        message = f"你通过渠道卖出了【{item.name}】，收入 ${price}。"
+        if active_buyer_waiting:
+            self.select_next_customer()
+            message += f" {active_buyer_name}看中的货已经售出，只好离开店里。"
+        return {"success": True, "message": message, "price": price}
 
     def deal(self) -> Dict[str, Any]:
         if not self.active_customer:
@@ -760,9 +775,15 @@ class GameStateManager:
             message = "交易成功！你买下了该物品。"
             tx_type = "buy"
         else:
+            inventory_item = self.get_item(item.id)
+            if not inventory_item or inventory_item.status not in ["stored", "displayed"]:
+                return {"error": "这件物品已不在店内，无法继续出售给顾客。"}
+            item = inventory_item
             self.cash += price
             item.selling_price = price
             item.status = "sold"
+            item.display_slot = None
+            item.showcase_price = None
             self.inventory = [i for i in self.inventory if i.id != item.id]
             self.sold_items.append(item)
             self.daily_summary["revenue"] += price

@@ -211,6 +211,8 @@ def apply_negotiation_outcome(
 
     if accepted:
         deal_result = state.deal()
+        if "error" in deal_result:
+            raise HTTPException(status_code=400, detail=deal_result["error"])
         return {"negotiation": negotiation_summary, "deal_completed": True, "deal_result": deal_result, "state": commit_state(player, state)}
     if walk_out:
         state.select_next_customer()
