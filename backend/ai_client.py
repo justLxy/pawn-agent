@@ -243,9 +243,19 @@ class AIClient:
         else:
             intent = "persuade"
 
-        arabic = re.findall(r"\d+(?:,\d{3})*", message)
-        if arabic:
-            return {"offer": int(arabic[-1].replace(",", "")), "intent": "offer", "confidence": 0.9}
+        action_pattern = r"(?:出|给|卖|要|报价|成交|拿走|一口价|就|最多|最少)\s*(\d+(?:,\d{3})*)"
+        action_matches = re.findall(action_pattern, message)
+        if action_matches:
+            return {"offer": int(action_matches[-1].replace(",", "")), "intent": "offer", "confidence": 0.9}
+
+        all_numbers = list(re.finditer(r"\d+(?:,\d{3})*", message))
+        if all_numbers:
+            for match in all_numbers:
+                start = match.start()
+                context = message[max(0, start-5):start]
+                if not any(k in context for k in ["便宜", "市场", "亏", "赚", "加", "减", "贵", "高", "低", "多", "少"]):
+                    return {"offer": int(match.group().replace(",", "")), "intent": "offer", "confidence": 0.9}
+            return {"offer": int(all_numbers[0].group().replace(",", "")), "intent": "offer", "confidence": 0.9}
 
         chinese_offer = self._parse_chinese_amount(message)
         if chinese_offer:

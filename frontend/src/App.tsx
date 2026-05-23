@@ -240,9 +240,30 @@ function categoryLabel(category: string): string {
 }
 
 function extractOffer(text: string): number | null {
-  const matches = text.match(/\d+(?:,\d{3})*/g);
-  if (!matches?.length) return null;
-  return parseInt(matches[matches.length - 1].replaceAll(',', ''), 10);
+  const actionRegex = /(?:出|给|卖|要|报价|成交|拿走|一口价|就|最多|最少)\s*(\d+(?:,\d{3})*)/g;
+  let match;
+  let lastMatch = null;
+  while ((match = actionRegex.exec(text)) !== null) {
+    lastMatch = match[1];
+  }
+  if (lastMatch) {
+    return parseInt(lastMatch.replaceAll(',', ''), 10);
+  }
+
+  const allMatches = [...text.matchAll(/\d+(?:,\d{3})*/g)];
+  if (!allMatches.length) return null;
+
+  for (const m of allMatches) {
+    const start = m.index;
+    if (start !== undefined) {
+      const context = text.slice(Math.max(0, start - 5), start);
+      if (!/(便宜|市场|亏|赚|加|减|贵|高|低|多|少)/.test(context)) {
+        return parseInt(m[0].replaceAll(',', ''), 10);
+      }
+    }
+  }
+
+  return parseInt(allMatches[0][0].replaceAll(',', ''), 10);
 }
 
 function tokenHeader(): Record<string, string> {
