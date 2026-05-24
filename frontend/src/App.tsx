@@ -1702,8 +1702,8 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
       <MobileNegotiationBrief customer={customer} />
-      <div className="mb-6 border-b border-[#2A2D34] pb-4 pt-2 md:pt-8 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 hidden md:block">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans">
+      <div className="mb-10 border-b border-[#2A2D34] pb-4 pt-2 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 hidden md:block">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 font-sans">
           <div>
             <div className="flex items-center gap-3 mb-1">
               <span className="text-[#C8A97E] text-sm tracking-[0.25em]">{tradeMode.label}</span>
