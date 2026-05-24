@@ -574,6 +574,8 @@ class Customer:
         self.limit_price = int(limit_price if limit_price is not None else calculated_limit)
         self.current_offer = int(current_offer if current_offer is not None else calculated_offer)
         self.initial_offer = int(initial_offer if initial_offer is not None else self.current_offer)
+        self.session_closed: Optional[str] = None
+        self.deal_summary: Optional[str] = None
 
     def _default_backstory(self) -> str:
         if self.role == "seller":
@@ -696,11 +698,13 @@ class Customer:
             "initial_offer": self.initial_offer,
             "limit_price": self.limit_price,
             "dialogue_history": self.dialogue_history,
+            "session_closed": self.session_closed,
+            "deal_summary": self.deal_summary,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Customer":
-        return cls(
+        customer = cls(
             name=data.get("name", "无名顾客"),
             trait=data.get("trait", "hesitant"),
             role=data.get("role", "seller"),
@@ -727,6 +731,9 @@ class Customer:
             satisfaction=int(data.get("satisfaction", 50)),
             referred_by=data.get("referred_by"),
         )
+        customer.session_closed = data.get("session_closed")
+        customer.deal_summary = data.get("deal_summary")
+        return customer
 
 
 class GameStateManager:
@@ -1836,7 +1843,8 @@ class GameStateManager:
             tx_type = "sell"
 
         dialogue = "合作愉快，这笔买卖就这么定了！"
-        customer.dialogue_history.append({"role": "customer", "content": dialogue})
+        if not (customer.dialogue_history and customer.dialogue_history[-1].get("role") == "customer"):
+            customer.dialogue_history.append({"role": "customer", "content": dialogue})
         self.transaction_log.append({"day": self.day, "type": tx_type, "item": item.name, "amount": -price if tx_type == "buy" else price})
         self.add_skill_xp("negotiation", 25)
         self.successful_trades += 1
@@ -1846,7 +1854,8 @@ class GameStateManager:
         if tx_type == "sell":
             self.add_skill_xp("commerce", 20)
             self._repair_buyer_queue_after_item_removed(item.id)
-        self.select_next_customer()
+        customer.session_closed = "deal"
+        customer.deal_summary = message
         self._check_achievements("deal", {"type": tx_type, "item": item.to_dict(), "price": price})
         return {"success": True, "message": message, "price_transacted": price, "dialogue": dialogue}
 
@@ -1857,6 +1866,16 @@ class GameStateManager:
         self.select_next_customer()
         self._check_achievements("reject")
         return {"success": True, "message": "已拒绝交易。下一位顾客！"}
+
+    def dismiss_customer(self) -> Dict[str, Any]:
+        if not self.active_customer:
+            return {"error": "当前没有顾客。"}
+        if not self.active_customer.session_closed:
+            return {"error": "请先完成与当前顾客的交涉。"}
+        self.select_next_customer()
+        if self.active_customer:
+            return {"success": True, "message": "下一位顾客已上前。"}
+        return {"success": True, "message": "最后一位顾客已离去，今日可以打烊了。"}
 
     def hire_staff(self, staff_type: str) -> Dict[str, Any]:
         if staff_type not in STAFF_TYPES:

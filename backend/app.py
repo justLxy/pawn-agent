@@ -238,7 +238,8 @@ def apply_negotiation_outcome(
     if walk_out:
         state._record_customer_outcome(customer, "walk_out")
         state._check_achievements("walk_out")
-        state.select_next_customer()
+        customer.session_closed = "walk_out"
+        customer.deal_summary = "顾客离开了当铺，这笔买卖没有谈成。"
         return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
     return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
 
@@ -324,6 +325,8 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
     if state.day_ended:
         raise HTTPException(status_code=400, detail="今天营业已结束，请等明天开门。")
+    if state.active_customer.session_closed:
+        raise HTTPException(status_code=400, detail="请先送离当前顾客。")
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="请输入谈判内容。")
 
@@ -381,6 +384,8 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
         raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
     if state.day_ended:
         raise HTTPException(status_code=400, detail="今天营业已结束，请等明天开门。")
+    if state.active_customer.session_closed:
+        raise HTTPException(status_code=400, detail="请先送离当前顾客。")
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="请输入谈判内容。")
 
@@ -468,6 +473,8 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 @app.post("/api/deal")
 async def finalize_deal(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    if state.active_customer and state.active_customer.session_closed:
+        raise HTTPException(status_code=400, detail="请先送离当前顾客。")
     return state_response(player, state, "deal_result", state.deal())
 
 
@@ -475,6 +482,12 @@ async def finalize_deal(player: Dict[str, Any] = Depends(current_player)):
 async def reject_customer(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
     return state_response(player, state, "result", state.reject())
+
+
+@app.post("/api/dismiss_customer")
+async def dismiss_customer(player: Dict[str, Any] = Depends(current_player)):
+    state = await get_engine(player)
+    return state_response(player, state, "result", state.dismiss_customer())
 
 
 @app.post("/api/appraise")

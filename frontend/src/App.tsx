@@ -104,6 +104,8 @@ interface Customer {
   patience: number;
   current_offer: number;
   dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
+  session_closed?: 'deal' | 'walk_out' | null;
+  deal_summary?: string | null;
 }
 
 interface Achievement {
@@ -933,7 +935,10 @@ export default function App() {
       setState(data.state);
       setNegotiatingMsg(null);
       if (data.negotiation.patience_change < 0) playSound('patience_down');
-      if (data.deal_completed) setSuccessMsg(data.deal_result?.message || '交易达成。');
+      if (data.deal_completed) {
+        playSound('deal');
+        setSuccessMsg(data.deal_result?.message || '交易达成。');
+      }
       if (data.walk_out_completed) setErrorMsg('顾客离场，交易中止。');
     } catch (err) {
       setState(previousState);
@@ -1059,6 +1064,7 @@ export default function App() {
               onAppraise={appraiseActiveItem}
               chatEndRef={chatEndRef}
               onAction={runStateAction}
+              onDismissCustomer={() => runStateAction('/api/dismiss_customer', undefined, 'result', '下一位顾客已上前。', 'click')}
             />
           )}
           {activeTab === 'inventory' && (
@@ -1273,8 +1279,13 @@ function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
   );
 }
 
-function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onAppraise, onDismissCustomer, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; onDismissCustomer: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
+  useEffect(() => {
+    if (customer?.session_closed) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [customer?.session_closed, customer?.dialogue_history.length, chatEndRef]);
   if (dayTransition === 'next_day' && state.day_ended) {
     return <DayTransitionLoader mode="next_day" />;
   }
@@ -1360,6 +1371,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   const tradeMode = customer.role === 'seller'
     ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
     : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
+  const sessionClosed = customer.session_closed;
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
       <div className="mb-6 border-b border-[#2A2D34] pb-4 pt-4 md:pt-8 -mt-4 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10">
@@ -1395,6 +1407,21 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
         <div ref={chatEndRef} />
       </div>
       <div className="border-t border-[#2A2D34] pt-4">
+        {sessionClosed ? (
+          <div className="animate-slide-up">
+            <div className={`mb-4 px-4 py-4 border-l-2 ${sessionClosed === 'deal' ? 'border-[#4CAF50] bg-[rgba(76,175,80,0.08)]' : 'border-[#FF9800] bg-[rgba(255,152,0,0.08)]'}`}>
+              <div className={`font-bold mb-1 ${sessionClosed === 'deal' ? 'text-[#4CAF50]' : 'text-[#FF9800]'}`}>
+                {sessionClosed === 'deal' ? '交易已落定' : '顾客告辞离去'}
+              </div>
+              <p className="text-sm text-[#9E9E9E] leading-relaxed">{customer.deal_summary || (sessionClosed === 'deal' ? '这笔买卖已经办妥。' : '对方没有继续谈下去。')}</p>
+              <p className="text-xs text-[#616161] mt-2">请读完上面的对话，再送离顾客。</p>
+            </div>
+            <button onClick={onDismissCustomer} disabled={loading} className="btn-primary w-full">
+              {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />请稍候…</> : '送离顾客，迎接下一位'}
+            </button>
+          </div>
+        ) : (
+          <>
         <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
         <form onSubmit={onNegotiate} className="flex gap-3"><input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." /><button disabled={loading} className="btn-primary">谈判</button></form>
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
@@ -1418,6 +1445,8 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
           估值误差 ±{formatAppraisalPercent(appraisalPreview.valueErrorMargin)}。
           {selectedAppraisal.desc}
         </p>
+          </>
+        )}
       </div>
     </div>
   );
