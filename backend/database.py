@@ -103,5 +103,56 @@ def init_db() -> None:
                 created_at INTEGER NOT NULL,
                 UNIQUE(snapshot_date, board_type, player_id)
             );
+
+            CREATE TABLE IF NOT EXISTS market_offers (
+                id TEXT PRIMARY KEY,
+                listing_id TEXT NOT NULL,
+                buyer_id INTEGER NOT NULL,
+                seller_id INTEGER NOT NULL,
+                buyer_offer INTEGER NOT NULL,
+                seller_counter INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending_seller',
+                round INTEGER NOT NULL DEFAULT 1,
+                final_price INTEGER,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                FOREIGN KEY(listing_id) REFERENCES market_listings(id) ON DELETE CASCADE,
+                FOREIGN KEY(buyer_id) REFERENCES players(id) ON DELETE CASCADE,
+                FOREIGN KEY(seller_id) REFERENCES players(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_offers_listing_status
+                ON market_offers(listing_id, status);
+            CREATE INDEX IF NOT EXISTS idx_offers_seller_status
+                ON market_offers(seller_id, status);
+            CREATE INDEX IF NOT EXISTS idx_offers_buyer_status
+                ON market_offers(buyer_id, status);
+
+            CREATE TABLE IF NOT EXISTS showcase_likes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL,
+                liker_id INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(owner_id) REFERENCES players(id) ON DELETE CASCADE,
+                FOREIGN KEY(liker_id) REFERENCES players(id) ON DELETE CASCADE,
+                UNIQUE(owner_id, liker_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_showcase_likes_owner
+                ON showcase_likes(owner_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS showcase_guestbook (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                owner_id INTEGER NOT NULL,
+                author_id INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(owner_id) REFERENCES players(id) ON DELETE CASCADE,
+                FOREIGN KEY(author_id) REFERENCES players(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_guestbook_owner_created
+                ON showcase_guestbook(owner_id, created_at DESC);
             """
         )

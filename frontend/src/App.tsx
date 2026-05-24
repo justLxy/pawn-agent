@@ -8,6 +8,7 @@ import {
   CheckCircle,
   Clock,
   Crown,
+  Heart,
   Info,
   Landmark,
   ListOrdered,
@@ -28,7 +29,7 @@ const TOKEN_KEY = 'pawnshop-agent-token-v1';
 type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements' | 'codex';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
-type MarketView = 'browse' | 'mine' | 'trades';
+type MarketView = 'browse' | 'mine' | 'offers' | 'hot' | 'trades';
 
 interface Player {
   id: number;
@@ -316,6 +317,58 @@ interface ShowcaseData {
   };
   items: Item[];
   display_capacity: number;
+  like_count: number;
+  recent_like_count: number;
+  liked_by_me: boolean;
+  guestbook: GuestbookEntry[];
+  hot_rank: number | null;
+}
+
+interface GuestbookEntry {
+  id: number;
+  owner_id: number;
+  author_id: number;
+  author_shop: string;
+  content: string;
+  created_at: number;
+}
+
+interface MarketOffer {
+  id: string;
+  listing_id: string;
+  buyer_id: number;
+  seller_id: number;
+  buyer_shop: string;
+  seller_shop: string;
+  buyer_offer: number;
+  seller_counter: number | null;
+  status: string;
+  round: number;
+  final_price: number | null;
+  listing_price: number;
+  reference_price: number;
+  item_name: string;
+  item: Item;
+  created_at: number;
+  updated_at: number;
+  expires_at: number;
+}
+
+interface HotShowcaseEntry {
+  player_id: number;
+  shop_name: string;
+  online: boolean;
+  ranking_badge: string | null;
+  recent_likes: number;
+  total_likes: number;
+  displayed_count: number;
+  display_capacity: number;
+  rank: number;
+}
+
+interface OfferBundle {
+  sent: MarketOffer[];
+  received: MarketOffer[];
 }
 
 const CONDITION_MAP: Record<string, string> = { Mint: '极佳', Good: '良好', Poor: '较差' };
@@ -483,6 +536,10 @@ export default function App() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [myListings, setMyListings] = useState<Listing[]>([]);
   const [trades, setTrades] = useState<TradeLog[]>([]);
+  const [offers, setOffers] = useState<OfferBundle>({ sent: [], received: [] });
+  const [hotShowcases, setHotShowcases] = useState<HotShowcaseEntry[]>([]);
+  const [offerPrices, setOfferPrices] = useState<Record<string, number>>({});
+  const [counterPrices, setCounterPrices] = useState<Record<string, number>>({});
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', shop_name: '' });
   const [loading, setLoading] = useState(false);
@@ -703,10 +760,48 @@ export default function App() {
 
   const loadMarket = async () => {
     const params = new URLSearchParams({ search: marketSearch, sort: marketSort });
-    const data = await apiGet<{ listings: Listing[] }>(`/api/market/listings?${params.toString()}`);
-    setListings(data.listings);
-    setMyListings((await apiGet<{ listings: Listing[] }>('/api/market/mine')).listings);
-    setTrades((await apiGet<{ trades: TradeLog[] }>('/api/market/trades')).trades);
+    const [listingsData, mineData, tradesData, offersData, hotData] = await Promise.all([
+      apiGet<{ listings: Listing[] }>(`/api/market/listings?${params.toString()}`),
+      apiGet<{ listings: Listing[] }>('/api/market/mine'),
+      apiGet<{ trades: TradeLog[] }>('/api/market/trades'),
+      apiGet<OfferBundle>('/api/market/offers'),
+      apiGet<{ entries: HotShowcaseEntry[] }>('/api/showcase/hot'),
+    ]);
+    setListings(listingsData.listings);
+    setMyListings(mineData.listings);
+    setTrades(tradesData.trades);
+    setOffers(offersData);
+    setHotShowcases(hotData.entries);
+  };
+
+  const openMarketHot = () => {
+    setMarketView('hot');
+    setActiveTab('market');
+  };
+
+  const pendingReceivedOffers = offers.received.filter((offer) => offer.status === 'pending_seller' || offer.status === 'countered').length;
+
+  const marketOfferAction = async (path: string, body: unknown, fallback: string, sound: 'deal' | 'cash' | 'click' | 'reject' = 'click') => {
+    setLoading(true);
+    try {
+      const data = await apiPost<{ market_result: { message?: string }; state?: GameState; offers: OfferBundle }>(path, body);
+      if (data.state) setState(data.state);
+      setOffers(data.offers);
+      setSuccessMsg(data.market_result.message || fallback);
+      playSound(sound);
+      await loadMarket().catch(() => {});
+      await loadLeaderboard().catch(() => {});
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '议价操作失败。');
+      playSound('reject');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitMarketOffer = async (listing: Listing) => {
+    const price = offerPrices[listing.id] ?? Math.max(1, Math.floor(listing.price * 0.85));
+    await marketOfferAction('/api/market/offer', { listing_id: listing.id, price }, '出价已发送。');
   };
 
   const openShowcase = async (ownerId: number) => {
@@ -990,6 +1085,49 @@ export default function App() {
     }
   };
 
+  const toggleShowcaseLike = async (ownerId: number) => {
+    setLoading(true);
+    try {
+      const data = await apiPost<{ showcase_result: { message?: string }; showcase: ShowcaseData }>('/api/showcase/like', { owner_id: ownerId });
+      setShowcase(data.showcase);
+      setSuccessMsg(data.showcase_result.message || '已更新点赞。');
+      playSound('click');
+      await loadMarket().catch(() => {});
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '点赞失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const postShowcaseGuestbook = async (ownerId: number, content: string) => {
+    setLoading(true);
+    try {
+      const data = await apiPost<{ showcase_result: { message?: string }; showcase: ShowcaseData }>('/api/showcase/guestbook', { owner_id: ownerId, content });
+      setShowcase(data.showcase);
+      setSuccessMsg(data.showcase_result.message || '留言已发布。');
+      playSound('click');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '留言失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteShowcaseGuestbook = async (messageId: number) => {
+    setLoading(true);
+    try {
+      const data = await apiDelete<{ showcase_result: { message?: string }; showcase: ShowcaseData }>(`/api/showcase/guestbook/${messageId}`);
+      setShowcase(data.showcase);
+      setSuccessMsg(data.showcase_result.message || '留言已删除。');
+      playSound('click');
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '删除留言失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!player || !state) {
     return (
       <div className="h-screen w-screen bg-[#0D0F12] text-[#E0E0E0] flex items-center justify-center px-6">
@@ -1044,7 +1182,7 @@ export default function App() {
         <aside className="hidden md:flex w-[64px] xl:w-[240px] shrink-0 bg-[#14171C] border-r border-[#2A2D34] flex-col py-6 overflow-y-auto custom-scrollbar z-30 transition-all duration-300">
           <NavButton tab="lobby" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Store className="w-5 h-5" />} label="大堂柜台" />
           <NavButton tab="inventory" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Briefcase className="w-5 h-5" />} label="仓库藏品" />
-          <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" />
+          <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" badge={pendingReceivedOffers} />
           <NavButton tab="leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} icon={<ListOrdered className="w-5 h-5" />} label="全服排行" />
           <NavButton tab="achievements" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Award className="w-5 h-5" />} label="经营成就" />
           <NavButton tab="codex" activeTab={activeTab} setActiveTab={setActiveTab} icon={<BookOpen className="w-5 h-5" />} label="经营图鉴" />
@@ -1097,6 +1235,12 @@ export default function App() {
               listings={listings}
               myListings={myListings}
               trades={trades}
+              offers={offers}
+              hotShowcases={hotShowcases}
+              offerPrices={offerPrices}
+              counterPrices={counterPrices}
+              setOfferPrices={setOfferPrices}
+              setCounterPrices={setCounterPrices}
               marketSearch={marketSearch}
               marketSort={marketSort}
               marketView={marketView}
@@ -1106,11 +1250,13 @@ export default function App() {
               refresh={loadMarket}
               buy={buyMarketItem}
               openShowcase={openShowcase}
+              submitOffer={submitMarketOffer}
+              marketOfferAction={marketOfferAction}
               onMarketAction={runStateAction}
             />
           )}
           {activeTab === 'leaderboard' && (
-            <LeaderboardTab boardType={boardType} setBoardType={setBoardType} data={leaderboard} refresh={loadLeaderboard} openShowcase={openShowcase} />
+            <LeaderboardTab boardType={boardType} setBoardType={setBoardType} data={leaderboard} refresh={loadLeaderboard} openShowcase={openShowcase} openMarketHot={openMarketHot} />
           )}
           {activeTab === 'history' && (
             <HistoryTab entries={state.transaction_log || []} />
@@ -1122,7 +1268,14 @@ export default function App() {
             <CodexTab customers={state.customer_codex || {}} items={state.item_codex || {}} />
           )}
           {activeTab === 'showcase' && showcase && (
-            <ShowcaseTab showcase={showcase} buy={buyShowcaseItem} back={() => setActiveTab('market')} />
+            <ShowcaseTab
+              showcase={showcase}
+              buy={buyShowcaseItem}
+              back={() => setActiveTab('market')}
+              onLike={toggleShowcaseLike}
+              onPostGuestbook={postShowcaseGuestbook}
+              onDeleteGuestbook={deleteShowcaseGuestbook}
+            />
           )}
           {activeTab === 'management' && (
             <ManagementTab state={state} loanAmount={loanAmount} setLoanAmount={setLoanAmount} onAction={runStateAction} />
@@ -1200,11 +1353,12 @@ function Toast({ type, message, onClose }: { type: 'error' | 'success'; message:
   );
 }
 
-function NavButton({ activeTab, icon, label, setActiveTab, tab }: { activeTab: ActiveTab; icon: React.ReactNode; label: string; setActiveTab: (tab: ActiveTab) => void; tab: ActiveTab }) {
+function NavButton({ activeTab, badge, icon, label, setActiveTab, tab }: { activeTab: ActiveTab; badge?: number; icon: React.ReactNode; label: string; setActiveTab: (tab: ActiveTab) => void; tab: ActiveTab }) {
   return (
-    <button title={label} onClick={() => setActiveTab(tab)} className={`nav-item ${activeTab === tab ? 'active' : ''} !px-0 justify-center xl:!px-5 xl:justify-start`}>
+    <button title={label} onClick={() => setActiveTab(tab)} className={`nav-item relative ${activeTab === tab ? 'active' : ''} !px-0 justify-center xl:!px-5 xl:justify-start`}>
       <div className="shrink-0">{icon}</div>
       <span className="hidden xl:inline">{label}</span>
+      {badge ? <span className="absolute top-2 left-8 xl:left-auto xl:right-3 w-2 h-2 rounded-full bg-[#C8A97E]" /> : null}
     </button>
   );
 }
@@ -1669,35 +1823,260 @@ function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMeth
   );
 }
 
-function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: TradeLog[]; marketSearch: string; marketSort: string; marketView: MarketView; setMarketSearch: (value: string) => void; setMarketSort: (value: string) => void; setMarketView: (value: MarketView) => void; refresh: () => Promise<void>; buy: (id: string) => Promise<void>; openShowcase: (ownerId: number) => Promise<void>; onMarketAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
-  const { buy, listings, marketSearch, marketSort, marketView, myListings, onMarketAction, openShowcase, refresh, setMarketSearch, setMarketSort, setMarketView, trades } = props;
-  const shown = marketView === 'browse' ? listings : myListings;
+function offerStatusLabel(offer: MarketOffer, viewerIsBuyer: boolean): string {
+  if (offer.status === 'pending_seller') return viewerIsBuyer ? '等待卖家回应' : '待你回应';
+  if (offer.status === 'countered') return viewerIsBuyer ? '待你回应' : '等待买家回应';
+  if (offer.status === 'accepted') return '已成交';
+  if (offer.status === 'rejected') return '已拒绝';
+  if (offer.status === 'expired') return '已过期';
+  if (offer.status === 'cancelled') return '已撤回';
+  return offer.status;
+}
+
+function isActiveOffer(status: string): boolean {
+  return status === 'pending_seller' || status === 'countered';
+}
+
+function formatOfferTime(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function tradeTypeLabel(tradeType: string): string {
+  if (tradeType === 'negotiated_sale') return '议价成交';
+  if (tradeType === 'sale') return '市场成交';
+  if (tradeType === 'showcase_sale') return '橱窗成交';
+  return tradeType;
+}
+
+function MarketTab(props: {
+  listings: Listing[];
+  myListings: Listing[];
+  trades: TradeLog[];
+  offers: OfferBundle;
+  hotShowcases: HotShowcaseEntry[];
+  offerPrices: Record<string, number>;
+  counterPrices: Record<string, number>;
+  setOfferPrices: (value: Record<string, number>) => void;
+  setCounterPrices: (value: Record<string, number>) => void;
+  marketSearch: string;
+  marketSort: string;
+  marketView: MarketView;
+  setMarketSearch: (value: string) => void;
+  setMarketSort: (value: string) => void;
+  setMarketView: (value: MarketView) => void;
+  refresh: () => Promise<void>;
+  buy: (id: string) => Promise<void>;
+  openShowcase: (ownerId: number) => Promise<void>;
+  submitOffer: (listing: Listing) => Promise<void>;
+  marketOfferAction: (path: string, body: unknown, fallback: string, sound?: 'deal' | 'cash' | 'click' | 'reject') => Promise<void>;
+  onMarketAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>;
+}) {
+  const {
+    buy,
+    counterPrices,
+    hotShowcases,
+    listings,
+    marketOfferAction,
+    marketSearch,
+    marketSort,
+    marketView,
+    myListings,
+    offerPrices,
+    offers,
+    onMarketAction,
+    openShowcase,
+    refresh,
+    setCounterPrices,
+    setMarketSearch,
+    setMarketSort,
+    setMarketView,
+    setOfferPrices,
+    submitOffer,
+    trades,
+  } = props;
+
+  const activeSentByListing = new Map(
+    offers.sent.filter((offer) => isActiveOffer(offer.status)).map((offer) => [offer.listing_id, offer]),
+  );
+  const receivedByListing = offers.received.reduce<Record<string, MarketOffer[]>>((acc, offer) => {
+    if (!isActiveOffer(offer.status)) return acc;
+    acc[offer.listing_id] = [...(acc[offer.listing_id] || []), offer];
+    return acc;
+  }, {});
+
+  const marketViews: Array<{ key: MarketView; label: string }> = [
+    { key: 'browse', label: '全服市场' },
+    { key: 'mine', label: '我的摊位' },
+    { key: 'offers', label: '我的议价' },
+    { key: 'hot', label: '热门橱窗' },
+    { key: 'trades', label: '交易记录' },
+  ];
+
+  const renderOfferActions = (offer: MarketOffer, role: 'buyer' | 'seller') => {
+    if (!isActiveOffer(offer.status)) {
+      return <span className="text-xs text-[#616161]">{offerStatusLabel(offer, role === 'buyer')}</span>;
+    }
+    if (role === 'seller' && offer.status === 'pending_seller') {
+      return (
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button onClick={() => marketOfferAction('/api/market/offer/respond', { offer_id: offer.id, action: 'accept' }, '已接受出价。', 'cash')} className="btn-primary !h-8 !px-3 !text-xs">接受</button>
+          <input type="number" value={counterPrices[offer.id] ?? offer.buyer_offer} onChange={(event) => setCounterPrices({ ...counterPrices, [offer.id]: parseInt(event.target.value) || 0 })} className="input-field !h-8 !w-24 !px-2" />
+          <button onClick={() => marketOfferAction('/api/market/offer/respond', { offer_id: offer.id, action: 'counter', counter_price: counterPrices[offer.id] ?? offer.buyer_offer }, '已发送反价。')} className="btn-secondary !h-8 !px-3 !text-xs">反价</button>
+          <button onClick={() => marketOfferAction('/api/market/offer/respond', { offer_id: offer.id, action: 'reject' }, '已拒绝。', 'reject')} className="btn-secondary !h-8 !px-3 !text-xs">拒绝</button>
+        </div>
+      );
+    }
+    if (role === 'buyer' && offer.status === 'countered' && offer.seller_counter) {
+      return (
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button onClick={() => marketOfferAction('/api/market/offer/buyer_respond', { offer_id: offer.id, action: 'accept' }, '议价成交。', 'cash')} className="btn-primary !h-8 !px-3 !text-xs">接受 ${offer.seller_counter.toLocaleString()}</button>
+          <input type="number" value={offerPrices[offer.id] ?? offer.seller_counter} onChange={(event) => setOfferPrices({ ...offerPrices, [offer.id]: parseInt(event.target.value) || 0 })} className="input-field !h-8 !w-24 !px-2" />
+          <button onClick={() => marketOfferAction('/api/market/offer/buyer_respond', { offer_id: offer.id, action: 'counter', price: offerPrices[offer.id] ?? offer.seller_counter }, '已更新出价。')} className="btn-secondary !h-8 !px-3 !text-xs">再出价</button>
+          <button onClick={() => marketOfferAction('/api/market/offer/buyer_respond', { offer_id: offer.id, action: 'cancel' }, '已撤回。', 'reject')} className="btn-secondary !h-8 !px-3 !text-xs">撤回</button>
+        </div>
+      );
+    }
+    if (role === 'buyer' && offer.status === 'pending_seller') {
+      return (
+        <button onClick={() => marketOfferAction('/api/market/offer/buyer_respond', { offer_id: offer.id, action: 'cancel' }, '已撤回。', 'reject')} className="btn-secondary !h-8 !px-3 !text-xs">撤回</button>
+      );
+    }
+    return <span className="text-xs text-[#616161]">{offerStatusLabel(offer, role === 'buyer')}</span>;
+  };
+
   return (
-    <ListPage title="玩家交易市场" subtitle="全服玩家互买互卖，寻找低价捡漏和高价倒卖机会。">
+    <ListPage title="玩家交易市场" subtitle="全服玩家互买互卖；支持一口价购买与结构化议价，热门橱窗按近 7 天点赞排序。">
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 pb-4 border-b border-[#2A2D34] mb-2">
         <div className="flex flex-col lg:flex-row gap-3 lg:items-center">
-          <div className="flex gap-6 border-b border-[#2A2D34] lg:border-b-0 overflow-x-auto custom-scrollbar pb-1">
-            {(['browse', 'mine', 'trades'] as const).map((view) => <button key={view} onClick={() => setMarketView(view)} className={`pb-2 whitespace-nowrap ${marketView === view ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{view === 'browse' ? '全服市场' : view === 'mine' ? '我的摊位' : '交易记录'}</button>)}
+          <div className="flex gap-4 sm:gap-6 border-b border-[#2A2D34] lg:border-b-0 overflow-x-auto custom-scrollbar pb-1">
+            {marketViews.map((view) => (
+              <button key={view.key} onClick={() => setMarketView(view.key)} className={`pb-2 whitespace-nowrap ${marketView === view.key ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>
+                {view.label}
+                {view.key === 'offers' && offers.received.filter((offer) => offer.status === 'pending_seller').length > 0 ? (
+                  <span className="ml-2 text-[10px] text-[#C8A97E]">待处理 {offers.received.filter((offer) => offer.status === 'pending_seller').length}</span>
+                ) : null}
+              </button>
+            ))}
           </div>
-          <div className="flex flex-wrap sm:flex-nowrap gap-2 flex-1 mt-1 lg:mt-0">
-            <div className="relative w-full sm:flex-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#616161]" /><input value={marketSearch} onChange={(event) => setMarketSearch(event.target.value)} className="input-field w-full" placeholder="搜索物品..." /></div>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field flex-1 sm:flex-none !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option></select>
-              <button onClick={() => refresh()} className="btn-secondary !px-4 flex-1 sm:flex-none">刷新</button>
+          {marketView === 'browse' || marketView === 'mine' ? (
+            <div className="flex flex-wrap sm:flex-nowrap gap-2 flex-1 mt-1 lg:mt-0">
+              <div className="relative w-full sm:flex-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#616161]" /><input value={marketSearch} onChange={(event) => setMarketSearch(event.target.value)} className="input-field w-full" placeholder="搜索物品..." /></div>
+              <div className="flex gap-2 w-full sm:w-auto">
+                <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field flex-1 sm:flex-none !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option></select>
+                <button onClick={() => refresh()} className="btn-secondary !px-4 flex-1 sm:flex-none">刷新</button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex-1 flex justify-end mt-1 lg:mt-0">
+              <button onClick={() => refresh()} className="btn-secondary !px-4">刷新</button>
+            </div>
+          )}
         </div>
       </div>
-      {marketView === 'trades' ? trades.map((trade) => <div key={trade.id} className="py-4 border-b border-[#2A2D34] flex justify-between gap-4"><span>【{trade.item_name}】</span><span className="text-[#9E9E9E]">{trade.buyer_shop || '买家'} ↔ {trade.seller_shop || '卖家'}</span><span className="text-[#C8A97E]">${trade.price.toLocaleString()} / 税 ${trade.tax}</span></div>) : shown.map((listing) => (
-        <div key={listing.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
-          <ItemText item={listing.item} extra={listing.seller_online ? '卖家在线' : '卖家离线'} />
-          <div className="w-full xl:w-[300px] flex items-center justify-between xl:justify-end gap-5 mt-2 xl:mt-0">
-            <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-left xl:text-right">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
-            <div className="flex-1 text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div>{appraisalRange(listing.item) ? <div className="text-xs text-[#616161]">鉴定区间 {appraisalRange(listing.item)}</div> : <div className="text-xs text-[#616161]">未知（需鉴定）</div>}</div>
-            {marketView === 'browse' ? <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4 shrink-0">购买</button> : <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4 shrink-0">下架</button>}
-          </div>
+
+      {marketView === 'trades' && trades.map((trade) => (
+        <div key={trade.id} className="py-4 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:justify-between gap-2">
+          <span>【{trade.item_name}】<span className="ml-2 text-xs text-[#616161]">{tradeTypeLabel(trade.trade_type)}</span></span>
+          <span className="text-[#9E9E9E]">{trade.buyer_shop || '买家'} ↔ {trade.seller_shop || '卖家'}</span>
+          <span className="text-[#C8A97E]">${trade.price.toLocaleString()} / 税 ${trade.tax}</span>
         </div>
       ))}
+
+      {marketView === 'hot' && (
+        hotShowcases.length === 0 ? (
+          <div className="py-16 text-center text-[#616161]">暂无热门橱窗。参观他人橱窗并点赞，即可登上热门榜。</div>
+        ) : hotShowcases.map((entry) => (
+          <div key={entry.player_id} className="py-5 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-center gap-4 min-w-[120px]">
+              <span className="text-2xl font-bold text-[#C8A97E]">#{entry.rank}</span>
+              <div>
+                <div className="font-bold">{entry.ranking_badge ? `${entry.ranking_badge} · ` : ''}{entry.shop_name}</div>
+                <div className="text-xs text-[#616161] mt-1">近7天 {entry.recent_likes} 赞 · 累计 {entry.total_likes} 赞 · 展示 {entry.displayed_count}/{entry.display_capacity}</div>
+              </div>
+            </div>
+            <div className="flex-1 text-sm text-[#9E9E9E]">{entry.online ? '在线' : '离线'}</div>
+            <button onClick={() => openShowcase(entry.player_id)} className="btn-secondary !h-9 !px-4 shrink-0">参观橱窗</button>
+          </div>
+        ))
+      )}
+
+      {marketView === 'offers' && (
+        <>
+          <div className="py-4 border-b border-[#2A2D34]">
+            <h3 className="text-[#C8A97E] font-bold mb-3">我发起的议价</h3>
+            {offers.sent.length === 0 ? <div className="text-sm text-[#616161]">还没有发起过议价。</div> : offers.sent.map((offer) => (
+              <div key={offer.id} className="py-4 border-t border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold">【{offer.item_name}】</div>
+                  <div className="text-xs text-[#9E9E9E] mt-1">卖家 {offer.seller_shop} · 标价 ${offer.listing_price.toLocaleString()} · 出价 ${offer.buyer_offer.toLocaleString()}{offer.seller_counter ? ` · 反价 $${offer.seller_counter.toLocaleString()}` : ''}</div>
+                  <div className="text-xs text-[#616161] mt-1">第 {offer.round} 轮 · {offerStatusLabel(offer, true)} · 截止 {formatOfferTime(offer.expires_at)}</div>
+                </div>
+                {renderOfferActions(offer, 'buyer')}
+              </div>
+            ))}
+          </div>
+          <div className="py-4">
+            <h3 className="text-[#C8A97E] font-bold mb-3">收到的议价</h3>
+            {offers.received.length === 0 ? <div className="text-sm text-[#616161]">还没有收到议价。</div> : offers.received.map((offer) => (
+              <div key={offer.id} className="py-4 border-t border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold">【{offer.item_name}】</div>
+                  <div className="text-xs text-[#9E9E9E] mt-1">买家 {offer.buyer_shop} · 出价 ${offer.buyer_offer.toLocaleString()}{offer.seller_counter ? ` · 反价 $${offer.seller_counter.toLocaleString()}` : ''}</div>
+                  <div className="text-xs text-[#616161] mt-1">第 {offer.round} 轮 · {offerStatusLabel(offer, false)} · 截止 {formatOfferTime(offer.expires_at)}</div>
+                </div>
+                {renderOfferActions(offer, 'seller')}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {(marketView === 'browse' || marketView === 'mine') && (marketView === 'browse' ? listings : myListings).map((listing) => {
+        const myOffer = activeSentByListing.get(listing.id);
+        const incoming = receivedByListing[listing.id] || [];
+        return (
+          <div key={listing.id} className="py-5 border-b border-[#2A2D34]">
+            <div className="flex flex-col xl:flex-row xl:items-center gap-4">
+              <ItemText item={listing.item} extra={listing.seller_online ? '卖家在线' : '卖家离线'} />
+              <div className="w-full xl:w-[360px] flex flex-col gap-3 mt-2 xl:mt-0">
+                <div className="flex items-center justify-between gap-4">
+                  <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-left">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
+                  <div className="text-right">
+                    <div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div>
+                    {appraisalRange(listing.item) ? <div className="text-xs text-[#616161]">鉴定区间 {appraisalRange(listing.item)}</div> : <div className="text-xs text-[#616161]">未知（需鉴定）</div>}
+                  </div>
+                </div>
+                {marketView === 'browse' ? (
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                    <input type="number" value={offerPrices[listing.id] ?? Math.max(1, Math.floor(listing.price * 0.85))} onChange={(event) => setOfferPrices({ ...offerPrices, [listing.id]: parseInt(event.target.value) || 0 })} className="input-field !h-9 !w-28 !px-2" placeholder="出价" />
+                    <button onClick={() => submitOffer(listing)} className="btn-secondary !h-9 !px-3">议价</button>
+                    <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4">购买</button>
+                    {myOffer ? <span className="text-xs text-[#C8A97E]">{offerStatusLabel(myOffer, true)}</span> : null}
+                  </div>
+                ) : (
+                  <div className="flex justify-end">
+                    <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4">下架</button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {marketView === 'mine' && incoming.length > 0 && (
+              <div className="mt-4 pl-3 border-l border-[#C8A97E]/40 space-y-3">
+                {incoming.map((offer) => (
+                  <div key={offer.id} className="flex flex-col lg:flex-row lg:items-center gap-3">
+                    <div className="flex-1 text-sm text-[#9E9E9E]">
+                      买家 {offer.buyer_shop} 出价 ${offer.buyer_offer.toLocaleString()}
+                      {offer.seller_counter ? ` · 你的反价 $${offer.seller_counter.toLocaleString()}` : ''}
+                      <span className="block text-xs text-[#616161] mt-1">第 {offer.round} 轮 · 截止 {formatOfferTime(offer.expires_at)}</span>
+                    </div>
+                    {renderOfferActions(offer, 'seller')}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </ListPage>
   );
 }
@@ -1709,10 +2088,16 @@ function leaderboardScore(entry: LeaderboardEntry, boardType: BoardType): number
   return entry.assets;
 }
 
-function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void> }) {
+function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void>; openMarketHot: () => void }) {
   const scoreLabel = BOARD_LABEL[boardType];
   return (
     <ListPage title="全服排行榜" subtitle="10 秒自动刷新；点击当铺名或「参观橱窗」可浏览他人展示柜与在售藏品。前 100 名获每日声誉与稀有刷新奖励。">
+      <div className="py-3 border-b border-[#2A2D34] mb-2 flex justify-between items-center gap-3">
+        <button type="button" onClick={openMarketHot} className="text-sm text-[#9E9E9E] hover:text-[#C8A97E] inline-flex items-center gap-2">
+          查看热门橱窗榜
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
       <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 border-b border-[#2A2D34] mb-2 flex justify-between gap-4">
         <div className="flex gap-4 sm:gap-8 overflow-x-auto custom-scrollbar pb-1">
           {(Object.keys(BOARD_LABEL) as BoardType[]).map((type) => <button key={type} onClick={() => setBoardType(type)} className={`pb-2 whitespace-nowrap ${boardType === type ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>{BOARD_LABEL[type]}</button>)}
@@ -1965,17 +2350,73 @@ function CodexTab({ customers, items }: { customers: Record<string, CustomerCode
   );
 }
 
-function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ownerId: number, itemId: string) => Promise<void>; back: () => void }) {
+function ShowcaseTab({ back, buy, onDeleteGuestbook, onLike, onPostGuestbook, showcase }: {
+  showcase: ShowcaseData;
+  buy: (ownerId: number, itemId: string) => Promise<void>;
+  back: () => void;
+  onLike: (ownerId: number) => Promise<void>;
+  onPostGuestbook: (ownerId: number, content: string) => Promise<void>;
+  onDeleteGuestbook: (messageId: number) => Promise<void>;
+}) {
+  const [guestbookDraft, setGuestbookDraft] = useState('');
+
+  const submitGuestbook = async () => {
+    const content = guestbookDraft.trim();
+    if (!content) return;
+    await onPostGuestbook(showcase.owner.id, content);
+    setGuestbookDraft('');
+  };
+
   return (
-    <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。只能购买标有橱窗售价的展示品。`}>
-      <div className="flex items-center justify-between border-b border-[#2A2D34] pb-4 mb-2">
+    <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。可点赞、留言，高赞橱窗会登上热门榜。`}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#2A2D34] pb-4 mb-2">
         <div className="text-sm text-[#9E9E9E]">
           <span className={showcase.owner.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{showcase.owner.online ? '在线' : '离线'}</span>
           <span className="mx-3">声誉 {showcase.owner.reputation}</span>
           {showcase.owner.ranking_badge && <span className="text-[#C8A97E]">{showcase.owner.ranking_badge}</span>}
+          {showcase.hot_rank ? <span className="ml-3 text-[#C8A97E]">热门榜 #{showcase.hot_rank}</span> : null}
         </div>
-        <button onClick={back} className="btn-secondary !h-9 !px-4">返回市场</button>
+        <div className="flex items-center gap-3">
+          {!showcase.owner.is_self ? (
+            <button onClick={() => onLike(showcase.owner.id)} className={`inline-flex items-center gap-2 text-sm ${showcase.liked_by_me ? 'text-[#C8A97E]' : 'text-[#9E9E9E] hover:text-[#C8A97E]'}`}>
+              <Heart className={`w-4 h-4 ${showcase.liked_by_me ? 'fill-[#C8A97E]' : ''}`} />
+              {showcase.like_count} 赞
+              <span className="text-xs text-[#616161]">近7天 {showcase.recent_like_count}</span>
+            </button>
+          ) : (
+            <span className="text-sm text-[#9E9E9E] inline-flex items-center gap-2"><Heart className="w-4 h-4 text-[#C8A97E]" />{showcase.like_count} 赞 · 近7天 {showcase.recent_like_count}</span>
+          )}
+          <button onClick={back} className="btn-secondary !h-9 !px-4">返回市场</button>
+        </div>
       </div>
+
+      <div className="py-5 border-b border-[#2A2D34] mb-2">
+        <h3 className="text-[#C8A97E] font-bold mb-3">访客留言</h3>
+        {showcase.guestbook.length === 0 ? (
+          <div className="text-sm text-[#616161] mb-4">还没有留言，做第一个参观者吧。</div>
+        ) : (
+          <div className="space-y-3 mb-4 max-h-[240px] overflow-y-auto custom-scrollbar">
+            {showcase.guestbook.map((entry) => (
+              <div key={entry.id} className="py-3 border-t border-[#2A2D34] flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-[#E0E0E0]">{entry.content}</div>
+                  <div className="text-xs text-[#616161] mt-1">{entry.author_shop} · {formatOfferTime(entry.created_at)}</div>
+                </div>
+                {showcase.owner.is_self && (
+                  <button onClick={() => onDeleteGuestbook(entry.id)} className="text-xs text-[#616161] hover:text-[#F44336] shrink-0">删除</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {!showcase.owner.is_self && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input value={guestbookDraft} onChange={(event) => setGuestbookDraft(event.target.value)} maxLength={200} className="input-field flex-1" placeholder="写下参观感受（最多 200 字）..." />
+            <button onClick={() => submitGuestbook()} className="btn-primary !h-10 !px-4 shrink-0">发送留言</button>
+          </div>
+        )}
+      </div>
+
       {showcase.items.length === 0 ? (
         <div className="py-16 text-center text-[#616161]">这家当铺暂时没有公开展示的藏品。</div>
       ) : (

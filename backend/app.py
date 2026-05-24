@@ -20,17 +20,25 @@ from game_state import GameStateManager
 from online_services import (
     buy_listing,
     buy_showcase_item,
+    buyer_respond_offer,
+    create_offer,
+    delete_guestbook,
     ensure_player_state,
+    get_hot_showcases,
     get_leaderboard,
     get_market_listings,
     get_my_listings,
+    get_my_offers,
     get_player_showcase,
     get_trade_logs,
     import_state as import_cloud_state,
     list_item,
+    post_guestbook,
     reset_player_data,
+    respond_offer,
     save_state,
     set_showcase_price,
+    toggle_showcase_like,
     unlist_item,
     update_listing_price,
 )
@@ -229,6 +237,27 @@ class ShowcasePriceRequest(BaseModel):
 class ShowcaseBuyRequest(BaseModel):
     owner_id: int
     item_id: str
+
+
+class MarketOfferRequest(BaseModel):
+    listing_id: str
+    price: int
+
+
+class MarketOfferActionRequest(BaseModel):
+    offer_id: str
+    action: str
+    counter_price: Optional[int] = None
+    price: Optional[int] = None
+
+
+class ShowcaseLikeRequest(BaseModel):
+    owner_id: int
+
+
+class ShowcaseGuestbookRequest(BaseModel):
+    owner_id: int
+    content: str
 
 
 async def get_engine(player: Dict[str, Any]) -> GameStateManager:
@@ -863,6 +892,43 @@ def market_trades(player: Dict[str, Any] = Depends(current_player)):
     return {"trades": get_trade_logs(player["id"])}
 
 
+@app.post("/api/market/offer")
+def market_offer(req: MarketOfferRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = create_offer(player["id"], req.listing_id, req.price)
+    return {"market_result": result, "offers": get_my_offers(player["id"])}
+
+
+@app.post("/api/market/offer/respond")
+def market_offer_respond(req: MarketOfferActionRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = respond_offer(player["id"], req.offer_id, req.action, req.counter_price)
+    state = load_state_for_response(player) if req.action == "accept" else None
+    payload: Dict[str, Any] = {"market_result": result, "offers": get_my_offers(player["id"])}
+    if state is not None:
+        payload["state"] = state.to_dict()
+    return payload
+
+
+@app.post("/api/market/offer/buyer_respond")
+def market_offer_buyer_respond(req: MarketOfferActionRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = buyer_respond_offer(player["id"], req.offer_id, req.action, req.price)
+    state = load_state_for_response(player) if req.action == "accept" else None
+    payload: Dict[str, Any] = {"market_result": result, "offers": get_my_offers(player["id"])}
+    if state is not None:
+        payload["state"] = state.to_dict()
+    return payload
+
+
+@app.get("/api/market/offers")
+def market_offers(player: Dict[str, Any] = Depends(current_player)):
+    return get_my_offers(player["id"])
+
+
+@app.get("/api/showcase/hot")
+def showcase_hot(limit: int = Query(20, ge=1, le=50), player: Dict[str, Any] = Depends(current_player)):
+    _ = player
+    return {"entries": get_hot_showcases(limit)}
+
+
 @app.get("/api/showcase/{owner_id}")
 def player_showcase(owner_id: int, player: Dict[str, Any] = Depends(current_player)):
     return get_player_showcase(player["id"], owner_id)
@@ -881,6 +947,27 @@ def showcase_buy(req: ShowcaseBuyRequest, player: Dict[str, Any] = Depends(curre
     state = load_state_for_response(player)
     showcase = get_player_showcase(player["id"], req.owner_id)
     return {"showcase_result": result, "state": state.to_dict(), "showcase": showcase}
+
+
+@app.post("/api/showcase/like")
+def showcase_like(req: ShowcaseLikeRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = toggle_showcase_like(player["id"], req.owner_id)
+    showcase = get_player_showcase(player["id"], req.owner_id)
+    return {"showcase_result": result, "showcase": showcase}
+
+
+@app.post("/api/showcase/guestbook")
+def showcase_guestbook(req: ShowcaseGuestbookRequest, player: Dict[str, Any] = Depends(current_player)):
+    result = post_guestbook(player["id"], req.owner_id, req.content)
+    showcase = get_player_showcase(player["id"], req.owner_id)
+    return {"showcase_result": result, "showcase": showcase}
+
+
+@app.delete("/api/showcase/guestbook/{message_id}")
+def showcase_guestbook_delete(message_id: int, player: Dict[str, Any] = Depends(current_player)):
+    result = delete_guestbook(player["id"], message_id)
+    showcase = get_player_showcase(player["id"], player["id"])
+    return {"showcase_result": result, "showcase": showcase}
 
 
 def load_state_for_response(player: Dict[str, Any]) -> GameStateManager:
