@@ -1548,7 +1548,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
     state.economy_index || 1
   );
   const tradeMode = customer.role === 'seller'
-    ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
+    ? { label: '向顾客收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
     : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
   const sessionClosed = customer.session_closed;
   return (
@@ -1563,7 +1563,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
             </div>
             <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.age} 岁 · {customer.appearance}</p>
             <p className="text-[#616161] text-xs leading-relaxed mt-1">{customer.backstory}</p>
-            {customer.last_deal_summary && <p className="text-[#616161] text-xs mt-1">旧账：{customer.last_deal_summary}</p>}
+            {customer.last_deal_summary && <p className="text-[#616161] text-xs mt-1">上次往来：{customer.last_deal_summary}</p>}
             <p className="text-[#616161] text-xs mt-1">{tradeMode.tone}</p>
           </div>
           <div className="text-left sm:text-right">
@@ -2305,7 +2305,7 @@ function CodexTab({ customers, items }: { customers: Record<string, CustomerCode
                 <span>记录：{customer.times_seen} 次</span>
                 <span>满意度：{customer.satisfaction}</span>
                 {customer.last_item_name && <span>最近物品：{customer.last_item_name}</span>}
-                {customer.last_deal_summary && <span>旧账：{customer.last_deal_summary}</span>}
+                {customer.last_deal_summary && <span>上次往来：{customer.last_deal_summary}</span>}
                 {sourceText(customer.sources) && <span>来源：{sourceText(customer.sources)}</span>}
               </div>
             </div>
@@ -2535,7 +2535,7 @@ function InfoSidebar({ state }: { state: GameState }) {
         <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">顾客</h3>
         <div className="flex items-center gap-3 mb-4"><img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34]" referrerPolicy="no-referrer" /><div><div className="font-bold">{customer.name}</div><div className="text-xs text-[#9E9E9E]">{customer.trait_cn} / 耐心 {customer.patience}</div>{customer.is_returning && <div className="text-xs text-[#C8A97E]">{customer.relationship_cn} · 第 {customer.visit_count} 次</div>}</div></div>
         <div className="space-y-2 text-xs text-[#9E9E9E] mb-8">
-          {customer.last_deal_summary && <p>旧账：{customer.last_deal_summary}</p>}
+          {customer.last_deal_summary && <p>上次往来：{customer.last_deal_summary}</p>}
           {customer.referred_by && <p>来源：忠实顾客推荐</p>}
           {customer.transaction_prefs?.slice(0, 2).map((pref, index) => <p key={`pref-${index}`}>偏好：{pref}</p>)}
           {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
