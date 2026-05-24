@@ -616,7 +616,7 @@ async def finalize_deal(player: Dict[str, Any] = Depends(current_player)):
 @app.post("/api/reject")
 async def reject_customer(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(player, state, "result", await state.async_reject(ai_client))
+    return state_response(player, state, "result", state.reject())
 
 
 @app.post("/api/dismiss_customer")
