@@ -1393,18 +1393,18 @@ function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMeth
             {item.is_appraised_fake === null && (
               <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
                 <select value={inventoryAppraiseMethod[item.id] || 'standard'} onChange={(event) => setInventoryAppraiseMethod({ ...inventoryAppraiseMethod, [item.id]: event.target.value })} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px]">
-                  <option value="standard">标准鉴定</option>
-                  <option value="expert">专家鉴定</option>
-                  <option value="quick">快速鉴定</option>
+                  {Object.entries(state.appraisal_methods).map(([key, info]) => (
+                    <option key={key} value={key}>{info.name_cn}</option>
+                  ))}
                 </select>
                 <button onClick={() => onAppraise(item.id, inventoryAppraiseMethod[item.id] || 'standard')} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors">鉴定</button>
               </div>
             )}
             <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
               <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px] disabled:opacity-50">
-                <option value="conservative">保守修复</option>
-                <option value="standard">标准修复</option>
-                <option value="premium">高阶修复</option>
+                {Object.entries(state.repair_methods).map(([key, info]) => (
+                  <option key={key} value={key}>{info.name_cn}</option>
+                ))}
               </select>
               <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap disabled:opacity-50 transition-colors">修复</button>
             </div>
