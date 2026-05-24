@@ -103,7 +103,7 @@ interface Customer {
   referred_by: string | null;
   patience: number;
   current_offer: number;
-  dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
+  dialogue_history: Array<{ role: 'player' | 'customer' | 'narrator'; content: string }>;
   session_closed?: 'deal' | 'walk_out' | null;
   deal_summary?: string | null;
 }
@@ -1338,17 +1338,16 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   const quickOffer = (ratio: number) => {
     const price = Math.max(1, Math.round(customer.current_offer * ratio));
     const formattedPrice = price.toLocaleString();
+    const hook = customer.persuasion_points[Math.floor(Math.random() * customer.persuasion_points.length)] || '咱们实在点谈';
     const sellerLines = [
-      `我出 ${formattedPrice} 元，现金马上给你。`,
-      `${formattedPrice} 元，我现在就能付款，省去你继续跑价的麻烦。`,
-      `按我看这件货的风险，我最多先报 ${formattedPrice} 元。`,
-      `${formattedPrice} 元成交的话，我这边立刻收下。`,
+      `${hook}。我出 ${formattedPrice} 元，现金马上给你。`,
+      `${formattedPrice} 元，我现在就能付款。${hook}，这价不算亏待你。`,
+      `按我看这件货的风险，最多先报 ${formattedPrice} 元。${hook}。`,
     ];
     const buyerLines = [
-      `这件货 ${formattedPrice} 元给你，附带来源说明。`,
-      `${formattedPrice} 元，你今天带走，我把保养要点也交代清楚。`,
-      `这件藏品我开 ${formattedPrice} 元，价格里包含店里的把关成本。`,
-      `${formattedPrice} 元可以谈，但这件货的品相和来历都值这个价。`,
+      `${hook}。这件货 ${formattedPrice} 元给你，附带来源说明。`,
+      `${formattedPrice} 元，你今天带走。${hook}，店里的把关成本我也算进去了。`,
+      `我开 ${formattedPrice} 元，${hook}，品相和来历都值这个价。`,
     ];
     const lines = customer.role === 'seller' ? sellerLines : buyerLines;
     setMessage(lines[Math.floor(Math.random() * lines.length)]);
@@ -1384,7 +1383,8 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
               <span className="text-[#616161] text-xs">{customer.trait_cn} / 耐心 {customer.patience}</span>
               {customer.is_returning && <span className="text-[#C8A97E] text-xs border-l border-[#2A2D34] pl-3">{customer.relationship_cn} · 第 {customer.visit_count} 次</span>}
             </div>
-            <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.name} 走进店里，{customer.backstory}</p>
+            <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.age} 岁 · {customer.appearance}</p>
+            <p className="text-[#616161] text-xs leading-relaxed mt-1">{customer.backstory}</p>
             {customer.last_deal_summary && <p className="text-[#616161] text-xs mt-1">旧账：{customer.last_deal_summary}</p>}
             <p className="text-[#616161] text-xs mt-1">{tradeMode.tone}</p>
           </div>
@@ -1395,17 +1395,27 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
         </div>
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
-        <Chat speaker={customer.name} avatarUrl={customer.avatar_url}>
-          {customer.role === 'seller'
-            ? `掌柜的，我今天带来【${customer.item.name}】。你给个价。`
-            : `掌柜的，我听说你这儿有件【${customer.item.name}】。你打算卖多少钱？`}
-        </Chat>
         {customer.dialogue_history.map((turn, idx) => (
-          <Chat key={idx} speaker={turn.role === 'player' ? '你' : customer.name} right={turn.role === 'player'} avatarUrl={turn.role === 'customer' ? customer.avatar_url : undefined}>
-            {turn.content}
-          </Chat>
+          turn.role === 'narrator' ? (
+            <Chat key={idx} narrator>{turn.content}</Chat>
+          ) : (
+            <Chat key={idx} speaker={turn.role === 'player' ? '你' : customer.name} right={turn.role === 'player'} avatarUrl={turn.role === 'customer' ? customer.avatar_url : undefined}>
+              {turn.content}
+            </Chat>
+          )
         ))}
-        {negotiatingMsg && <div className="flex gap-2 text-[#616161]"><RefreshCw className="w-4 h-4 animate-spin" />{negotiatingMsg}</div>}
+        {negotiatingMsg && (
+          <div className="flex gap-3 max-w-[86%] animate-slide-up">
+            <img src={customer.avatar_url} alt={customer.name} className="w-10 h-10 rounded-full bg-[#14171C] border border-[#2A2D34] object-cover shrink-0 mt-5" referrerPolicy="no-referrer" />
+            <div className="flex flex-col min-w-0 items-start">
+              <span className="text-xs text-[#616161] mb-1">{customer.name}</span>
+              <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] text-[#616161] italic flex gap-2 items-center rounded-sm">
+                <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                {negotiatingMsg}
+              </div>
+            </div>
+          </div>
+        )}
         <div ref={chatEndRef} />
       </div>
       <div className="border-t border-[#2A2D34] pt-4">
@@ -1454,9 +1464,16 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   );
 }
 
-function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; children: React.ReactNode; right?: boolean; speaker: string }) {
+function Chat({ avatarUrl, children, right, speaker, narrator }: { avatarUrl?: string; children: React.ReactNode; right?: boolean; speaker?: string; narrator?: boolean }) {
+  if (narrator) {
+    return (
+      <div className="max-w-[92%] mx-auto text-center animate-slide-up">
+        <p className="text-sm text-[#616161] italic leading-relaxed px-4 py-2 border-y border-[#2A2D34]/60 whitespace-pre-wrap">{children}</p>
+      </div>
+    );
+  }
   return (
-    <div className={`flex gap-3 max-w-[86%] ${right ? 'ml-auto flex-row-reverse' : ''}`}>
+    <div className={`flex gap-3 max-w-[86%] animate-slide-up ${right ? 'ml-auto flex-row-reverse' : ''}`}>
       {!right && (
         <img
           src={avatarUrl}
@@ -1467,7 +1484,7 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
       )}
       <div className={`flex flex-col min-w-0 ${right ? 'items-end' : 'items-start'}`}>
         <span className="text-xs text-[#616161] mb-1">{speaker}</span>
-        <div className={`px-4 py-3 leading-relaxed ${right ? 'border-r border-[#C8A97E] text-right bg-[rgba(200,169,126,0.06)]' : 'border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)]'}`}>{children}</div>
+        <div className={`px-4 py-3 leading-relaxed rounded-sm whitespace-pre-wrap ${right ? 'border-r border-[#C8A97E] text-right bg-[rgba(200,169,126,0.06)] text-[#D4B88A]' : 'border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] text-[#E0E0E0]'}`}>{children}</div>
       </div>
     </div>
   );

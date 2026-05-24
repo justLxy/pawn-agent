@@ -184,7 +184,7 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
             new_offer = max(lower, min(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
     return {
         **ai_response,
-        "dialogue": str(ai_response.get("dialogue", ""))[:320],
+        "dialogue": str(ai_response.get("dialogue", ""))[:480],
         "new_offer": max(1, int(new_offer)),
         "accepted": accepted,
         "walk_out": False if accepted else bool(ai_response.get("walk_out", False)),
@@ -210,9 +210,26 @@ def apply_negotiation_outcome(
     if accepted:
         patience_change = max(0, patience_change)
 
+    previous_offer = customer.current_offer
+    previous_patience = customer.patience
     customer.patience = max(0, customer.patience + patience_change)
     if customer.patience == 0:
         walk_out = True
+    if not accepted and not walk_out and new_offer != previous_offer:
+        customer.dialogue_history.append({
+            "role": "narrator",
+            "content": f"{'对方将报价抬至' if customer.role == 'seller' else '对方将出价调至'} ${new_offer:,}。",
+        })
+    if patience_change < 0:
+        customer.dialogue_history.append({
+            "role": "narrator",
+            "content": f"对方耐心下降，还剩 {customer.patience} 点。",
+        })
+    elif patience_change > 0 and previous_patience < customer.patience:
+        customer.dialogue_history.append({
+            "role": "narrator",
+            "content": f"你的话起了作用，对方耐心回升至 {customer.patience} 点。",
+        })
     customer.dialogue_history.append({"role": "customer", "content": dialogue})
     customer.current_offer = new_offer
     state.add_skill_xp("negotiation", 12)
@@ -350,6 +367,7 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         "visit_count": customer.visit_count,
         "last_deal_summary": customer.last_deal_summary,
     }
+    customer_context = customer.negotiation_context()
     ai_response = await ai_client.generate_negotiation(
         customer_name=customer.name,
         trait=customer.trait,
@@ -371,6 +389,7 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         dialogue_history=customer.dialogue_history,
         economy_context=economy_context,
         customer_memory=customer_memory,
+        customer_context=customer_context,
     )
     ai_response = sanitize_negotiation_result(state, ai_response, player_offer, intent)
     return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
@@ -410,6 +429,8 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
         "visit_count": customer.visit_count,
         "last_deal_summary": customer.last_deal_summary,
     }
+    customer_context = customer.negotiation_context()
+    previous_offer = customer.current_offer
     effective_offer = player_offer if player_offer is not None else customer.current_offer
     rule_response = ai_client._calculate_algorithmic_fallback(
         role=customer.role,
@@ -443,6 +464,10 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
                 dialogue_history=customer.dialogue_history,
                 economy_context=economy_context,
                 customer_memory=customer_memory,
+                customer_context=customer_context,
+                intent=intent,
+                patience_change=int(ai_response.get("patience_change", 0)),
+                previous_offer=previous_offer,
             ):
                 streamed_dialogue += chunk
                 yield line({"type": "chunk", "content": chunk})
@@ -454,7 +479,7 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
             for index in range(0, len(streamed_dialogue), 8):
                 yield line({"type": "chunk", "content": streamed_dialogue[index:index + 8]})
 
-        ai_response["dialogue"] = streamed_dialogue.strip()[:320]
+        ai_response["dialogue"] = streamed_dialogue.strip()[:480]
         try:
             payload = apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
         except HTTPException as exc:
@@ -481,7 +506,7 @@ async def finalize_deal(player: Dict[str, Any] = Depends(current_player)):
 @app.post("/api/reject")
 async def reject_customer(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(player, state, "result", state.reject())
+    return state_response(player, state, "result", await state.async_reject(ai_client))
 
 
 @app.post("/api/dismiss_customer")

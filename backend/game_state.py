@@ -576,6 +576,91 @@ class Customer:
         self.initial_offer = int(initial_offer if initial_offer is not None else self.current_offer)
         self.session_closed: Optional[str] = None
         self.deal_summary: Optional[str] = None
+        self.ensure_opening_greeting()
+
+    def build_opening_greeting(self) -> str:
+        item = self.item
+        trait_name = CUSTOMER_TRAITS[self.trait]["name_cn"]
+        item_blurb = item.story or item.description or f"一件{item.condition}成色的{item.category}货"
+        if self.role == "seller":
+            templates = [
+                f"（{self.appearance}）{self.name}推门进来，柜台上的铜铃轻轻晃了两下。{self.backstory}\n\n他把【{item.name}】从包里取出，{item_blurb}。\n\n「掌柜的，我这个人{trait_name}，不喜欢绕弯子——你先报个实在价。」",
+                f"（{self.appearance}）{self.name}在门槛处顿了顿，像是下了决心才走进来。{self.backstory}\n\n【{item.name}】被小心放在柜台上，{item_blurb}。\n\n「今天就想把这东西出手，${self.current_offer:,} 是我心里的数，你看看。」",
+                f"（{self.appearance}）{self.name}进门时带进一点外头的风。{self.backstory}\n\n他指了指【{item.name}】：{item_blurb}。\n\n「{trait_name}人说话直——${self.current_offer:,}，能不能谈，你给个话。」",
+            ]
+        else:
+            templates = [
+                f"（{self.appearance}）{self.name}在橱窗前停步，目光落在【{item.name}】上。{self.backstory}\n\n{item_blurb}。\n\n「听说你这儿有好货。这件……你打算开多少？」",
+                f"（{self.appearance}）{self.name}进门后先扫了一圈柜台，最后停在【{item.name}】前。{self.backstory}\n\n「我{trait_name}，看中这件了。${self.current_offer:,} 是我能出的价，成不成你说了算。」",
+                f"（{self.appearance}）{self.name}推门进来，语气里带着点挑剔。{self.backstory}\n\n他点了点【{item.name}】：{item_blurb}。\n\n「别拿次货糊弄我，这价 ${self.current_offer:,}，能不能成？」",
+            ]
+        return random.choice(templates)
+
+    def ensure_opening_greeting(self):
+        if not self.dialogue_history:
+            self.dialogue_history.append({"role": "customer", "content": self.build_opening_greeting()})
+
+    def negotiation_context(self) -> Dict[str, Any]:
+        return {
+            "name": self.name,
+            "age": self.age,
+            "appearance": self.appearance,
+            "backstory": self.backstory,
+            "trait_desc": CUSTOMER_TRAITS[self.trait]["desc"],
+            "trait_cn": CUSTOMER_TRAITS[self.trait]["name_cn"],
+            "role": self.role,
+            "transaction_prefs": self.transaction_prefs,
+            "persuasion_points": self.persuasion_points,
+            "fraud_intent": self.fraud_intent,
+            "relationship_cn": {
+                "new": "新客",
+                "familiar": "熟客",
+                "loyal": "忠实顾客",
+                "vip": "贵宾",
+                "strained": "关系紧张",
+            }.get(self.relationship_level, "新客"),
+            "visit_count": self.visit_count,
+            "last_deal_summary": self.last_deal_summary,
+            "item_name": self.item.name,
+            "item_category": self.item.category,
+            "item_condition": self.item.condition,
+            "item_desc": self.item.description,
+            "item_story": self.item.story,
+            "current_offer": self.current_offer,
+        }
+
+    def build_appraisal_reaction(self, verdict: str, detects_fake: bool) -> str:
+        if detects_fake:
+            if self.fraud_intent:
+                return random.choice([
+                    "……你鉴定得挺细啊。反正各人有各人的看法，这结论我也不是不能听。",
+                    "（目光闪了闪）作伪？掌柜的，这行水很深，你确定看准了？",
+                ])
+            return random.choice([
+                "作伪？不可能！我祖上留下来的东西，怎么会是假的！",
+                "你这鉴定……让我心里有点打鼓。要不再仔细看看？",
+            ])
+        return random.choice([
+            f"嗯，{verdict}……听你这么说，我心里也踏实些。",
+            "鉴定费花得值，至少心里有个数了。",
+            "看不出明显问题就好，那咱们接着谈价？",
+        ])
+
+    def build_reject_farewell(self) -> str:
+        if self.trait == "hardball":
+            return random.choice([
+                "行，既然谈不拢，我也不耽误你工夫。后会有期。",
+                "这价没法做，我走了。掌柜的，下次别这么压价。",
+            ])
+        if self.trait == "eager":
+            return random.choice([
+                "唉，好吧……那我再去别家问问，打扰了。",
+                "行，既然你不收，我也不多留了，告辞。",
+            ])
+        return random.choice([
+            "明白了，是我唐突了。打扰掌柜，我先走了。",
+            "好吧，买卖不成仁义在，下次有缘再谈。",
+        ])
 
     def _default_backstory(self) -> str:
         if self.role == "seller":
@@ -1468,7 +1553,7 @@ class GameStateManager:
 
         profile = await ai_client.generate_customer_profile(
             role,
-            trait,
+            CUSTOMER_TRAITS[trait]["desc"],
             item.name,
             item.category,
             {
@@ -1494,6 +1579,9 @@ class GameStateManager:
         )
         charm_bonus = self.skills["charm"]["level"] // 2
         customer.patience = clamp(customer.patience + charm_bonus, 1, 8)
+        greeting = await ai_client.generate_customer_greeting(customer.negotiation_context())
+        if greeting.strip():
+            customer.dialogue_history = [{"role": "customer", "content": greeting.strip()[:480]}]
         return customer
 
     def select_next_customer(self) -> bool:
@@ -1596,7 +1684,41 @@ class GameStateManager:
         if ai_notes:
             item.appraisal_notes = ai_notes
             result["notes"] = ai_notes
+        customer = self.active_customer
+        method_name = str(result.get("method_name") or "专业鉴定")
+        customer.dialogue_history.append({
+            "role": "narrator",
+            "content": f"你以【{method_name}】仔细端详【{item.name}】，放大镜下不放过一丝痕迹……",
+        })
+        reaction = await ai_client.generate_appraisal_reaction(
+            customer.negotiation_context(),
+            str(result.get("verdict") or "未见明显作伪"),
+            method_name,
+            list(result.get("notes") or []),
+        )
+        if not reaction.strip():
+            reaction = customer.build_appraisal_reaction(
+                str(result.get("verdict") or "未见明显作伪"),
+                bool(result.get("is_fake")),
+            )
+        customer.dialogue_history.append({"role": "customer", "content": reaction.strip()})
         return result
+
+    async def async_reject(self, ai_client) -> Dict[str, Any]:
+        if not self.active_customer:
+            return {"error": "没有活跃的顾客。"}
+        customer = self.active_customer
+        if customer.session_closed:
+            return {"error": "请先送离当前顾客。"}
+        farewell = await ai_client.generate_reject_farewell(customer.negotiation_context())
+        if not farewell.strip():
+            farewell = customer.build_reject_farewell()
+        customer.dialogue_history.append({"role": "customer", "content": farewell.strip()})
+        customer.session_closed = "walk_out"
+        customer.deal_summary = "你婉拒了这笔交易，对方离开了当铺。"
+        self._record_customer_outcome(customer, "reject")
+        self._check_achievements("reject")
+        return {"success": True, "message": "已拒绝交易。"}
 
     def appraise_inventory_item(self, item_id: str, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
         item = self.get_item(item_id)
@@ -1866,10 +1988,15 @@ class GameStateManager:
     def reject(self) -> Dict[str, Any]:
         if not self.active_customer:
             return {"error": "没有活跃的顾客。"}
-        self._record_customer_outcome(self.active_customer, "reject")
-        self.select_next_customer()
+        if self.active_customer.session_closed:
+            return {"error": "请先送离当前顾客。"}
+        customer = self.active_customer
+        customer.dialogue_history.append({"role": "customer", "content": customer.build_reject_farewell()})
+        customer.session_closed = "walk_out"
+        customer.deal_summary = "你婉拒了这笔交易，对方离开了当铺。"
+        self._record_customer_outcome(customer, "reject")
         self._check_achievements("reject")
-        return {"success": True, "message": "已拒绝交易。下一位顾客！"}
+        return {"success": True, "message": "已拒绝交易。"}
 
     def dismiss_customer(self) -> Dict[str, Any]:
         if not self.active_customer:
