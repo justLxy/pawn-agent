@@ -1457,24 +1457,63 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
           </div>
         ) : (
           <>
-        <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
-        <form onSubmit={onNegotiate} className="flex gap-3"><input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." /><button disabled={loading} className="btn-primary">谈判</button></form>
-        <div className="flex flex-col sm:flex-row gap-2 mt-3">
-          <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[180px]">
-            {Object.entries(state.appraisal_methods).map(([key, info]) => {
-              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
-              return (
-                <option key={key} value={key}>
-                  {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
-                </option>
-              );
-            })}
-          </select>
-          <button onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
-          <button onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
-          <button onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
+        <div className="md:hidden">
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">试探价</button>
+            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">当前价</button>
+            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">强势报价</button>
+          </div>
+          <form onSubmit={onNegotiate} className="flex flex-col gap-3">
+            <input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1 min-h-[48px]" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." />
+            <button type="submit" disabled={loading} className="btn-primary w-full min-h-[48px] touch-manipulation">谈判</button>
+          </form>
+          <div className="mt-5 space-y-4">
+            <div className="flex flex-col gap-3 pb-4 border-b border-[#2A2D34]">
+              <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-12 !px-3 w-full touch-manipulation">
+                {Object.entries(state.appraisal_methods).map(([key, info]) => {
+                  const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+                  return (
+                    <option key={key} value={key}>
+                      {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
+                    </option>
+                  );
+                })}
+              </select>
+              <button type="button" onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary w-full !h-12 touch-manipulation">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-12 touch-manipulation">成交</button>
+              <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-12 touch-manipulation">拒绝</button>
+            </div>
+          </div>
         </div>
-        <p className="mt-2 text-xs text-[#616161] font-sans leading-relaxed">
+        <div className="hidden md:block">
+          <div className="flex gap-2 mb-3">
+            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button>
+            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button>
+            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button>
+          </div>
+          <form onSubmit={onNegotiate} className="flex gap-3">
+            <input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." />
+            <button type="submit" disabled={loading} className="btn-primary">谈判</button>
+          </form>
+          <div className="flex flex-row gap-2 mt-3">
+            <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 w-[180px]">
+              {Object.entries(state.appraisal_methods).map(([key, info]) => {
+                const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+                return (
+                  <option key={key} value={key}>
+                    {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
+                  </option>
+                );
+              })}
+            </select>
+            <button type="button" onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
+            <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
+            <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
+          </div>
+        </div>
+        <p className="mt-4 md:mt-2 text-xs text-[#616161] font-sans leading-relaxed">
           {selectedAppraisal.name_cn}：预计 ${appraisalPreview.cost.toLocaleString()}；
           赝品识破率 {formatAppraisalPercent(appraisalPreview.fakeDetectionRate)}（若为赝品时判定为假）；
           估值误差 ±{formatAppraisalPercent(appraisalPreview.valueErrorMargin)}。
