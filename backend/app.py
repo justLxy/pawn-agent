@@ -509,6 +509,22 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         raise HTTPException(status_code=400, detail=f"现金不足，你当前最多只能出 ${state.cash}。")
 
     customer.dialogue_history.append({"role": "player", "content": req.message.strip()})
+    if intent in ["offer", "accept", "reject"]:
+        effective_offer = player_offer if player_offer is not None else customer.current_offer
+        rule_response = ai_client._calculate_algorithmic_fallback(
+            role=customer.role,
+            trait=customer.trait,
+            limit_price=customer.limit_price,
+            current_offer=customer.current_offer,
+            player_offer=effective_offer,
+            patience=customer.patience,
+            intent=intent,
+            negotiation_level=state.skills["negotiation"]["level"],
+            charm_level=state.skills["charm"]["level"],
+        )
+        ai_response = sanitize_negotiation_result(state, rule_response, player_offer, intent)
+        return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
+
     economy_context = {
         "economy_index": state.economy_index,
         "economic_pressure": state.economic_pressure,
