@@ -1630,16 +1630,30 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
     }
     price = Math.max(1, price);
     const formattedPrice = price.toLocaleString();
-    const hook = customer.persuasion_points[Math.floor(Math.random() * customer.persuasion_points.length)] || '咱们实在点谈';
+    // persuasion_points 是「突破口」策略提示，不能原样拼进玩家台词
+    const sellerHooks = [
+      '咱们实在点谈',
+      '现金立结，你也省心',
+      '这价我已经把风险算进去了',
+      '市场行情就这样，我也不想压太狠',
+    ];
+    const buyerHooks = [
+      '品相和来历我都摆明了',
+      '这价算下来你也不亏',
+      '店里的把关成本我也算进去了',
+      '诚心要的话，就这个数',
+    ];
+    const hooks = customer.role === 'seller' ? sellerHooks : buyerHooks;
+    const hook = hooks[Math.floor(Math.random() * hooks.length)];
     const sellerLines = [
-      `${hook}。我出 ${formattedPrice} 元，现金马上给你。`,
-      `${formattedPrice} 元，我现在就能付款。${hook}，这价不算亏待你。`,
-      `按我看这件货的风险，最多先报 ${formattedPrice} 元。${hook}。`,
+      `${hook}，我出 ${formattedPrice} 元，现金马上给你。`,
+      `${formattedPrice} 元，我现在就能付款，这价不算亏待你。`,
+      `按我看这件货的风险，最多先报 ${formattedPrice} 元。`,
     ];
     const buyerLines = [
-      `${hook}。这件货 ${formattedPrice} 元给你，附带来源说明。`,
-      `${formattedPrice} 元，你今天带走。${hook}，店里的把关成本我也算进去了。`,
-      `我开 ${formattedPrice} 元，${hook}，品相和来历都值这个价。`,
+      `${hook}，这件货 ${formattedPrice} 元给你。`,
+      `${formattedPrice} 元，你今天带走，来源说明我也一并给你。`,
+      `我开 ${formattedPrice} 元，品相和来历都值这个价。`,
     ];
     const lines = customer.role === 'seller' ? sellerLines : buyerLines;
     setMessage(lines[Math.floor(Math.random() * lines.length)]);
