@@ -1450,16 +1450,46 @@ function AuthScreen(props: {
   onUseRecoveredUsername: (username: string) => void;
 }) {
   const { authForm, authMode, loading, onSubmit, recoveredUsernames, setAuthForm, setAuthMode, onUseRecoveredUsername } = props;
+  const [onlineCount, setOnlineCount] = useState<number | null>(null);
+
   const switchMode = (mode: 'login' | 'register' | 'recover') => {
     setAuthMode(mode);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadOnlineCount = () => {
+      apiGet<{ online: number }>('/api/online/count')
+        .then((data) => {
+          if (!cancelled) setOnlineCount(data.online);
+        })
+        .catch(() => {
+          if (!cancelled) setOnlineCount(null);
+        });
+    };
+    loadOnlineCount();
+    const timer = window.setInterval(loadOnlineCount, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   return (
     <div className="w-full max-w-[520px]">
       <div className="flex items-center gap-3 mb-10">
         <Store className="w-9 h-9 text-[#C8A97E]" />
         <div>
           <h1 className="text-[28px] font-bold text-[#C8A97E] tracking-widest">当铺代理人</h1>
-          <p className="text-[#616161] text-sm font-sans">联机市场与全服排行已开启</p>
+          <p className="text-[#616161] text-sm font-sans leading-relaxed">
+            {onlineCount !== null ? (
+              <>
+                <span className="text-[#4CAF50] font-medium">当前 {onlineCount} 人在线</span>
+                <span className="mx-2 text-[#2A2D34]">·</span>
+              </>
+            ) : null}
+            联机市场与全服排行已开启
+          </p>
         </div>
       </div>
       <div className="flex gap-6 md:gap-8 border-b border-[#2A2D34] mb-8 overflow-x-auto custom-scrollbar">

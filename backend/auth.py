@@ -85,6 +85,14 @@ def register_player(username: str, password: str, shop_name: str) -> Dict[str, A
     return {"token": token, "player": _public_player(player)}
 
 
+def count_online_players(now: Optional[int] = None) -> int:
+    now = now if now is not None else int(time.time())
+    threshold = now - ONLINE_IDLE_SECONDS
+    with get_connection() as conn:
+        row = conn.execute("SELECT COUNT(*) AS c FROM players WHERE last_seen > ?", (threshold,)).fetchone()
+    return int(row["c"] or 0)
+
+
 def recover_usernames_by_password(password: str) -> list[str]:
     if len(password) < 4:
         raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")

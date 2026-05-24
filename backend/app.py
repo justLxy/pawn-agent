@@ -15,7 +15,7 @@ from env_loader import load_env_file
 load_env_file()
 
 from ai_client import AIClient
-from auth import current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
+from auth import count_online_players, current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
 from database import init_db
 from game_state import GameStateManager
 from online_services import (
@@ -597,6 +597,12 @@ def apply_negotiation_outcome(
         customer.deal_summary = "顾客离开了当铺，这笔买卖没有谈成，声誉 -2。"
         return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
     return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
+
+
+@app.get("/api/online/count")
+def online_count():
+    online = count_online_players()
+    return {"online": online, "message": f"当前 {online} 人在线"}
 
 
 @app.post("/api/auth/register")
