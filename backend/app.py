@@ -259,6 +259,47 @@ def format_offer_change_narration(role: str, previous_offer: int, new_offer: int
     return f"对方将{price_term}{direction} ${new_offer:,}。"
 
 
+def seller_acceptance_price(current_offer: int, limit_price: int, skill_relief: float) -> int:
+    hidden_floor = int(limit_price * (1 - skill_relief))
+    public_floor = int(current_offer * max(0.88, 0.95 - skill_relief))
+    return max(hidden_floor, public_floor)
+
+
+def buyer_acceptance_price(current_offer: int, limit_price: int, skill_relief: float) -> int:
+    hidden_ceiling = int(limit_price * (1 + skill_relief))
+    public_ceiling = int(current_offer * min(1.16, 1.06 + skill_relief))
+    return min(hidden_ceiling, public_ceiling)
+
+
+def terminal_negotiation_dialogue(customer: Any, accepted: bool, walk_out: bool, new_offer: int) -> str:
+    if accepted:
+        if customer.role == "seller":
+            return f"{customer.name}盯着柜台沉默片刻，终于把手从货上挪开：「行，${new_offer:,}，这件东西归你。咱们就按这个价办。」"
+        return f"{customer.name}看了看柜台里的货，点头道：「行，${new_offer:,} 我认了。帮我包起来，这笔买卖就这么定。」"
+    if walk_out:
+        if customer.role == "seller":
+            return f"{customer.name}把东西重新收回怀里，语气冷了下来：「这个价没法谈，我还是去别家问问。」"
+        return f"{customer.name}摇了摇头，往门口退了一步：「这价我接不住，今天就先算了。」"
+    if customer.role == "seller":
+        return f"{customer.name}皱着眉把货往自己身边挪了挪：「这个价太低，做不了。要谈，至少得看见 ${new_offer:,} 的诚意。」"
+    return f"{customer.name}按住钱夹，仍没有点头：「这个价我还不能接。若你愿意松到 ${new_offer:,}，我可以继续听。」"
+
+
+def normalize_negotiation_dialogue(customer: Any, dialogue: str, accepted: bool, walk_out: bool, new_offer: int) -> str:
+    text = (dialogue or "").strip()
+    deal_markers = ["成交", "定了", "归你", "包起来", "我认了"]
+    refusal_markers = ["太低", "太高", "不够", "做不了", "没法", "不能", "不卖", "不买", "再添", "加一点", "去别家", "算了"]
+    if accepted or walk_out:
+        return terminal_negotiation_dialogue(customer, accepted, walk_out, new_offer)
+    if not text:
+        return terminal_negotiation_dialogue(customer, False, False, new_offer)
+    if any(marker in text for marker in deal_markers):
+        return terminal_negotiation_dialogue(customer, False, False, new_offer)
+    if any(marker in text for marker in refusal_markers):
+        return text
+    return text
+
+
 def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, Any], player_offer: Optional[int], intent: str) -> Dict[str, Any]:
     customer = state.active_customer
     if not customer:
@@ -270,7 +311,7 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
     if effective_offer is not None:
         effective_offer = int(effective_offer)
     if customer.role == "seller":
-        acceptable_price = int(customer.limit_price * (1 - skill_relief))
+        acceptable_price = seller_acceptance_price(customer.current_offer, customer.limit_price, skill_relief)
         upper = max(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
         if effective_offer is not None and effective_offer >= acceptable_price:
             accepted = True
@@ -279,7 +320,7 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
             accepted = False
             new_offer = min(upper, max(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
     else:
-        acceptable_price = int(customer.limit_price * (1 + skill_relief))
+        acceptable_price = buyer_acceptance_price(customer.current_offer, customer.limit_price, skill_relief)
         lower = min(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
         if effective_offer is not None and effective_offer <= acceptable_price:
             accepted = True
@@ -320,6 +361,7 @@ def apply_negotiation_outcome(
     customer.patience = max(0, customer.patience + patience_change)
     if customer.patience == 0:
         walk_out = True
+    dialogue = normalize_negotiation_dialogue(customer, dialogue, accepted, walk_out, new_offer)
     if not accepted and not walk_out and new_offer != previous_offer:
         customer.dialogue_history.append({
             "role": "narrator",
@@ -561,33 +603,43 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 
         yield line({"type": "start"})
         streamed_dialogue = ""
-        try:
-            async for chunk in ai_client.stream_negotiation_dialogue(
-                customer_name=customer.name,
-                trait_desc=customer.to_dict()["trait_desc"],
-                role=customer.role,
-                item_name=customer.item.name,
-                player_message=player_message,
-                new_offer=int(ai_response["new_offer"]),
-                accepted=bool(ai_response["accepted"]),
-                walk_out=bool(ai_response["walk_out"]),
-                dialogue_history=customer.dialogue_history,
-                economy_context=economy_context,
-                customer_memory=customer_memory,
-                customer_context=customer_context,
-                intent=intent,
-                patience_change=int(ai_response.get("patience_change", 0)),
-                previous_offer=previous_offer,
-            ):
-                streamed_dialogue += chunk
-                yield line({"type": "chunk", "content": chunk})
-        except Exception as exc:
-            logger.warning("Negotiation dialogue stream failed: %s", exc)
+        if bool(ai_response["accepted"]) or bool(ai_response["walk_out"]) or intent in ["offer", "accept", "reject"]:
+            streamed_dialogue = normalize_negotiation_dialogue(
+                customer,
+                str(ai_response.get("dialogue") or ""),
+                bool(ai_response["accepted"]),
+                bool(ai_response["walk_out"]),
+                int(ai_response["new_offer"]),
+            )
+            yield line({"type": "chunk", "content": streamed_dialogue})
+        else:
+            try:
+                async for chunk in ai_client.stream_negotiation_dialogue(
+                    customer_name=customer.name,
+                    trait_desc=customer.to_dict()["trait_desc"],
+                    role=customer.role,
+                    item_name=customer.item.name,
+                    player_message=player_message,
+                    new_offer=int(ai_response["new_offer"]),
+                    accepted=bool(ai_response["accepted"]),
+                    walk_out=bool(ai_response["walk_out"]),
+                    dialogue_history=customer.dialogue_history,
+                    economy_context=economy_context,
+                    customer_memory=customer_memory,
+                    customer_context=customer_context,
+                    intent=intent,
+                    patience_change=int(ai_response.get("patience_change", 0)),
+                    previous_offer=previous_offer,
+                ):
+                    streamed_dialogue += chunk
+                    yield line({"type": "chunk", "content": chunk})
+            except Exception as exc:
+                logger.warning("Negotiation dialogue stream failed: %s", exc)
 
-        if not streamed_dialogue.strip():
-            streamed_dialogue = str(ai_response.get("dialogue") or "嗯，我再想想这个价。")
-            for index in range(0, len(streamed_dialogue), 8):
-                yield line({"type": "chunk", "content": streamed_dialogue[index:index + 8]})
+            if not streamed_dialogue.strip():
+                streamed_dialogue = str(ai_response.get("dialogue") or "嗯，我再想想这个价。")
+                for index in range(0, len(streamed_dialogue), 8):
+                    yield line({"type": "chunk", "content": streamed_dialogue[index:index + 8]})
 
         ai_response["dialogue"] = streamed_dialogue.strip()[:480]
         try:
