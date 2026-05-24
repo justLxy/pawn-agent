@@ -672,7 +672,7 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      const streamResult: { finalPayload?: NegotiationStreamPayload } = {};
+      const streamResult: { finalPayload?: NegotiationStreamPayload; error?: string } = {};
       let streamedDialogue = '';
       const updateStreamedDialogue = (content: string) => {
         streamedDialogue += content;
@@ -693,6 +693,7 @@ export default function App() {
         if (!line.trim()) return;
         const eventData = JSON.parse(line);
         if (eventData.type === 'chunk') updateStreamedDialogue(String(eventData.content || ''));
+        if (eventData.type === 'error') streamResult.error = String(eventData.detail || '谈判结算失败。');
         if (eventData.type === 'final') streamResult.finalPayload = eventData.payload as NegotiationStreamPayload;
       };
       while (true) {
@@ -705,7 +706,8 @@ export default function App() {
       }
       buffer += decoder.decode();
       if (buffer.trim()) handleLine(buffer);
-      if (!streamResult.finalPayload) throw new Error('谈判流式响应未完成。');
+      if (streamResult.error) throw new Error(streamResult.error);
+      if (!streamResult.finalPayload) throw new Error('谈判响应中断，尚未完成结算，请重试。');
 
       const data = streamResult.finalPayload;
       setState(data.state);
@@ -1354,11 +1356,13 @@ function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ow
 }
 
 function ManagementTab({ loanAmount, onAction, setLoanAmount, state }: { state: GameState; loanAmount: number; setLoanAmount: (value: number) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+  const dailyInterest = state.loan.principal > 0 ? Math.max(1, Math.round(state.loan.principal * state.loan.interest_rate)) : 0;
   return (
     <ListPage title="经营财务" subtitle="技能、贷款、税务和市场趋势共同影响长期竞争。">
       {Object.entries(state.skills).map(([key, skill]) => <div key={key} className="py-4 border-b border-[#2A2D34]"><div className="flex justify-between"><span>{state.skill_info[key]?.name_cn || key}</span><span className="text-[#C8A97E]">Lv.{skill.level}</span></div><div className="progress-bg mt-2"><div className="progress-fill" style={{ width: `${Math.min(100, (skill.xp / Math.max(100, skill.level * 100)) * 100)}%` }} /></div></div>)}
       <div className="py-6 border-b border-[#2A2D34] flex flex-col sm:flex-row flex-wrap gap-3 sm:items-center">
         <span>贷款本金 ${state.loan.principal.toLocaleString()}</span>
+        <span className="text-xs text-[#9E9E9E]">日息 {(state.loan.interest_rate * 100).toFixed(1)}%，结算扣 ${dailyInterest.toLocaleString()}</span>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
           <input type="number" value={loanAmount} onChange={(event) => setLoanAmount(parseInt(event.target.value) || 100)} className="input-field !h-9 flex-1 sm:flex-none sm:w-[150px] min-w-[100px]" style={{ paddingLeft: 12 }} />
           <button onClick={() => onAction('/api/loan/borrow', { amount: loanAmount }, 'loan_result', '贷款到账。', 'cash')} className="btn-primary !h-9 px-3 sm:px-4">借款</button>

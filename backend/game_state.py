@@ -346,6 +346,17 @@ class Customer:
         limit_ratio, start_ratio = ratios[self.trait]
         return max(5, int(perceived_value * limit_ratio)), max(10, int(perceived_value * start_ratio))
 
+    def retarget_item(self, item: Item, note: Optional[str] = None):
+        self.item = item
+        calculated_limit, calculated_offer = self._calculate_prices()
+        self.limit_price = calculated_limit
+        self.current_offer = calculated_offer
+        self.initial_offer = calculated_offer
+        if self.role == "buyer":
+            self.backstory = f"{self.name} 转而对店里的 {item.name} 产生兴趣，想听听你的报价。"
+        if note:
+            self.dialogue_history.append({"role": "customer", "content": note})
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
@@ -454,30 +465,124 @@ class GameStateManager:
         self.daily_customer_queue = []
         tasks = [self.generate_random_customer_async(ai_client) for _ in range(self.total_customers_today)]
         self.daily_customer_queue.extend(await asyncio.gather(*tasks))
+        self._rebalance_buyer_targets()
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
 
     def initialize_day_fast(self):
         """Initialize a playable day immediately with local templates."""
         self.daily_customer_queue = [self.generate_random_customer() for _ in range(self.total_customers_today)]
+        self._rebalance_buyer_targets()
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
 
     def generate_random_customer(self) -> Customer:
         name = random.choice(CUSTOMER_NAMES)
         trait = random.choice(list(CUSTOMER_TRAITS.keys()))
-        saleable_items = [i for i in self.inventory if i.status in ["stored", "displayed"]]
+        saleable_items = self._saleable_items()
         role = "buyer" if saleable_items and random.random() < 0.45 else "seller"
 
         if role == "seller":
-            category = random.choice(list(ITEM_TEMPLATES.keys()))
-            template = random.choice(ITEM_TEMPLATES[category])
-            item = self._generate_item_from_template(template, category)
+            return self._generate_local_seller_customer(name, trait)
         else:
-            displayed = [i for i in saleable_items if i.status == "displayed"]
-            item = random.choice(displayed or saleable_items)
+            item = self._choose_saleable_item() or random.choice(saleable_items)
 
         customer = Customer(name=name, trait=trait, role=role, item=item, shop_level=self.shop_level, marketer_active=self.staff["marketer"])
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
         return customer
+
+    def _saleable_items(self, exclude_ids: Optional[set[str]] = None) -> List[Item]:
+        exclude_ids = exclude_ids or set()
+        return [item for item in self.inventory if item.status in ["stored", "displayed"] and item.id not in exclude_ids]
+
+    def _is_saleable_item(self, item_id: str) -> bool:
+        item = self.get_item(item_id)
+        return bool(item and item.status in ["stored", "displayed"])
+
+    def _choose_saleable_item(self, exclude_ids: Optional[set[str]] = None, target_counts: Optional[Dict[str, int]] = None) -> Optional[Item]:
+        saleable_items = self._saleable_items(exclude_ids)
+        if not saleable_items:
+            return None
+        displayed = [item for item in saleable_items if item.status == "displayed"]
+        pool = displayed or saleable_items
+        if target_counts is None:
+            return random.choice(pool)
+        return min(pool, key=lambda item: (target_counts.get(item.id, 0), 0 if item.status == "displayed" else 1, item.market_value))
+
+    def _generate_local_seller_customer(self, name: Optional[str] = None, trait: Optional[str] = None) -> Customer:
+        category = random.choice(list(ITEM_TEMPLATES.keys()))
+        template = random.choice(ITEM_TEMPLATES[category])
+        item = self._generate_item_from_template(template, category)
+        customer = Customer(
+            name=name or random.choice(CUSTOMER_NAMES),
+            trait=trait or random.choice(list(CUSTOMER_TRAITS.keys())),
+            role="seller",
+            item=item,
+            shop_level=self.shop_level,
+            marketer_active=self.staff["marketer"],
+        )
+        customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
+        return customer
+
+    def _retarget_buyer(self, customer: Customer, unavailable_item_id: Optional[str] = None, target_counts: Optional[Dict[str, int]] = None, announce: bool = True) -> bool:
+        if customer.role != "buyer":
+            return True
+        exclude_ids = {unavailable_item_id} if unavailable_item_id else set()
+        item = self._choose_saleable_item(exclude_ids, target_counts)
+        if not item:
+            return False
+        if customer.item.id == item.id and self._is_saleable_item(item.id):
+            if target_counts is not None:
+                target_counts[item.id] = target_counts.get(item.id, 0) + 1
+            return True
+        note = f"刚才那件已经不合适了，我再看看这件【{item.name}】。" if announce else None
+        customer.retarget_item(item, note)
+        if target_counts is not None:
+            target_counts[item.id] = target_counts.get(item.id, 0) + 1
+        return True
+
+    def _rebalance_buyer_targets(self):
+        saleable_items = self._saleable_items()
+        if not saleable_items:
+            self.daily_customer_queue = [
+                self._generate_local_seller_customer(customer.name, customer.trait) if customer.role == "buyer" else customer
+                for customer in self.daily_customer_queue
+            ]
+            return
+        buyer_slots = max(1, len(saleable_items) * 2)
+        buyer_count = 0
+        target_counts: Dict[str, int] = {}
+        for index, customer in enumerate(list(self.daily_customer_queue)):
+            if customer.role != "buyer":
+                continue
+            if buyer_count >= buyer_slots:
+                self.daily_customer_queue[index] = self._generate_local_seller_customer(customer.name, customer.trait)
+                continue
+            if self._retarget_buyer(customer, target_counts=target_counts, announce=False):
+                buyer_count += 1
+            else:
+                self.daily_customer_queue[index] = self._generate_local_seller_customer(customer.name, customer.trait)
+
+    def _repair_buyer_queue_after_item_removed(self, item_id: str):
+        target_counts: Dict[str, int] = {}
+        if self.active_customer and self.active_customer.role == "buyer" and self._is_saleable_item(self.active_customer.item.id):
+            target_counts[self.active_customer.item.id] = target_counts.get(self.active_customer.item.id, 0) + 1
+        for index, customer in enumerate(list(self.daily_customer_queue)):
+            if customer.role != "buyer":
+                continue
+            if customer.item.id != item_id and self._is_saleable_item(customer.item.id):
+                target_counts[customer.item.id] = target_counts.get(customer.item.id, 0) + 1
+                continue
+            if not self._retarget_buyer(customer, item_id, target_counts):
+                self.daily_customer_queue[index] = self._generate_local_seller_customer(customer.name, customer.trait)
+
+    def ensure_active_customer_target(self):
+        if not self.active_customer or self.active_customer.role != "buyer":
+            return
+        if self._is_saleable_item(self.active_customer.item.id):
+            return
+        old_name = self.active_customer.name
+        old_trait = self.active_customer.trait
+        if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
+            self.active_customer = self._generate_local_seller_customer(old_name, old_trait)
 
     async def async_advance_to_next_day(self, ai_client):
         import asyncio
@@ -546,7 +651,7 @@ class GameStateManager:
         name = await ai_client.generate_random_content("customer_name") or random.choice(CUSTOMER_NAMES)
         trait = random.choice(list(CUSTOMER_TRAITS.keys()))
 
-        saleable_items = [i for i in self.inventory if i.status in ["stored", "displayed"]]
+        saleable_items = self._saleable_items()
         role = "buyer" if saleable_items and random.random() < 0.45 else "seller"
 
         if role == "seller":
@@ -585,6 +690,9 @@ class GameStateManager:
         self.customers_served_today += 1
         if self.daily_customer_queue:
             self.active_customer = self.daily_customer_queue.pop(0)
+            if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
+                if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
+                    self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
             return True
         self.active_customer = None
         return False
@@ -752,8 +860,12 @@ class GameStateManager:
         self.add_skill_xp("commerce", 35)
         message = f"你通过渠道卖出了【{item.name}】，收入 ${price}。"
         if active_buyer_waiting:
-            self.select_next_customer()
-            message += f" {active_buyer_name}看中的货已经售出，只好离开店里。"
+            if self._retarget_buyer(self.active_customer, item_id):
+                message += f" {active_buyer_name}看中的货已经售出，但他转而想看看【{self.active_customer.item.name}】，谈判仍可继续。"
+            else:
+                self.select_next_customer()
+                message += f" {active_buyer_name}看中的货已经售出，店里暂无其他可售藏品，只好先离开。"
+        self._repair_buyer_queue_after_item_removed(item_id)
         return {"success": True, "message": message, "price": price}
 
     def deal(self) -> Dict[str, Any]:
@@ -799,6 +911,7 @@ class GameStateManager:
         self.reputation += 1
         if tx_type == "sell":
             self.add_skill_xp("commerce", 20)
+            self._repair_buyer_queue_after_item_removed(item.id)
         self.select_next_customer()
         return {"success": True, "message": message, "price_transacted": price, "dialogue": dialogue}
 
@@ -1116,7 +1229,7 @@ class GameStateManager:
         salary_total = sum(STAFF_TYPES[s]["daily_salary"] for s, active in self.staff.items() if active)
         commerce_discount = min(0.25, (self.skills["commerce"]["level"] - 1) * 0.025)
         operating_cost = int((260 + self.shop_level * 90 + sum(self.facilities.values()) * 18) * (1 - commerce_discount))
-        interest = int(self.loan["principal"] * self.loan["interest_rate"]) if self.loan["principal"] else 0
+        interest = max(1, round(self.loan["principal"] * self.loan["interest_rate"])) if self.loan["principal"] else 0
         tax_due = 0
         if self.day >= self.tax["next_due_day"]:
             taxable = max(0, self.cash - self.daily_summary["starting_cash"])
@@ -1129,6 +1242,8 @@ class GameStateManager:
         self.daily_summary["operating_cost"] = operating_cost
         self.daily_summary["loan_interest"] = interest
         self.daily_summary["tax"] = tax_due
+        if interest:
+            self.daily_summary["events"].append(f"银行按 {self.loan['interest_rate'] * 100:.1f}% 收取贷款利息 ${interest}。")
 
         for event in self._process_repairs():
             self.daily_summary["events"].append(event)
@@ -1145,6 +1260,7 @@ class GameStateManager:
         return self.daily_summary
 
     def to_dict(self) -> Dict[str, Any]:
+        self.ensure_active_customer_target()
         return {
             "cash": self.cash,
             "day": self.day,

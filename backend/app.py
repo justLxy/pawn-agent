@@ -293,6 +293,7 @@ async def restart_game(player: Dict[str, Any] = Depends(current_player)):
 @app.post("/api/negotiate")
 async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    state.ensure_active_customer_target()
     if not state.active_customer:
         raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
     if state.day_ended:
@@ -337,6 +338,7 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
 @app.post("/api/negotiate/stream")
 async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    state.ensure_active_customer_target()
     if not state.active_customer:
         raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
     if state.day_ended:
@@ -398,7 +400,16 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
                 yield line({"type": "chunk", "content": streamed_dialogue[index:index + 8]})
 
         ai_response["dialogue"] = streamed_dialogue.strip()[:320]
-        payload = apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
+        try:
+            payload = apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
+        except HTTPException as exc:
+            logger.warning("Negotiation stream finalization failed: %s", exc.detail)
+            yield line({"type": "error", "detail": exc.detail})
+            return
+        except Exception as exc:
+            logger.exception("Negotiation stream finalization failed")
+            yield line({"type": "error", "detail": f"谈判结算失败：{exc}"})
+            return
         yield line({"type": "final", "payload": payload})
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
