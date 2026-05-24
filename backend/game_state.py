@@ -114,6 +114,8 @@ CONDITION_VALUE_DRIFT = {
     "Mint": 0.002,
 }
 
+AI_DAY_GENERATION_TIMEOUT = 30.0
+
 RARITY_HOLDING_RATE = {
     "common": 0.0012,
     "rare": 0.0016,
@@ -689,6 +691,21 @@ class GameStateManager:
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
         self._record_daily_customer_codex()
 
+    async def async_initialize_day_with_fallback(self, ai_client, timeout: float = AI_DAY_GENERATION_TIMEOUT) -> Dict[str, Any]:
+        import asyncio
+
+        ai_available = bool(getattr(ai_client, "available", lambda: False)())
+        if not ai_available:
+            self.initialize_day_fast()
+            return {"success": True, "fallback": True, "reason": "ai_unavailable"}
+
+        try:
+            await asyncio.wait_for(self.async_initialize_day(ai_client), timeout=timeout)
+            return {"success": True, "fallback": False}
+        except Exception:
+            self.initialize_day_fast()
+            return {"success": True, "fallback": True, "reason": "ai_timeout_or_error"}
+
     def initialize_day_fast(self):
         """Initialize a playable day immediately with local templates."""
         self.daily_customer_queue = [self.generate_random_customer() for _ in range(self.total_customers_today)]
@@ -1031,18 +1048,16 @@ class GameStateManager:
             self.active_customer = self._generate_local_seller_customer(old_name, old_trait)
 
     async def async_advance_to_next_day(self, ai_client):
-        import asyncio
-
         if self.pending_event:
             return {"error": "还有未处理的随机事件，请先做出选择。"}
         self.day += 1
         self.initialize_day()
-        try:
-            await asyncio.wait_for(self.async_initialize_day(ai_client), timeout=3.0)
+        result = await self.async_initialize_day_with_fallback(ai_client)
+        if not result.get("fallback"):
             return {"success": True, "message": "新的一天开始了。"}
-        except Exception:
-            self.initialize_day_fast()
-            return {"success": True, "message": "新的一天开始了。AI 预生成较慢，已先用本地顾客开门。", "fallback": True}
+        if result.get("reason") == "ai_unavailable":
+            return {"success": True, "message": "新的一天开始了。未检测到 AI 配置，已用本地顾客开门。", "fallback": True}
+        return {"success": True, "message": "新的一天开始了。AI 预生成较慢，已先用本地顾客开门。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:

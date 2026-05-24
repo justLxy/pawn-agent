@@ -52,7 +52,7 @@ async def ensure_player_state(player: Dict[str, Any], ai_client: Any) -> GameSta
     if exists:
         return load_state(player["id"])
     state = create_initial_state(player["shop_name"])
-    await state.async_initialize_day(ai_client)
+    await state.async_initialize_day_with_fallback(ai_client)
     save_state(player["id"], state)
     return state
 
@@ -65,10 +65,11 @@ def import_state(player_id: int, state_dict: Dict[str, Any], shop_name: Optional
     return state
 
 
-def reset_player_data(player_id: int, shop_name: str) -> GameStateManager:
-    state = GameStateManager()
+def reset_player_data(player_id: int, shop_name: str, state: Optional[GameStateManager] = None) -> GameStateManager:
+    state = state or GameStateManager()
     state.shop_name = shop_name
-    state.initialize_day_fast()
+    if not state.active_customer and not state.daily_customer_queue:
+        state.initialize_day_fast()
     now = int(time.time())
     with transaction() as conn:
         conn.execute("DELETE FROM market_listings WHERE seller_id = ?", (player_id,))

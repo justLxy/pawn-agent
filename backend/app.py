@@ -227,7 +227,7 @@ async def register(req: AuthRequest):
     auth = register_player(req.username, req.password, req.shop_name or req.username)
     state = GameStateManager()
     state.shop_name = auth["player"]["shop_name"]
-    await state.async_initialize_day(ai_client)
+    await state.async_initialize_day_with_fallback(ai_client)
     save_state(auth["player"]["id"], state)
     return auth
 
@@ -288,7 +288,10 @@ def import_state(req: ImportStateRequest, player: Dict[str, Any] = Depends(curre
 
 @app.post("/api/restart")
 async def restart_game(player: Dict[str, Any] = Depends(current_player)):
-    state = reset_player_data(player["id"], player["shop_name"])
+    state = GameStateManager()
+    state.shop_name = player["shop_name"]
+    await state.async_initialize_day_with_fallback(ai_client)
+    state = reset_player_data(player["id"], player["shop_name"], state)
     return state.to_dict()
 
 
