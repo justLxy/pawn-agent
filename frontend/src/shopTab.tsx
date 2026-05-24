@@ -110,7 +110,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
   }, [apiGet, isAdmin]);
 
   useEffect(() => {
-    refresh().catch((err) => onError(err instanceof Error ? err.message : '加载掌柜铺子失败。'));
+    refresh().catch((err) => onError(err instanceof Error ? err.message : '加载赞助页面失败。'));
   }, [refresh, onError]);
 
   const openOrderFor = (productId: string) =>
@@ -207,7 +207,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
   return (
     <div className="max-w-3xl w-full mx-auto space-y-5 pb-8">
       <header className="border-b border-[#2A2D34] pb-4">
-        <h2 className="text-2xl font-bold text-[#C8A97E] font-sans">掌柜铺子</h2>
+        <h2 className="text-2xl font-bold text-[#C8A97E] font-sans">赞助支持</h2>
         <p className="mt-2 text-sm text-[#9E9E9E] font-sans leading-relaxed">
           这里是个人开发与自掏腰包维护的小铺。服务器、域名、以及每一位顾客的 AI 对话与稀货生成，都在持续烧 token。
           若你喜欢这款游戏，一杯奶茶钱（月卡 ¥5 / 匾额 ¥10）能帮我勉强盖住一部分账单，让当铺多撑几天。

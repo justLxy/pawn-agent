@@ -1345,7 +1345,7 @@ export default function App() {
           <NavButton tab="management" activeTab={activeTab} setActiveTab={setActiveTab} icon={<TrendingUp className="w-5 h-5" />} label="经营财务" />
           <NavButton tab="staff" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Users className="w-5 h-5" />} label="员工管理" />
           <NavButton tab="upgrades" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Crown className="w-5 h-5" />} label="当铺升级" />
-          <NavButton tab="shop" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Gem className="w-5 h-5" />} label="掌柜铺子" />
+          <NavButton tab="shop" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Gem className="w-5 h-5" />} label="赞助支持" />
         </aside>
 
         <main className="flex-1 bg-[#0D0F12] p-4 pb-28 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col">
@@ -1627,7 +1627,7 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
     { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
     { tab: 'upgrades', label: '升级', icon: <Crown className="w-5 h-5" /> },
-    { tab: 'shop', label: '铺子', icon: <Gem className="w-5 h-5" /> }
+    { tab: 'shop', label: '赞助', icon: <Gem className="w-5 h-5" /> }
   ];
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#14171C]/95 backdrop-blur border-t border-[#2A2D34] px-2 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">

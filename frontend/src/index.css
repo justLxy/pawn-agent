@@ -388,10 +388,10 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   background-size: 220% auto;
   -webkit-background-clip: text;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
   letter-spacing: 0.1em;
   animation: sponsorShimmer 3.5s linear infinite;
-  filter: drop-shadow(0 0 8px rgba(255, 216, 155, 0.45));
 }
 
 @keyframes sponsorShimmer {
