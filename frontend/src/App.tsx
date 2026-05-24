@@ -247,6 +247,8 @@ interface GameState {
   display_capacity: number;
   shop_upgrade_cost: number | null;
   shop_upgrade_desc: string | null;
+  shop_upgrade_min_day?: number | null;
+  skill_xp_to_next?: Record<string, number>;
 }
 
 interface TransactionEntry {
@@ -2545,7 +2547,16 @@ function ManagementTab({ loanAmount, onAction, setLoanAmount, state }: { state: 
         <Stat label="日变化" value={formatSignedPercent(state.inflation_rate || 0)} />
         <Stat label="明日基础成本" value={`$${(salaryEstimate + operatingEstimate).toLocaleString()}`} />
       </div>
-      {Object.entries(state.skills).map(([key, skill]) => <div key={key} className="py-4 border-b border-[#2A2D34]"><div className="flex justify-between"><span>{state.skill_info[key]?.name_cn || key}</span><span className="text-[#C8A97E]">Lv.{skill.level}</span></div><div className="progress-bg mt-2"><div className="progress-fill" style={{ width: `${Math.min(100, (skill.xp / Math.max(100, skill.level * 100)) * 100)}%` }} /></div></div>)}
+      {Object.entries(state.skills).map(([key, skill]) => {
+        const xpNeeded = state.skill_xp_to_next?.[key] ?? Math.max(100, skill.level * 100);
+        const xpProgress = xpNeeded > 0 ? Math.min(100, (skill.xp / xpNeeded) * 100) : 100;
+        return (
+          <div key={key} className="py-4 border-b border-[#2A2D34]">
+            <div className="flex justify-between"><span>{state.skill_info[key]?.name_cn || key}</span><span className="text-[#C8A97E]">Lv.{skill.level}</span></div>
+            <div className="progress-bg mt-2"><div className="progress-fill" style={{ width: `${xpProgress}%` }} /></div>
+          </div>
+        );
+      })}
       <div className="py-6 border-b border-[#2A2D34] flex flex-col sm:flex-row flex-wrap gap-3 sm:items-center">
         <span>贷款本金 ${state.loan.principal.toLocaleString()}</span>
         <span className="text-xs text-[#9E9E9E]">动态日息 {(dynamicInterestRate * 100).toFixed(1)}%，结算扣 ${dailyInterest.toLocaleString()}</span>
@@ -2588,8 +2599,19 @@ function UpgradesTab({ onAction, state }: { state: GameState; onAction: (path: s
         <div>
           <h3 className="text-xl font-bold">声望 Lv.{state.shop_level}</h3>
           <p className="text-[#9E9E9E] mt-1 text-sm">{state.shop_upgrade_desc || '已达到最高声望。'}</p>
+          {state.shop_upgrade_min_day && state.day < state.shop_upgrade_min_day && (
+            <p className="text-[#FF9800] mt-1 text-xs">需经营至第 {state.shop_upgrade_min_day} 天（当前第 {state.day} 天）</p>
+          )}
         </div>
-        {state.shop_upgrade_cost && <button onClick={() => onAction('/api/upgrade', undefined, 'upgrade_result', '升级成功。', 'upgrade')} className="btn-primary !h-9 w-full sm:w-auto shrink-0">${state.shop_upgrade_cost.toLocaleString()}</button>}
+        {state.shop_upgrade_cost && (
+          <button
+            disabled={!!state.shop_upgrade_min_day && state.day < state.shop_upgrade_min_day}
+            onClick={() => onAction('/api/upgrade', undefined, 'upgrade_result', '升级成功。', 'upgrade')}
+            className="btn-primary !h-9 w-full sm:w-auto shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            ${state.shop_upgrade_cost.toLocaleString()}
+          </button>
+        )}
       </div>
       {Object.entries(state.facility_info).map(([key, info]) => (
         <div key={key} className="py-5 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">

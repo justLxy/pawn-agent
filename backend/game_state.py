@@ -75,19 +75,32 @@ SKILL_INFO = {
 }
 
 FACILITY_INFO = {
-    "showcase": {"name_cn": "展示柜", "base_cost": 1600, "desc": "增加可展示物品数量，并提高展示商品售价。"},
-    "security": {"name_cn": "安全系统", "base_cost": 1400, "desc": "降低盗窃和法律纠纷损失。"},
-    "appraisal_room": {"name_cn": "鉴定室", "base_cost": 1800, "desc": "降低鉴定费用，提高鉴定质量。"},
-    "restoration_workshop": {"name_cn": "修复工坊", "base_cost": 2000, "desc": "降低修复费用，提高修复成功率。"},
-    "storefront": {"name_cn": "店面", "base_cost": 2200, "desc": "提高客流和高稀有度物品出现率。"},
+    "showcase": {"name_cn": "展示柜", "base_cost": 2100, "desc": "增加可展示物品数量，并提高展示商品售价。"},
+    "security": {"name_cn": "安全系统", "base_cost": 1820, "desc": "降低盗窃和法律纠纷损失。"},
+    "appraisal_room": {"name_cn": "鉴定室", "base_cost": 2340, "desc": "降低鉴定费用，提高鉴定质量。"},
+    "restoration_workshop": {"name_cn": "修复工坊", "base_cost": 2600, "desc": "降低修复费用，提高修复成功率。"},
+    "storefront": {"name_cn": "店面", "base_cost": 2860, "desc": "提高客流和高稀有度物品出现率。"},
 }
 
+FACILITY_UPGRADE_EXPONENT = 1.78
+
 SHOP_UPGRADE_COSTS = {
-    2: {"cost": 5000, "desc": "中型当铺：每日顾客流量增加，解锁古董与历史遗物中高级商品。"},
-    3: {"cost": 15000, "desc": "豪华当铺：每日顾客流量大幅增加，吸引超高价值艺术品卖家。"},
-    4: {"cost": 40000, "desc": "典当行财阀：解锁专属拍卖行信息，顾客上门质量提升。"},
-    5: {"cost": 100000, "desc": "世纪大掌柜：极高声誉，解锁神级传说遗物。"},
+    2: {"cost": 12000, "min_day": 8, "desc": "中型当铺：每日顾客流量增加，解锁古董与历史遗物中高级商品。"},
+    3: {"cost": 38000, "min_day": 20, "desc": "豪华当铺：每日顾客流量大幅增加，吸引超高价值艺术品卖家。"},
+    4: {"cost": 95000, "min_day": 38, "desc": "典当行财阀：解锁专属拍卖行信息，顾客上门质量提升。"},
+    5: {"cost": 260000, "min_day": 65, "desc": "世纪大掌柜：极高声誉，解锁神级传说遗物。"},
 }
+
+SKILL_MAX_LEVEL = 10
+# 全局经验获取倍率（配合更高的升级门槛，拉长技能成长周期）
+SKILL_XP_GAIN_FACTOR = 0.62
+
+
+def skill_xp_to_next_level(current_level: int) -> int:
+    """从 current_level 升到下一级所需经验。"""
+    if current_level >= SKILL_MAX_LEVEL:
+        return 0
+    return int(80 + current_level * 145 + current_level ** 2 * 22)
 
 RARITY_INFO = {
     "common": {"name_cn": "普通", "multiplier": 1.0},
@@ -293,11 +306,11 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
     for target, name in [(5, "橱窗有人气"), (10, "展柜经理")]:
         add(f"displayed_{target}", "库存", name, f"同时展示 {target} 件物品。", "displayed_count", target, {"cash": target * 120})
     for target, name in [(1, "第一次鉴定"), (25, "鉴定常客"), (100, "鉴定专家")]:
-        add(f"appraisals_{target}", "鉴定", name, f"完成 {target} 次鉴定。", "appraisals", target, {"skill_xp": {"appraisal": 60}})
+        add(f"appraisals_{target}", "鉴定", name, f"完成 {target} 次鉴定。", "appraisals", target, {"skill_xp": {"appraisal": 28}})
     for target, name in [(1, "识破骗局"), (10, "反诈掌柜"), (30, "火眼金睛")]:
         add(f"fakes_{target}", "鉴定", name, f"识破 {target} 次欺诈或赝品。", "fakes_detected", target, {"reputation": 2})
     for target, name in [(1, "修好第一件"), (20, "修复熟手"), (75, "修复大师")]:
-        add(f"repairs_{target}", "修复", name, f"完成 {target} 次成功修复。", "repairs_completed", target, {"skill_xp": {"restoration": 60}})
+        add(f"repairs_{target}", "修复", name, f"完成 {target} 次成功修复。", "repairs_completed", target, {"skill_xp": {"restoration": 28}})
     for target, name in [(2, "门面升级"), (3, "豪华当铺"), (5, "世纪大掌柜")]:
         add(f"shop_level_{target}", "升级", name, f"当铺等级达到 Lv.{target}。", "shop_level", target, {"reputation": target})
     for target, name in [(3, "入门专精"), (6, "技能老练"), (10, "单项宗师")]:
@@ -313,10 +326,10 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
     for target, name in [(1, "旧客回访"), (15, "老客成交"), (50, "回头生意")]:
         add(f"returning_deals_{target}", "顾客", name, f"与回头客完成 {target} 笔交易。", "returning_customer_deals", target, {"cash": target * 150})
     for target, name in [(1000, "仓储压力"), (10000, "库存税感")]:
-        add(f"holding_cost_{target}", "经济", name, f"累计支付持有成本 ${target:,}。", "holding_cost_paid", target, {"skill_xp": {"commerce": 50}})
+        add(f"holding_cost_{target}", "经济", name, f"累计支付持有成本 ${target:,}。", "holding_cost_paid", target, {"skill_xp": {"commerce": 24}})
     for target, name in [(1000, "等到涨价"), (25000, "价值投资")]:
         add(f"value_gain_{target}", "经济", name, f"靠持有与展示累计增值 ${target:,}。", "value_gain_from_holding", target, {"reputation": 2})
-    add("negative_reviews_1", "风险", "第一次差评", "收到一次负面评价。", "negative_reviews", 1, {"skill_xp": {"charm": 40}}, hidden=True)
+    add("negative_reviews_1", "风险", "第一次差评", "收到一次负面评价。", "negative_reviews", 1, {"skill_xp": {"charm": 20}}, hidden=True)
 
     return definitions
 
@@ -324,15 +337,15 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
 ACHIEVEMENT_DEFS = _achievement_defs()
 
 APPRAISAL_METHODS = {
-    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.8, "accuracy_bonus": -0.20, "value_margin": 0.48, "xp": 20, "desc": "速度快、费用较低，只能给出粗略区间；对高仿赝品不够稳。"},
-    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.45, "accuracy_bonus": -0.02, "value_margin": 0.30, "xp": 35, "desc": "检查材质、工艺和市场记录，适合大多数交易，但仍保留误差。"},
-    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 3.2, "accuracy_bonus": 0.16, "value_margin": 0.16, "xp": 60, "desc": "显微痕迹、来源链和多项检测一起做，费用高但风险最低。"},
+    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.8, "accuracy_bonus": -0.20, "value_margin": 0.48, "xp": 12, "desc": "速度快、费用较低，只能给出粗略区间；对高仿赝品不够稳。"},
+    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.45, "accuracy_bonus": -0.02, "value_margin": 0.30, "xp": 20, "desc": "检查材质、工艺和市场记录，适合大多数交易，但仍保留误差。"},
+    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 3.2, "accuracy_bonus": 0.16, "value_margin": 0.16, "xp": 32, "desc": "显微痕迹、来源链和多项检测一起做，费用高但风险最低。"},
 }
 
 REPAIR_METHODS = {
-    "conservative": {"name_cn": "保守修复", "cost_multiplier": 0.85, "days_delta": 1, "success_bonus": 0.10, "xp": 25, "desc": "少动原貌，耗时略长，失败风险低。"},
-    "standard": {"name_cn": "标准修复", "cost_multiplier": 1.0, "days_delta": 0, "success_bonus": 0.0, "xp": 25, "desc": "按常规工序处理，成本和速度均衡。"},
-    "premium": {"name_cn": "高阶修复", "cost_multiplier": 1.55, "days_delta": -1, "success_bonus": 0.14, "xp": 40, "desc": "使用更好的材料和工艺，费用高但更快更稳。"},
+    "conservative": {"name_cn": "保守修复", "cost_multiplier": 0.85, "days_delta": 1, "success_bonus": 0.10, "xp": 14, "desc": "少动原貌，耗时略长，失败风险低。"},
+    "standard": {"name_cn": "标准修复", "cost_multiplier": 1.0, "days_delta": 0, "success_bonus": 0.0, "xp": 14, "desc": "按常规工序处理，成本和速度均衡。"},
+    "premium": {"name_cn": "高阶修复", "cost_multiplier": 1.55, "days_delta": -1, "success_bonus": 0.14, "xp": 22, "desc": "使用更好的材料和工艺，费用高但更快更稳。"},
 }
 
 
@@ -1646,9 +1659,12 @@ class GameStateManager:
         if skill not in self.skills:
             return
         data = self.skills[skill]
-        data["xp"] += max(0, amount)
-        while data["level"] < 10 and data["xp"] >= data["level"] * 100:
-            data["xp"] -= data["level"] * 100
+        if data["level"] >= SKILL_MAX_LEVEL:
+            return
+        gained = max(0, int(round(amount * SKILL_XP_GAIN_FACTOR)))
+        data["xp"] += gained
+        while data["level"] < SKILL_MAX_LEVEL and data["xp"] >= skill_xp_to_next_level(data["level"]):
+            data["xp"] -= skill_xp_to_next_level(data["level"])
             data["level"] += 1
 
     def appraise_active_item(self, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -1958,7 +1974,7 @@ class GameStateManager:
         self.sold_items.append(item)
         self.daily_summary["revenue"] += price
         self.transaction_log.append({"day": self.day, "type": "direct_sell", "item": item.name, "amount": price})
-        self.add_skill_xp("commerce", 35)
+        self.add_skill_xp("commerce", 18)
         self._record_item_encounter(item, "direct_sell")
         self._check_achievements("direct_sell", {"item": item.to_dict(), "price": price})
         message = f"你通过渠道卖出了【{item.name}】，收入 ${price}。"
@@ -2017,13 +2033,13 @@ class GameStateManager:
         if not (customer.dialogue_history and customer.dialogue_history[-1].get("role") == "customer"):
             customer.dialogue_history.append({"role": "customer", "content": dialogue})
         self.transaction_log.append({"day": self.day, "type": tx_type, "item": item.name, "amount": -price if tx_type == "buy" else price})
-        self.add_skill_xp("negotiation", 25)
+        self.add_skill_xp("negotiation", 14)
         self.successful_trades += 1
         self.positive_reviews += 1 if random.random() < 0.75 else 0
         self.reputation += 1
         self._record_customer_outcome(customer, "deal", price, item)
         if tx_type == "sell":
-            self.add_skill_xp("commerce", 20)
+            self.add_skill_xp("commerce", 11)
             self._repair_buyer_queue_after_item_removed(item.id)
         customer.session_closed = "deal"
         customer.deal_summary = message
@@ -2079,6 +2095,9 @@ class GameStateManager:
         next_lvl = self.shop_level + 1
         if next_lvl > 5:
             return {"error": "你的店铺等级已达到上限！"}
+        min_day = int(SHOP_UPGRADE_COSTS[next_lvl].get("min_day", 1))
+        if self.day < min_day:
+            return {"error": f"还需经营到第 {min_day} 天才能升级（当前第 {self.day} 天）。"}
         cost = int(SHOP_UPGRADE_COSTS[next_lvl]["cost"] * self.economy_index)
         if self.cash < cost:
             return {"error": f"店铺升级资金不足，需要 ${cost}。"}
@@ -2094,7 +2113,7 @@ class GameStateManager:
         level = self.facilities[facility]
         if level >= 5:
             return None
-        return int(FACILITY_INFO[facility]["base_cost"] * (level ** 1.65) * self.economy_index)
+        return int(FACILITY_INFO[facility]["base_cost"] * (level ** FACILITY_UPGRADE_EXPONENT) * self.economy_index)
 
     def upgrade_facility(self, facility: str) -> Dict[str, Any]:
         if facility not in FACILITY_INFO:
@@ -2146,7 +2165,7 @@ class GameStateManager:
                 item.actual_value = int(item.actual_value * (1.45 if item.condition == "Good" else 1.7))
                 item.market_value = int(item.market_value * (1.35 if item.condition == "Good" else 1.55))
                 events.append(f"修复完成：【{item.name}】成色从 {old_condition} 提升到 {item.condition}。")
-                self.add_skill_xp("restoration", 40)
+                self.add_skill_xp("restoration", 20)
                 self.achievement_stats["repairs_completed"] = int(self.achievement_stats.get("repairs_completed", 0)) + 1
             else:
                 item.actual_value = max(10, int(item.actual_value * 0.92))
@@ -2256,7 +2275,7 @@ class GameStateManager:
         self.daily_summary["revenue"] = int(self.daily_summary.get("revenue", 0)) - price
         self.transaction_log.append({"day": self.day, "type": "event_buy", "item": item.name, "amount": -price})
         self._record_item_encounter(item, "event_acquired")
-        self.add_skill_xp("negotiation", 20)
+        self.add_skill_xp("negotiation", 11)
         self.successful_trades += 1
 
     async def _enrich_ai_event_item(self, ai_client, event: Dict[str, Any]) -> Dict[str, Any]:
@@ -2614,6 +2633,8 @@ class GameStateManager:
             "display_capacity": self.display_capacity(),
             "shop_upgrade_cost": SHOP_UPGRADE_COSTS.get(self.shop_level + 1, {}).get("cost", None),
             "shop_upgrade_desc": SHOP_UPGRADE_COSTS.get(self.shop_level + 1, {}).get("desc", None),
+            "shop_upgrade_min_day": SHOP_UPGRADE_COSTS.get(self.shop_level + 1, {}).get("min_day"),
+            "skill_xp_to_next": {key: skill_xp_to_next_level(value["level"]) for key, value in self.skills.items()},
             "staff_info": STAFF_TYPES,
             "appraisal_methods": APPRAISAL_METHODS,
             "repair_methods": REPAIR_METHODS,
