@@ -64,17 +64,23 @@ class AIClient:
         if not self.available():
             return ""
         role_cn = "买家，想从掌柜手里买走这件货" if customer_context.get("role") == "buyer" else "卖家，带着货来出手"
+        item_desc = str(customer_context.get("item_desc") or "").strip()
+        item_story = str(customer_context.get("item_story") or "").strip()
+        item_blurb = item_story or item_desc or "一件来历不明的旧物"
+        condition_cn = str(customer_context.get("item_condition_cn") or customer_context.get("item_condition") or "良好")
         system_prompt = f"""你是文字经营游戏《当铺代理人》中的当铺顾客，刚走进铺面。
 {self._format_persona_block(customer_context)}
 角色：{role_cn}
+交易物品：【{customer_context.get("item_name")}】，成色：{condition_cn}
+物品概况：{item_blurb[:120]}
 当前报价/要价：${customer_context.get("current_offer", 0)}
 
 写一段第一人称开场白，120-160字。要求：
 1. 有进门动作、环境感（风铃、柜台、光线等任选）
-2. 自然带出外貌气质与来意
-3. 点出【{customer_context.get("item_name")}】并给出初步报价或询价
-4. 语气必须符合性格，不要像系统说明
-5. 只输出台词正文，不要 JSON，不要括号舞台说明过多"""
+2. 自然带出外貌气质与来意，并融入物品概况（成色用中文：较差/良好/极佳，禁止写 Poor/Good/Mint）
+3. 点出【{customer_context.get("item_name")}】并给出初步报价或询价，报价句式每次都要不同
+4. 语气必须符合性格，不要像系统说明；禁止套用「急切人说话直」「能不能谈，你给个话」等固定套话
+5. 全文使用中文，只输出台词正文，不要 JSON，不要过多括号舞台说明"""
         try:
             text = (await self._chat_text(system_prompt, "生成开场白。", timeout=12.0)).strip()
             return text[:480]

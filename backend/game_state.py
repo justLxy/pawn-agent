@@ -181,6 +181,27 @@ RARITY_INFO = {
 
 CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
+CONDITION_CN = {"Poor": "较差", "Good": "良好", "Mint": "极佳"}
+
+TEMPLATE_OPENING_MARKERS = (
+    "能不能谈，你给个话",
+    "人说话直——",
+    "你先报个实在价",
+    "是我心里的数，你看看",
+)
+
+
+def condition_cn(condition: str) -> str:
+    return CONDITION_CN.get(condition, condition)
+
+
+def finalize_sentence(text: str) -> str:
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if text[-1] in "。！？!?…":
+        return text
+    return f"{text}。"
 
 ECONOMY_INDEX_MIN = 0.72
 ECONOMY_INDEX_MAX = 1.85
@@ -479,7 +500,7 @@ class Item:
         self.story = story or f"{name} 的来历仍有些扑朔迷离，等待进一步鉴定。"
         self.hidden_attrs = hidden_attrs or []
         self.era = era or "年代不明"
-        self.damage_report = damage_report or f"{condition} 成色，细节仍需专业检查。"
+        self.damage_report = damage_report or f"{condition_cn(condition)}成色，细节仍需专业检查。"
         self.special_effects = special_effects or []
         self.authentication_tips = authentication_tips or []
         self.repair_difficulty = clamp(int(repair_difficulty), 1, 5)
@@ -663,25 +684,39 @@ class Customer:
         self.initial_offer = int(initial_offer if initial_offer is not None else self.current_offer)
         self.session_closed: Optional[str] = None
         self.deal_summary: Optional[str] = None
-        self.ensure_opening_greeting()
+
+    def item_blurb(self) -> str:
+        item = self.item
+        cond = condition_cn(item.condition)
+        fallback = f"一件{cond}成色的{item.category}货"
+        raw = (item.story or item.description or fallback).strip()
+        raw = re.sub(r"\b(Poor|Good|Mint)\b", lambda match: condition_cn(match.group(1)), raw)
+        return finalize_sentence(raw)
 
     def build_opening_greeting(self) -> str:
         item = self.item
         trait_name = CUSTOMER_TRAITS[self.trait]["name_cn"]
-        item_blurb = item.story or item.description or f"一件{item.condition}成色的{item.category}货"
+        item_blurb = self.item_blurb()
+        offer_text = f"${self.current_offer:,}"
         if self.role == "seller":
             templates = [
-                f"（{self.appearance}）{self.name}推门进来，柜台上的铜铃轻轻晃了两下。{self.backstory}\n\n他把【{item.name}】从包里取出，{item_blurb}。\n\n「掌柜的，我这个人{trait_name}，不喜欢绕弯子——你先报个实在价。」",
-                f"（{self.appearance}）{self.name}在门槛处顿了顿，像是下了决心才走进来。{self.backstory}\n\n【{item.name}】被小心放在柜台上，{item_blurb}。\n\n「今天就想把这东西出手，${self.current_offer:,} 是我心里的数，你看看。」",
-                f"（{self.appearance}）{self.name}进门时带进一点外头的风。{self.backstory}\n\n他指了指【{item.name}】：{item_blurb}。\n\n「{trait_name}人说话直——${self.current_offer:,}，能不能谈，你给个话。」",
+                f"（{self.appearance}）{self.name}推门进来，柜台上的铜铃轻轻晃了两下。{self.backstory}\n\n他把【{item.name}】从包里取出，{item_blurb}\n\n「掌柜的，我这个人{trait_name}，心里有个数——{offer_text}，你看能不能接。」",
+                f"（{self.appearance}）{self.name}在门槛处顿了顿，像是下了决心才走进来。{self.backstory}\n\n【{item.name}】被小心放在柜台上，{item_blurb}\n\n「今天就想把这东西出手，{offer_text} 是我能接受的底线，你掂量掂量。」",
+                f"（{self.appearance}）{self.name}进门时带进一点外头的风。{self.backstory}\n\n他指了指【{item.name}】：{item_blurb}\n\n「别绕圈子了，{offer_text}，你看这价行不行。」",
             ]
         else:
             templates = [
-                f"（{self.appearance}）{self.name}在橱窗前停步，目光落在【{item.name}】上。{self.backstory}\n\n{item_blurb}。\n\n「听说你这儿有好货。这件……你打算开多少？」",
-                f"（{self.appearance}）{self.name}进门后先扫了一圈柜台，最后停在【{item.name}】前。{self.backstory}\n\n「我{trait_name}，看中这件了。${self.current_offer:,} 是我能出的价，成不成你说了算。」",
-                f"（{self.appearance}）{self.name}推门进来，语气里带着点挑剔。{self.backstory}\n\n他点了点【{item.name}】：{item_blurb}。\n\n「别拿次货糊弄我，这价 ${self.current_offer:,}，能不能成？」",
+                f"（{self.appearance}）{self.name}在橱窗前停步，目光落在【{item.name}】上。{self.backstory}\n\n{item_blurb}\n\n「听说你这儿有好货。这件……你打算开多少？」",
+                f"（{self.appearance}）{self.name}进门后先扫了一圈柜台，最后停在【{item.name}】前。{self.backstory}\n\n「我{trait_name}，看中这件了。{offer_text} 是我能出的价，成不成你说了算。」",
+                f"（{self.appearance}）{self.name}推门进来，语气里带着点挑剔。{self.backstory}\n\n他点了点【{item.name}】：{item_blurb}\n\n「别拿次货糊弄我，{offer_text} 能不能成，你给个准话。」",
             ]
         return random.choice(templates)
+
+    def uses_template_opening(self) -> bool:
+        if not self.dialogue_history:
+            return False
+        content = str(self.dialogue_history[0].get("content") or "")
+        return any(marker in content for marker in TEMPLATE_OPENING_MARKERS)
 
     def ensure_opening_greeting(self):
         if not self.dialogue_history:
@@ -711,6 +746,7 @@ class Customer:
             "item_name": self.item.name,
             "item_category": self.item.category,
             "item_condition": self.item.condition,
+            "item_condition_cn": condition_cn(self.item.condition),
             "item_desc": self.item.description,
             "item_story": self.item.story,
             "current_offer": self.current_offer,
@@ -919,7 +955,8 @@ class Customer:
         )
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
-        customer.refresh_pre_negotiation_dialogue()
+        if not customer.dialogue_history:
+            customer.ensure_opening_greeting()
         return customer
 
 
@@ -1019,7 +1056,32 @@ class GameStateManager:
                 pass
         customer = self.generate_random_customer()
         customer.generation_source = "local"
+        if ai_available:
+            try:
+                await self.apply_customer_opening_greeting(customer, ai_client)
+            except Exception:
+                pass
         return customer
+
+    async def apply_customer_opening_greeting(self, customer: Customer, ai_client) -> bool:
+        if not bool(getattr(ai_client, "available", lambda: False)()):
+            if not customer.dialogue_history:
+                customer.ensure_opening_greeting()
+            return False
+        greeting = ""
+        for _ in range(2):
+            try:
+                greeting = await ai_client.generate_customer_greeting(customer.negotiation_context())
+            except Exception:
+                greeting = ""
+            if greeting.strip():
+                break
+        if greeting.strip():
+            customer.dialogue_history = [{"role": "customer", "content": greeting.strip()[:480]}]
+            return True
+        if not customer.dialogue_history:
+            customer.ensure_opening_greeting()
+        return False
 
     def count_local_sellers_in_queue(self) -> int:
         return sum(
@@ -1050,7 +1112,6 @@ class GameStateManager:
             replacement.generation_source = "ai"
             replacement.session_closed = None
             replacement.deal_summary = None
-            replacement.ensure_opening_greeting()
             self.daily_customer_queue[index] = replacement
             applied += 1
         while pending:
@@ -1058,7 +1119,6 @@ class GameStateManager:
             replacement.generation_source = "ai"
             replacement.session_closed = None
             replacement.deal_summary = None
-            replacement.ensure_opening_greeting()
             self.daily_customer_queue.append(replacement)
             applied += 1
         return applied
@@ -1152,7 +1212,8 @@ class GameStateManager:
             customer.deal_summary = None
             if index < prewarm_count and customer.generation_source == "local" and customer.role == "seller":
                 customer.generation_source = "prewarm"
-            customer.ensure_opening_greeting()
+            if not customer.dialogue_history:
+                customer.ensure_opening_greeting()
 
         self.daily_customer_queue = prepared_customers
         self._open_day_customer_queue()
@@ -1179,6 +1240,7 @@ class GameStateManager:
 
         customer.generation_source = "local"
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
+        customer.ensure_opening_greeting()
         return customer
 
     def _saleable_items(self, exclude_ids: Optional[set[str]] = None) -> List[Item]:
@@ -1213,6 +1275,7 @@ class GameStateManager:
         )
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
         customer.generation_source = "local"
+        customer.ensure_opening_greeting()
         return customer
 
     async def generate_ai_seller_customer(self, ai_client, timeout: float = AI_CUSTOMER_GENERATION_TIMEOUT) -> Optional["Customer"]:
@@ -1367,6 +1430,7 @@ class GameStateManager:
             referred_by=referred_by,
         )
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
+        customer.ensure_opening_greeting()
         return customer
 
     def _inject_relationship_customers(self):
@@ -1764,14 +1828,15 @@ class GameStateManager:
                 break
         else:
             name = f"{random.choice(LOCAL_ITEM_ADJECTIVES)}编号{random.randint(1000, 9999)}的{random.choice(objects)}"
-        desc = f"{condition} 成色，{random.choice(LOCAL_ITEM_DESC_HOOKS)}"
+        cond_label = condition_cn(condition)
+        desc = f"{cond_label}成色，{random.choice(LOCAL_ITEM_DESC_HOOKS)}"
         story = f"{desc} {random.choice(LOCAL_ITEM_STORY_HOOKS)}"
         return {
             "name": name,
             "desc": desc,
             "story": story,
             "era": random.choice(LOCAL_ITEM_ERAS),
-            "damage_report": f"{condition} 成色，局部磨损与包浆需要进一步确认。",
+            "damage_report": f"{condition_cn(condition)}成色，局部磨损与包浆需要进一步确认。",
         }
 
     def _resolve_item_identity(
@@ -1802,7 +1867,7 @@ class GameStateManager:
             "desc": desc,
             "story": story,
             "era": str(ai_item.get("era") or random.choice(LOCAL_ITEM_ERAS)),
-            "damage_report": str(ai_item.get("damage_report") or f"{condition} 成色，局部磨损与包浆需要进一步确认。"),
+            "damage_report": str(ai_item.get("damage_report") or f"{condition_cn(condition)}成色，局部磨损与包浆需要进一步确认。"),
         }
 
     def _generate_item_from_template(
@@ -1917,9 +1982,7 @@ class GameStateManager:
         )
         charm_bonus = self.skills["charm"]["level"] // 2
         customer.patience = clamp(customer.patience + charm_bonus, 1, 8)
-        greeting = await ai_client.generate_customer_greeting(customer.negotiation_context())
-        if greeting.strip():
-            customer.dialogue_history = [{"role": "customer", "content": greeting.strip()[:480]}]
+        await self.apply_customer_opening_greeting(customer, ai_client)
         customer.generation_source = "ai"
         return customer
 
