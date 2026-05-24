@@ -5,7 +5,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
@@ -15,7 +15,19 @@ from env_loader import load_env_file
 load_env_file()
 
 from ai_client import AIClient
-from auth import count_online_players, current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
+from auth import _public_player, count_online_players, current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
+from player_cosmetics import merge_cosmetics_into_player
+from shop_service import (
+    create_manual_order,
+    fulfill_order,
+    get_catalog,
+    list_admin_pending_orders,
+    list_player_orders,
+    require_shop_admin,
+    require_shop_admin_or_secret,
+    submit_payment,
+    update_profile_cosmetics,
+)
 from database import init_db
 from game_state import GameStateManager
 from online_services import (
@@ -656,6 +668,71 @@ def delete_account(player: Dict[str, Any] = Depends(current_player)):
 @app.get("/api/auth/me")
 def me(player: Dict[str, Any] = Depends(current_player)):
     return {"player": player}
+
+
+class ShopOrderRequest(BaseModel):
+    product_id: str
+
+
+class ShopSubmitRequest(BaseModel):
+    order_id: str
+    payer_note: Optional[str] = None
+
+
+class ShopFulfillRequest(BaseModel):
+    order_id: Optional[str] = None
+    order_no: Optional[str] = None
+
+
+class ProfileCosmeticsRequest(BaseModel):
+    shop_emblem: Optional[str] = None
+    showcase_tagline: Optional[str] = None
+
+
+@app.get("/api/shop/catalog")
+def shop_catalog():
+    return {"products": get_catalog()}
+
+
+@app.get("/api/shop/orders")
+def shop_orders(player: Dict[str, Any] = Depends(current_player)):
+    return {"orders": list_player_orders(player["id"])}
+
+
+@app.post("/api/shop/create_order")
+def shop_create_order(req: ShopOrderRequest, player: Dict[str, Any] = Depends(current_player)):
+    return create_manual_order(player["id"], req.product_id)
+
+
+@app.post("/api/shop/submit_payment")
+def shop_submit_payment(req: ShopSubmitRequest, player: Dict[str, Any] = Depends(current_player)):
+    return submit_payment(player["id"], req.order_id, req.payer_note)
+
+
+@app.get("/api/shop/admin/queue")
+def shop_admin_queue(player: Dict[str, Any] = Depends(current_player)):
+    require_shop_admin(player)
+    return {"orders": list_admin_pending_orders()}
+
+
+@app.post("/api/shop/admin/fulfill")
+def shop_admin_fulfill(
+    req: ShopFulfillRequest,
+    player: Dict[str, Any] = Depends(current_player),
+    x_shop_admin_secret: Optional[str] = Header(None, alias="X-Shop-Admin-Secret"),
+):
+    require_shop_admin_or_secret(player, x_shop_admin_secret)
+    return fulfill_order(req.order_id, req.order_no)
+
+
+@app.patch("/api/profile/cosmetics")
+def profile_cosmetics(req: ProfileCosmeticsRequest, player: Dict[str, Any] = Depends(current_player)):
+    cosmetics = update_profile_cosmetics(player["id"], req.shop_emblem, req.showcase_tagline)
+    from database import get_connection
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
+    return {"cosmetics": cosmetics, "player": merge_cosmetics_into_player(_public_player(row), row)}
 
 
 @app.get("/api/state")

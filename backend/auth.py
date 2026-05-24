@@ -8,6 +8,8 @@ from typing import Any, Dict, Optional
 from fastapi import Header, HTTPException
 
 from database import get_connection
+from player_cosmetics import merge_cosmetics_into_player
+from shop_service import is_shop_admin_username
 
 ONLINE_IDLE_SECONDS = int(os.getenv("PLAYER_ONLINE_IDLE_SECONDS", "300"))
 
@@ -32,9 +34,10 @@ def _verify_password(password: str, password_hash: str, salt: str) -> bool:
 
 
 def _public_player(row: Any) -> Dict[str, Any]:
+    username = row["username"]
     return {
         "id": row["id"],
-        "username": row["username"],
+        "username": username,
         "shop_name": row["shop_name"],
         "online": player_is_online(row["last_seen"]),
         "reputation": row["reputation"],
@@ -42,6 +45,7 @@ def _public_player(row: Any) -> Dict[str, Any]:
         "reward_bonus": row["reward_bonus"],
         "created_at": row["created_at"],
         "last_seen": row["last_seen"],
+        "is_shop_admin": is_shop_admin_username(username),
     }
 
 
@@ -82,7 +86,7 @@ def register_player(username: str, password: str, shop_name: str) -> Dict[str, A
           player = conn.execute("SELECT * FROM players WHERE username = ?", (username,)).fetchone()
     except Exception as exc:
         raise HTTPException(status_code=400, detail="用户名已存在。") from exc
-    return {"token": token, "player": _public_player(player)}
+    return {"token": token, "player": merge_cosmetics_into_player(_public_player(player), player)}
 
 
 def count_online_players(now: Optional[int] = None) -> int:
@@ -115,7 +119,7 @@ def login_player(username: str, password: str) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="用户名或密码错误。")
         conn.execute("UPDATE players SET token = ?, online = 1, last_seen = ? WHERE id = ?", (token, now, player["id"]))
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
-    return {"token": token, "player": _public_player(player)}
+    return {"token": token, "player": merge_cosmetics_into_player(_public_player(player), player)}
 
 
 def logout_player(player_id: int) -> None:
@@ -136,7 +140,7 @@ def get_player_by_token(token: str) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="登录已失效，请重新登录。")
         conn.execute("UPDATE players SET online = 1, last_seen = ? WHERE id = ?", (int(time.time()), player["id"]))
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
-    return _public_player(player)
+    return merge_cosmetics_into_player(_public_player(player), player)
 
 
 def current_player(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:

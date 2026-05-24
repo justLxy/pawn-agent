@@ -9,6 +9,7 @@ import {
   Clock,
   Crown,
   Copy,
+  Gem,
   Download,
   Heart,
   ImageDown,
@@ -34,15 +35,17 @@ import {
   renderChatScreenshot,
   shareChatScreenshot,
 } from './chatScreenshot';
+import { ShopNameLine, ShowcaseCover, SponsorSubtitle, type PlayerCosmetics } from './cosmetics';
+import { ShopTab } from './shopTab';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
-type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements' | 'codex';
+type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements' | 'codex' | 'shop';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
 type MarketView = 'browse' | 'mine' | 'offers' | 'hot' | 'trades';
 
-interface Player {
+interface Player extends PlayerCosmetics {
   id: number;
   username: string;
   shop_name: string;
@@ -50,6 +53,7 @@ interface Player {
   reputation: number;
   ranking_badge: string | null;
   reward_bonus: number;
+  is_shop_admin?: boolean;
 }
 
 interface Item {
@@ -309,7 +313,7 @@ interface Listing {
   created_at: number;
 }
 
-interface LeaderboardEntry {
+interface LeaderboardEntry extends PlayerCosmetics {
   player_id: number;
   username: string;
   shop_name: string;
@@ -346,7 +350,7 @@ interface NegotiationStreamPayload {
 }
 
 interface ShowcaseData {
-  owner: {
+  owner: PlayerCosmetics & {
     id: number;
     shop_name: string;
     online: boolean;
@@ -393,7 +397,7 @@ interface MarketOffer {
   expires_at: number;
 }
 
-interface HotShowcaseEntry {
+interface HotShowcaseEntry extends PlayerCosmetics {
   player_id: number;
   shop_name: string;
   online: boolean;
@@ -553,6 +557,14 @@ async function apiDelete<T>(path: string): Promise<T> {
     method: 'DELETE',
     headers: tokenHeader()
   }, '删除失败。');
+}
+
+async function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  return apiRequest<T>(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: body ? JSON.stringify(body) : undefined
+  }, '保存失败。');
 }
 
 export default function App() {
@@ -1284,8 +1296,12 @@ export default function App() {
         <div className="flex items-center gap-3 min-w-0">
           <Store className="w-6 h-6 text-[#C8A97E] shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-[16px] md:text-[20px] font-bold text-[#C8A97E] tracking-widest truncate">{state.shop_name || player.shop_name}</h1>
-            <div className="hidden md:block text-[11px] text-[#616161] font-sans">{player.ranking_badge || state.ranking_badge || '全服经营中'}</div>
+            <h1 className="text-[16px] md:text-[20px] font-bold tracking-widest truncate font-sans">
+              <ShopNameLine name={state.shop_name || player.shop_name} cosmetics={player} />
+            </h1>
+            <div className="hidden md:block text-[11px] text-[#616161] font-sans">
+              <SponsorSubtitle rankingBadge={player.ranking_badge || state.ranking_badge} sponsorTitle={player.sponsor_title} />
+            </div>
           </div>
         </div>
         <div className="hidden md:flex items-center gap-4 lg:gap-8 font-sans text-xs lg:text-sm text-[#9E9E9E]">
@@ -1329,6 +1345,7 @@ export default function App() {
           <NavButton tab="management" activeTab={activeTab} setActiveTab={setActiveTab} icon={<TrendingUp className="w-5 h-5" />} label="经营财务" />
           <NavButton tab="staff" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Users className="w-5 h-5" />} label="员工管理" />
           <NavButton tab="upgrades" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Crown className="w-5 h-5" />} label="当铺升级" />
+          <NavButton tab="shop" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Gem className="w-5 h-5" />} label="掌柜铺子" />
         </aside>
 
         <main className="flex-1 bg-[#0D0F12] p-4 pb-28 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col">
@@ -1407,6 +1424,17 @@ export default function App() {
           )}
           {activeTab === 'codex' && (
             <CodexTab customers={state.customer_codex || {}} items={state.item_codex || {}} />
+          )}
+          {activeTab === 'shop' && player && (
+            <ShopTab
+              player={player}
+              apiGet={apiGet}
+              apiPost={apiPost}
+              apiPatch={apiPatch}
+              onPlayerUpdate={(p) => setPlayer((prev) => (prev ? { ...prev, ...p } : prev))}
+              onSuccess={setSuccessMsg}
+              onError={setErrorMsg}
+            />
           )}
           {activeTab === 'showcase' && showcase && (
             <ShowcaseTab
@@ -1598,7 +1626,8 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'history', label: '流水', icon: <Clock className="w-5 h-5" /> },
     { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
     { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
-    { tab: 'upgrades', label: '升级', icon: <Crown className="w-5 h-5" /> }
+    { tab: 'upgrades', label: '升级', icon: <Crown className="w-5 h-5" /> },
+    { tab: 'shop', label: '铺子', icon: <Gem className="w-5 h-5" /> }
   ];
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#14171C]/95 backdrop-blur border-t border-[#2A2D34] px-2 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
@@ -2623,7 +2652,10 @@ function MarketTab(props: {
             <div className="flex items-center gap-4 min-w-[120px]">
               <span className="text-2xl font-bold text-[#C8A97E]">#{entry.rank}</span>
               <div>
-                <div className="font-bold">{entry.ranking_badge ? `${entry.ranking_badge} · ` : ''}{entry.shop_name}</div>
+                <div className="font-bold">
+                  {entry.ranking_badge ? <span className="text-[#9E9E9E] font-normal text-xs">{entry.ranking_badge} · </span> : null}
+                  <ShopNameLine name={entry.shop_name} cosmetics={entry} />
+                </div>
                 <div className="text-xs text-[#616161] mt-1">近7天 {entry.recent_likes} 赞 · 累计 {entry.total_likes} 赞 · 展示 {entry.displayed_count}/{entry.display_capacity}</div>
               </div>
             </div>
@@ -2759,7 +2791,8 @@ function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh,
                   onClick={() => openShowcase(entry.player_id)}
                   className="truncate w-full text-left text-[#E0E0E0] hover:text-[#C8A97E] underline decoration-[#2A2D34] underline-offset-4 hover:decoration-[#C8A97E]"
                 >
-                  {entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}
+                  {entry.badge ? <span className="text-[#9E9E9E]">{entry.badge} · </span> : null}
+                  <ShopNameLine name={entry.shop_name} cosmetics={entry} />
                 </button>
                 <span className="mt-1 block text-[11px] text-[#616161] truncate">{entry.username}</span>
               </div>
@@ -3002,11 +3035,16 @@ function ShowcaseTab({ back, buy, onDeleteGuestbook, onLike, onPostGuestbook, sh
 
   return (
     <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。可点赞、留言，高赞橱窗会登上热门榜。`}>
+      <div className="mb-4 text-xl font-bold font-sans">
+        <ShopNameLine name={showcase.owner.shop_name} cosmetics={showcase.owner} />
+      </div>
+      <ShowcaseCover tagline={showcase.owner.showcase_tagline} />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#2A2D34] pb-4 mb-2">
         <div className="text-sm text-[#9E9E9E]">
           <span className={showcase.owner.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{showcase.owner.online ? '在线' : '离线'}</span>
           <span className="mx-3">声誉 {showcase.owner.reputation}</span>
           {showcase.owner.ranking_badge && <span className="text-[#C8A97E]">{showcase.owner.ranking_badge}</span>}
+          {showcase.owner.sponsor_title && <span className="ml-3 text-[#C8A97E]">{showcase.owner.sponsor_title}</span>}
           {showcase.hot_rank ? <span className="ml-3 text-[#C8A97E]">热门榜 #{showcase.hot_rank}</span> : null}
         </div>
         <div className="flex items-center gap-3">
@@ -3256,7 +3294,7 @@ function ItemMeta({ label, value, valueClassName = 'text-[#E0E0E0]' }: { label: 
   );
 }
 
-function ListPage({ children, subtitle, title }: { children: React.ReactNode; title: string; subtitle: string }) {
+function ListPage({ children, subtitle, title }: { children: React.ReactNode; title: React.ReactNode; subtitle: string }) {
   return <div className="max-w-6xl mx-auto w-full animate-slide-up"><h1 className="text-[28px] md:text-[36px] font-bold text-[#C8A97E] mb-2">{title}</h1><p className="text-[#9E9E9E] text-sm mb-6 pb-4 border-b border-[#2A2D34]">{subtitle}</p>{children}</div>;
 }
 

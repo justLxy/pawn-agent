@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from auth import player_is_online
 from database import get_connection, transaction
 from game_state import GameStateManager, Item
+from player_cosmetics import attach_cosmetics
 
 
 MARKET_TAX_RATE = 0.05
@@ -351,7 +352,10 @@ def set_showcase_price(player_id: int, item_id: str, price: Optional[int]) -> Di
 
 def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
-        owner = conn.execute("SELECT id, shop_name, last_seen, reputation, ranking_badge FROM players WHERE id = ?", (owner_id,)).fetchone()
+        owner = conn.execute(
+            "SELECT id, shop_name, last_seen, reputation, ranking_badge, monthly_expires_at, shop_emblem, showcase_tagline FROM players WHERE id = ?",
+            (owner_id,),
+        ).fetchone()
         save = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (owner_id,)).fetchone()
         if not owner or not save:
             raise HTTPException(status_code=404, detail="未找到该玩家当铺。")
@@ -361,15 +365,17 @@ def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
     state = GameStateManager.from_dict(json.loads(save["state_json"]))
     items = [_public_item(item) for item in state.inventory if item.status == "displayed"]
     hot_rank = _showcase_hot_rank(owner_id)
+    owner_payload = {
+        "id": owner["id"],
+        "shop_name": state.shop_name or owner["shop_name"],
+        "online": player_is_online(owner["last_seen"]),
+        "reputation": state.reputation,
+        "ranking_badge": owner["ranking_badge"],
+        "is_self": viewer_id == owner_id,
+    }
+    attach_cosmetics(owner_payload, owner)
     return {
-        "owner": {
-            "id": owner["id"],
-            "shop_name": state.shop_name or owner["shop_name"],
-            "online": player_is_online(owner["last_seen"]),
-            "reputation": state.reputation,
-            "ranking_badge": owner["ranking_badge"],
-            "is_self": viewer_id == owner_id,
-        },
+        "owner": owner_payload,
         "items": items,
         "display_capacity": state.display_capacity(),
         "like_count": like_stats["like_count"],
@@ -901,7 +907,9 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
             SELECT sl.owner_id,
                    SUM(CASE WHEN sl.created_at >= ? THEN 1 ELSE 0 END) AS recent_likes,
                    COUNT(*) AS total_likes,
-                   p.shop_name, p.last_seen, p.ranking_badge, gs.state_json
+                   p.shop_name, p.last_seen, p.ranking_badge,
+                   p.monthly_expires_at, p.shop_emblem, p.showcase_tagline,
+                   gs.state_json
             FROM showcase_likes sl
             JOIN players p ON p.id = sl.owner_id
             LEFT JOIN game_saves gs ON gs.player_id = sl.owner_id
@@ -921,18 +929,18 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
         displayed = sum(1 for item in state.inventory if item.status == "displayed")
         if displayed <= 0:
             continue
-        entries.append(
-            {
-                "player_id": row["owner_id"],
-                "shop_name": state.shop_name or row["shop_name"],
-                "online": player_is_online(row["last_seen"]),
-                "ranking_badge": row["ranking_badge"],
-                "recent_likes": int(row["recent_likes"]),
-                "total_likes": int(row["total_likes"]),
-                "displayed_count": displayed,
-                "display_capacity": state.display_capacity(),
-            }
-        )
+        entry = {
+            "player_id": row["owner_id"],
+            "shop_name": state.shop_name or row["shop_name"],
+            "online": player_is_online(row["last_seen"]),
+            "ranking_badge": row["ranking_badge"],
+            "recent_likes": int(row["recent_likes"]),
+            "total_likes": int(row["total_likes"]),
+            "displayed_count": displayed,
+            "display_capacity": state.display_capacity(),
+        }
+        attach_cosmetics(entry, row)
+        entries.append(entry)
         if len(entries) >= limit:
             break
     for index, entry in enumerate(entries, start=1):
@@ -1100,7 +1108,8 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.username, p.shop_name, p.last_seen, p.ranking_badge, gs.state_json
+            SELECT p.id, p.username, p.shop_name, p.last_seen, p.ranking_badge,
+                   p.monthly_expires_at, p.shop_emblem, p.showcase_tagline, gs.state_json
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """
         ).fetchall()
@@ -1109,20 +1118,20 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     for row in rows:
         state = GameStateManager.from_dict(json.loads(row["state_json"]))
         scores = _scores_for_state(state)
-        ranking.append(
-            {
-                "player_id": row["id"],
-                "username": row["username"],
-                "shop_name": state.shop_name or row["shop_name"],
-                "online": player_is_online(row["last_seen"], now),
-                "badge": row["ranking_badge"],
-                "score": scores[board_type],
-                "assets": scores["assets"],
-                "reputation": state.reputation,
-                "profit": state.total_profit,
-                "collection": scores["collection"],
-            }
-        )
+        entry = {
+            "player_id": row["id"],
+            "username": row["username"],
+            "shop_name": state.shop_name or row["shop_name"],
+            "online": player_is_online(row["last_seen"], now),
+            "badge": row["ranking_badge"],
+            "score": scores[board_type],
+            "assets": scores["assets"],
+            "reputation": state.reputation,
+            "profit": state.total_profit,
+            "collection": scores["collection"],
+        }
+        attach_cosmetics(entry, row, now)
+        ranking.append(entry)
     ranking.sort(key=lambda item: item["score"], reverse=True)
     for index, item in enumerate(ranking, start=1):
         item["rank"] = index

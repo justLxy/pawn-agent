@@ -154,5 +154,35 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_guestbook_owner_created
                 ON showcase_guestbook(owner_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS shop_orders (
+                id TEXT PRIMARY KEY,
+                player_id INTEGER NOT NULL,
+                product_id TEXT NOT NULL,
+                amount_fen INTEGER NOT NULL,
+                order_no TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                payer_note TEXT,
+                created_at INTEGER NOT NULL,
+                submitted_at INTEGER,
+                fulfilled_at INTEGER,
+                FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_player_created
+                ON shop_orders(player_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_shop_orders_status
+                ON shop_orders(status, created_at DESC);
             """
         )
+        _migrate_shop_schema(conn)
+
+
+def _migrate_shop_schema(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(players)").fetchall()}
+    if "monthly_expires_at" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN monthly_expires_at INTEGER")
+    if "shop_emblem" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN shop_emblem TEXT")
+    if "showcase_tagline" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN showcase_tagline TEXT")

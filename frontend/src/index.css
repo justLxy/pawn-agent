@@ -374,3 +374,51 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
 .day-loader-tip {
   animation: dayLoaderTipFade 2.8s ease forwards;
 }
+
+.shop-sign--sponsor {
+  background: linear-gradient(135deg, #C8A97E 0%, #D4B88A 50%, #E8D4B0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 12px rgba(200, 169, 126, 0.35);
+}
+
+.shop-emblem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.2rem;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #0D0F12;
+  background: linear-gradient(135deg, #C8A97E 0%, #A68B5B 100%);
+  border-radius: 2px;
+}
+
+.sponsor-plate {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+  color: #0D0F12;
+  background: linear-gradient(135deg, #C8A97E 0%, #A68B5B 100%);
+  border-radius: 2px;
+}
+
+.showcase-cover {
+  border-left: 3px solid #C8A97E;
+  padding-left: 1rem;
+  background: rgba(200, 169, 126, 0.06);
+}
+
+.shop-appeal-box {
+  border-left: 3px solid rgba(200, 169, 126, 0.55);
+  padding: 0.75rem 0 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
