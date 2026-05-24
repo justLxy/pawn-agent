@@ -1337,10 +1337,25 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
     );
   }
   const quickOffer = (ratio: number) => {
-    const anchorOffer = customer.initial_offer ?? customer.current_offer;
-    // 试探价锚定首次报价，避免顾客让步后反复点击越来越低
-    const baseOffer = ratio === 0.5 ? anchorOffer : customer.current_offer;
-    const price = Math.max(1, Math.round(baseOffer * ratio));
+    const initial = customer.initial_offer ?? customer.current_offer;
+    const current = customer.current_offer;
+    let price: number;
+    if (ratio === 0.5) {
+      if (customer.role === 'seller') {
+        // 收购：对方降价让步时，试探价随之中幅上移，而非跟着往下滑
+        const concession = Math.max(0, initial - current);
+        price = Math.round(initial * 0.5 + concession * 0.3);
+        price = Math.min(price, Math.max(1, current - 1));
+      } else {
+        // 出售：对方抬价时，要价随之上探
+        const raised = Math.max(0, current - initial);
+        price = Math.round(initial * 1.15 + raised * 0.35);
+        price = Math.max(price, current + 1);
+      }
+    } else {
+      price = Math.max(1, Math.round(current * ratio));
+    }
+    price = Math.max(1, price);
     const formattedPrice = price.toLocaleString();
     const hook = customer.persuasion_points[Math.floor(Math.random() * customer.persuasion_points.length)] || '咱们实在点谈';
     const sellerLines = [
