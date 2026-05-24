@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
+from auth import player_is_online
 from database import get_connection, transaction
 from game_state import GameStateManager, Item
 
@@ -236,7 +237,7 @@ def set_showcase_price(player_id: int, item_id: str, price: Optional[int]) -> Di
 
 def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
-        owner = conn.execute("SELECT id, shop_name, online, reputation, ranking_badge FROM players WHERE id = ?", (owner_id,)).fetchone()
+        owner = conn.execute("SELECT id, shop_name, last_seen, reputation, ranking_badge FROM players WHERE id = ?", (owner_id,)).fetchone()
         save = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (owner_id,)).fetchone()
         if not owner or not save:
             raise HTTPException(status_code=404, detail="未找到该玩家当铺。")
@@ -250,7 +251,7 @@ def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
         "owner": {
             "id": owner["id"],
             "shop_name": state.shop_name or owner["shop_name"],
-            "online": bool(owner["online"]),
+            "online": player_is_online(owner["last_seen"]),
             "reputation": state.reputation,
             "ranking_badge": owner["ranking_badge"],
             "is_self": viewer_id == owner_id,
@@ -786,7 +787,7 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
             SELECT sl.owner_id,
                    SUM(CASE WHEN sl.created_at >= ? THEN 1 ELSE 0 END) AS recent_likes,
                    COUNT(*) AS total_likes,
-                   p.shop_name, p.online, p.ranking_badge, gs.state_json
+                   p.shop_name, p.last_seen, p.ranking_badge, gs.state_json
             FROM showcase_likes sl
             JOIN players p ON p.id = sl.owner_id
             LEFT JOIN game_saves gs ON gs.player_id = sl.owner_id
@@ -810,7 +811,7 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
             {
                 "player_id": row["owner_id"],
                 "shop_name": state.shop_name or row["shop_name"],
-                "online": bool(row["online"]),
+                "online": player_is_online(row["last_seen"]),
                 "ranking_badge": row["ranking_badge"],
                 "recent_likes": int(row["recent_likes"]),
                 "total_likes": int(row["total_likes"]),
@@ -846,7 +847,7 @@ def _listing_to_dict(row: Any) -> Dict[str, Any]:
         "id": row["id"],
         "seller_id": row["seller_id"],
         "seller_shop": row["seller_shop"],
-        "seller_online": bool(row["seller_online"]),
+        "seller_online": player_is_online(row["seller_last_seen"]),
         "item": item,
         "item_name": row["item_name"],
         "rarity": row["rarity"],
@@ -892,7 +893,7 @@ def get_market_listings(
     with get_connection() as conn:
         rows = conn.execute(
             f"""
-            SELECT ml.*, p.shop_name AS seller_shop, p.online AS seller_online
+            SELECT ml.*, p.shop_name AS seller_shop, p.last_seen AS seller_last_seen
             FROM market_listings ml JOIN players p ON p.id = ml.seller_id
             WHERE {' AND '.join(clauses)}
             ORDER BY {order}
@@ -907,7 +908,7 @@ def get_my_listings(player_id: int) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT ml.*, p.shop_name AS seller_shop, p.online AS seller_online
+            SELECT ml.*, p.shop_name AS seller_shop, p.last_seen AS seller_last_seen
             FROM market_listings ml JOIN players p ON p.id = ml.seller_id
             WHERE ml.seller_id = ? AND ml.status = 'active'
             ORDER BY ml.created_at DESC
@@ -985,10 +986,11 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.username, p.shop_name, p.online, p.ranking_badge, gs.state_json
+            SELECT p.id, p.username, p.shop_name, p.last_seen, p.ranking_badge, gs.state_json
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """
         ).fetchall()
+    now = int(time.time())
     ranking = []
     for row in rows:
         state = GameStateManager.from_dict(json.loads(row["state_json"]))
@@ -998,7 +1000,7 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
                 "player_id": row["id"],
                 "username": row["username"],
                 "shop_name": state.shop_name or row["shop_name"],
-                "online": bool(row["online"]),
+                "online": player_is_online(row["last_seen"], now),
                 "badge": row["ranking_badge"],
                 "score": scores[board_type],
                 "assets": scores["assets"],

@@ -9,6 +9,16 @@ from fastapi import Header, HTTPException
 
 from database import get_connection
 
+ONLINE_IDLE_SECONDS = int(os.getenv("PLAYER_ONLINE_IDLE_SECONDS", "300"))
+
+
+def player_is_online(last_seen: int, now: Optional[int] = None) -> bool:
+    """根据最近活跃时间判断是否在线，避免关页未登出时长期显示在线。"""
+    if last_seen <= 0:
+        return False
+    now = now if now is not None else int(time.time())
+    return (now - last_seen) < ONLINE_IDLE_SECONDS
+
 
 def _hash_password(password: str, salt: Optional[str] = None) -> tuple[str, str]:
     salt = salt or secrets.token_hex(16)
@@ -26,7 +36,7 @@ def _public_player(row: Any) -> Dict[str, Any]:
         "id": row["id"],
         "username": row["username"],
         "shop_name": row["shop_name"],
-        "online": bool(row["online"]),
+        "online": player_is_online(row["last_seen"]),
         "reputation": row["reputation"],
         "ranking_badge": row["ranking_badge"],
         "reward_bonus": row["reward_bonus"],
@@ -90,7 +100,7 @@ def login_player(username: str, password: str) -> Dict[str, Any]:
 
 def logout_player(player_id: int) -> None:
     with get_connection() as conn:
-        conn.execute("UPDATE players SET online = 0, token = NULL, last_seen = ? WHERE id = ?", (int(time.time()), player_id))
+        conn.execute("UPDATE players SET online = 0, token = NULL, last_seen = 0 WHERE id = ?", (player_id,))
 
 
 def delete_player_account(player_id: int) -> None:
