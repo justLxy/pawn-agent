@@ -83,12 +83,17 @@ FACILITY_INFO = {
 }
 
 FACILITY_UPGRADE_EXPONENT = 1.78
+FACILITY_MAX_LEVEL = 8
+SHOP_MAX_LEVEL = 8
 
 SHOP_UPGRADE_COSTS = {
     2: {"cost": 12000, "min_day": 8, "desc": "中型当铺：每日顾客流量增加，解锁古董与历史遗物中高级商品。"},
     3: {"cost": 38000, "min_day": 20, "desc": "豪华当铺：每日顾客流量大幅增加，吸引超高价值艺术品卖家。"},
     4: {"cost": 95000, "min_day": 38, "desc": "典当行财阀：解锁专属拍卖行信息，顾客上门质量提升。"},
     5: {"cost": 260000, "min_day": 65, "desc": "世纪大掌柜：极高声誉，解锁神级传说遗物。"},
+    6: {"cost": 520000, "min_day": 95, "desc": "古玩界巨擘：稀世珍品出现率提升，高端回头客增多。"},
+    7: {"cost": 980000, "min_day": 130, "desc": "拍卖行合伙人：解锁全球珍品渠道与顶级买家。"},
+    8: {"cost": 1800000, "min_day": 170, "desc": "当铺祖师：传奇遗物定向流入，声望登峰造极。"},
 }
 
 SKILL_MAX_LEVEL = 10
@@ -128,7 +133,7 @@ CONDITION_VALUE_DRIFT = {
     "Mint": 0.002,
 }
 
-AI_DAY_GENERATION_TIMEOUT = 30.0
+AI_DAY_GENERATION_TIMEOUT = 55.0
 EVENT_BASE_CHANCE = 0.62
 EVENT_GUARANTEE_AFTER_QUIET_DAYS = 1
 
@@ -311,13 +316,13 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
         add(f"fakes_{target}", "鉴定", name, f"识破 {target} 次欺诈或赝品。", "fakes_detected", target, {"reputation": 2})
     for target, name in [(1, "修好第一件"), (20, "修复熟手"), (75, "修复大师")]:
         add(f"repairs_{target}", "修复", name, f"完成 {target} 次成功修复。", "repairs_completed", target, {"skill_xp": {"restoration": 28}})
-    for target, name in [(2, "门面升级"), (3, "豪华当铺"), (5, "世纪大掌柜")]:
+    for target, name in [(2, "门面升级"), (3, "豪华当铺"), (5, "世纪大掌柜"), (6, "古玩巨擘"), (8, "当铺祖师")]:
         add(f"shop_level_{target}", "升级", name, f"当铺等级达到 Lv.{target}。", "shop_level", target, {"reputation": target})
     for target, name in [(3, "入门专精"), (6, "技能老练"), (10, "单项宗师")]:
         add(f"max_skill_{target}", "技能", name, f"任意技能达到 Lv.{target}。", "max_skill_level", target, {"cash": target * 300})
     for target, name in [(3, "全面发展"), (5, "全能掌柜"), (10, "五艺俱全")]:
         add(f"all_skills_{target}", "技能", name, f"全部技能达到 Lv.{target}。", "all_skill_min", target, {"reputation": target})
-    for target, name in [(2, "设施起步"), (3, "店铺成型"), (5, "满级设施")]:
+    for target, name in [(2, "设施起步"), (3, "店铺成型"), (5, "设施精良"), (8, "顶配当铺")]:
         add(f"all_facilities_{target}", "升级", name, f"全部设施达到 Lv.{target}。", "all_facility_min", target, {"cash": target * 600})
     for target, name in [(5, "熟面孔"), (20, "客源簿"), (50, "旧街人脉")]:
         add(f"customers_{target}", "顾客", name, f"记录 {target} 位顾客关系。", "customer_records", target, {"reputation": 1})
@@ -572,7 +577,7 @@ class Customer:
         self.avatar_url = avatar_url or customer_avatar_url(self.name, self.trait)
         self.dialogue_history = dialogue_history or []
 
-        base_patience = 5 + (1 if marketer_active else 0) + (1 if shop_level >= 3 else 0)
+        base_patience = 5 + (1 if marketer_active else 0) + (1 if shop_level >= 3 else 0) + (1 if shop_level >= 6 else 0)
         if self.trait == "hardball":
             base_patience -= 1
         elif self.trait in ["eager", "hesitant"]:
@@ -1493,7 +1498,7 @@ class GameStateManager:
         total_holding_cost = 0
         total_value_delta = 0
         changed_items = 0
-        security_discount = min(0.35, (self.facilities["security"] - 1) * 0.04)
+        security_discount = min(0.48, (self.facilities["security"] - 1) * 0.04)
         commerce_discount = min(0.20, (self.skills["commerce"]["level"] - 1) * 0.025)
         for item in self.inventory:
             if item.status not in ["stored", "displayed", "repairing"]:
@@ -1676,7 +1681,7 @@ class GameStateManager:
         skill_level = self.skills["appraisal"]["level"]
         base_cost = max(160, int(item.market_value * 0.08 * self.economy_index))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
-        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.45, discount))))
+        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.58, discount))))
         if self.cash < cost:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
@@ -1792,7 +1797,7 @@ class GameStateManager:
         skill_level = self.skills["appraisal"]["level"]
         base_cost = max(160, int(item.market_value * 0.08 * self.economy_index))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
-        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.45, discount))))
+        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.58, discount))))
         if self.cash < cost:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
@@ -2093,7 +2098,7 @@ class GameStateManager:
 
     def upgrade_shop(self) -> Dict[str, Any]:
         next_lvl = self.shop_level + 1
-        if next_lvl > 5:
+        if next_lvl > SHOP_MAX_LEVEL:
             return {"error": "你的店铺等级已达到上限！"}
         min_day = int(SHOP_UPGRADE_COSTS[next_lvl].get("min_day", 1))
         if self.day < min_day:
@@ -2111,7 +2116,7 @@ class GameStateManager:
         if facility not in FACILITY_INFO:
             return None
         level = self.facilities[facility]
-        if level >= 5:
+        if level >= FACILITY_MAX_LEVEL:
             return None
         return int(FACILITY_INFO[facility]["base_cost"] * (level ** FACILITY_UPGRADE_EXPONENT) * self.economy_index)
 
@@ -2652,7 +2657,7 @@ class GameStateManager:
         state = cls(initialize=False)
         state.cash = int(data.get("cash", 10000))
         state.day = int(data.get("day", 1))
-        state.shop_level = int(data.get("shop_level", 1))
+        state.shop_level = clamp(int(data.get("shop_level", 1)), 1, SHOP_MAX_LEVEL)
         inventory_data = list(data.get("inventory", []))
         state.inventory = [Item.from_dict(item) for item in inventory_data]
         for item_data, item in zip(inventory_data, state.inventory):
@@ -2670,7 +2675,7 @@ class GameStateManager:
         state.facilities = facility_template()
         for key, value in data.get("facilities", {}).items():
             if key in state.facilities:
-                state.facilities[key] = clamp(int(value), 1, 5)
+                state.facilities[key] = clamp(int(value), 1, FACILITY_MAX_LEVEL)
         state.loan = {"principal": int(data.get("loan", {}).get("principal", 0)), "interest_rate": float(data.get("loan", {}).get("interest_rate", 0.02))}
         state.tax = {
             "next_due_day": int(data.get("tax", {}).get("next_due_day", 7)),

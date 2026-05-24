@@ -99,7 +99,7 @@ def reset_player_data(player_id: int, shop_name: str, state: Optional[GameStateM
 
 
 def active_listing_limit(shop_level: int) -> int:
-    return min(30, int(5 + max(0, shop_level - 1) * 6.25))
+    return min(45, int(5 + max(0, shop_level - 1) * 6.25))
 
 
 def reference_price(item: Item) -> int:

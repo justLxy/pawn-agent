@@ -397,7 +397,7 @@ function computeAppraisalPreview(
 ) {
   const baseCost = Math.max(160, Math.floor(marketValue * 0.08 * economyIndex));
   const discount = 0.08 * (appraisalRoomLevel - 1) + (hasAppraiser ? 0.35 : 0);
-  const cost = Math.max(120, Math.floor(baseCost * method.cost_multiplier * (1 - Math.min(0.45, discount))));
+  const cost = Math.max(120, Math.floor(baseCost * method.cost_multiplier * (1 - Math.min(0.58, discount))));
   const fakeDetectionRate = Math.min(
     0.92,
     Math.max(0.25, 0.45 + appraisalSkillLevel * 0.035 + appraisalRoomLevel * 0.04 + (hasAppraiser ? 0.12 : 0) + method.accuracy_bonus)
