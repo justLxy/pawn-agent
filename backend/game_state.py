@@ -1506,11 +1506,11 @@ class GameStateManager:
             self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
             if self.daily_summary:
                 self.daily_summary["events"].append(f"你拒绝了 {customer.name} 的交易，声誉 -1。")
-        elif outcome == "walk_out" and random.random() < 0.10:
-            self.reputation -= 1
+        elif outcome == "walk_out":
+            self.reputation -= 2
             self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
             if self.daily_summary:
-                self.daily_summary["events"].append(f"{customer.name} 留下一条负面评价，声誉 -1。")
+                self.daily_summary["events"].append(f"与 {customer.name} 谈判谈崩，声誉 -2。")
 
     def _retarget_buyer(self, customer: Customer, unavailable_item_id: Optional[str] = None, target_counts: Optional[Dict[str, int]] = None, announce: bool = True) -> bool:
         if customer.role != "buyer":

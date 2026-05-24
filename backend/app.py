@@ -524,7 +524,7 @@ def apply_negotiation_outcome(
         state._record_customer_outcome(customer, "walk_out")
         state._check_achievements("walk_out")
         customer.session_closed = "walk_out"
-        customer.deal_summary = "顾客离开了当铺，这笔买卖没有谈成。"
+        customer.deal_summary = "顾客离开了当铺，这笔买卖没有谈成，声誉 -2。"
         return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
     return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
 

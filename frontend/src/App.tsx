@@ -1041,7 +1041,7 @@ export default function App() {
         playSound('deal');
         setSuccessMsg(data.deal_result?.message || '交易达成。');
       }
-      if (data.walk_out_completed) setErrorMsg('顾客离场，交易中止。');
+      if (data.walk_out_completed) setErrorMsg('顾客离场，交易中止，声誉 -2。');
     } catch (err) {
       setState(previousState);
       setMessage(playerMessage);
@@ -1442,52 +1442,72 @@ function MobileStatusBar({ state, displayedCount, hasActiveCustomer }: { state: 
   );
 }
 
+function MobileBriefCell({
+  label,
+  value,
+  valueClassName = 'text-[#E0E0E0]',
+  span = 1,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+  span?: 1 | 2;
+}) {
+  return (
+    <div className={`min-w-0 leading-tight ${span === 2 ? 'col-span-2' : ''}`}>
+      <span className="text-[#616161]">{label}</span>
+      <span className={`ml-1 ${valueClassName}`}>{value}</span>
+    </div>
+  );
+}
+
 function MobileNegotiationBrief({ customer }: { customer: Customer }) {
   const tradeMode = getTradeMode(customer);
   const item = customer.item;
   const condition = CONDITION_MAP[item.condition] || item.condition;
   const appraisal = item.is_appraised_fake !== null ? appraisalVerdict(item) : null;
   const range = appraisalRange(item);
-  const compactFacts = [
-    `${customer.name} · ${customer.trait_cn} · 耐心 ${customer.patience}${customer.is_returning ? ` · ${customer.relationship_cn}` : ''}`,
-    `稀有 ${item.rarity_cn}`,
-    `成色 ${condition}`,
-    `年代 ${item.era}`,
-    `市价约 $${item.market_value.toLocaleString()}`,
-    customer.transaction_prefs?.[0] ? `偏好 ${customer.transaction_prefs[0]}` : null,
-    customer.persuasion_points?.[0] ? `突破口 ${customer.persuasion_points[0]}` : null,
-    item.authentication_tips?.[0] ? `鉴别 ${item.authentication_tips[0]}` : null,
-    range ? `鉴定区间 ${range}` : null,
-    appraisal ? `鉴定结论 ${appraisal}${item.appraisal_confidence !== null ? ` / ${item.appraisal_confidence}%` : ''}` : null,
-  ].filter(Boolean) as string[];
+  const customerLine = `${customer.name}·${customer.trait_cn}·耐${customer.patience}${customer.is_returning ? `·${customer.relationship_cn}` : ''}`;
+  const appraisalLine = appraisal
+    ? `${appraisal}${item.appraisal_confidence !== null ? `/${item.appraisal_confidence}%` : ''}`
+    : null;
   return (
     <div className="md:hidden sticky top-0 z-20 -mx-4 mb-3 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] shadow-[0_8px_20px_rgba(0,0,0,0.32)]">
-      <div className="px-3 py-2 border-b border-[#2A2D34]/70 flex items-center justify-between gap-2.5">
+      <div className="px-3 py-2 border-b border-[#2A2D34]/70 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
-            <span className="text-[#C8A97E] text-[10px] font-bold tracking-[0.14em] shrink-0">{tradeMode.label}</span>
-            <span className="text-[9px] text-[#616161] border border-[#2A2D34] px-1 py-0.5 whitespace-nowrap shrink-0">{tradeMode.itemSource}</span>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className="text-[#C8A97E] text-[10px] font-bold tracking-[0.12em] shrink-0">{tradeMode.label}</span>
+            <span className="text-[9px] text-[#616161] shrink-0">{tradeMode.itemSource}</span>
           </div>
-          <h3 className="text-[13px] font-bold text-[#E0E0E0] leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</h3>
+          <h3 className="text-[13px] font-bold text-[#E0E0E0] leading-snug">{item.name}</h3>
         </div>
-        <div className="text-right shrink-0 pl-2">
-          <div className="text-[9px] text-[#616161] whitespace-nowrap">{tradeMode.priceLabel}</div>
-          <div className="text-[#C8A97E] text-[18px] font-bold leading-none whitespace-nowrap">${customer.current_offer.toLocaleString()}</div>
+        <div className="text-right shrink-0 pl-1">
+          <div className="text-[9px] text-[#616161]">{tradeMode.priceLabel}</div>
+          <div className="text-[#C8A97E] text-[17px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
         </div>
       </div>
-      <div className="px-3 py-1.5 overflow-x-auto custom-scrollbar">
-        <div className="flex min-w-max items-center gap-1.5 text-[10px] font-sans text-[#9E9E9E]">
-          {compactFacts.map((fact, index) => (
-            <span key={`${fact}-${index}`} className="px-1.5 py-0.5 border border-[#2A2D34]/80 bg-[rgba(255,255,255,0.02)] whitespace-nowrap leading-tight">
-              {fact}
-            </span>
-          ))}
-          {customer.last_deal_summary && (
-            <span className="px-1.5 py-0.5 border border-[#2A2D34]/70 text-[#616161] bg-[rgba(255,255,255,0.015)] whitespace-nowrap leading-tight">
-              上次往来 {customer.last_deal_summary}
-            </span>
-          )}
-        </div>
+      <div className="px-3 py-1.5 grid grid-cols-2 gap-x-2.5 gap-y-1 text-[10px] font-sans">
+        <MobileBriefCell label="顾客" value={customerLine} />
+        <MobileBriefCell label="稀有" value={item.rarity_cn} valueClassName={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'} />
+        <MobileBriefCell label="成色" value={condition} valueClassName="text-[#C8A97E]" />
+        <MobileBriefCell label="年代" value={item.era} />
+        <MobileBriefCell label="市价" value={`$${item.market_value.toLocaleString()}`} />
+        {range ? <MobileBriefCell label="鉴定" value={range} /> : <div />}
+        {appraisalLine ? (
+          <MobileBriefCell label="结论" value={appraisalLine} valueClassName="text-[#E0E0E0]" span={range ? 1 : 2} />
+        ) : (
+          <div />
+        )}
+        {customer.transaction_prefs?.[0] && (
+          <MobileBriefCell label="偏好" value={customer.transaction_prefs[0]} span={2} />
+        )}
+        {customer.persuasion_points?.[0] && (
+          <MobileBriefCell label="突破" value={customer.persuasion_points[0]} valueClassName="text-[#C8A97E]/90" span={2} />
+        )}
+        {item.authentication_tips?.[0] && <MobileBriefCell label="鉴别" value={item.authentication_tips[0]} span={2} />}
+        {customer.last_deal_summary && (
+          <MobileBriefCell label="往来" value={customer.last_deal_summary} valueClassName="text-[#616161]" span={2} />
+        )}
       </div>
     </div>
   );
