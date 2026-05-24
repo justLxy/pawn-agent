@@ -1567,6 +1567,84 @@ class GameStateManager:
             result["notes"] = ai_notes
         return result
 
+    def appraise_inventory_item(self, item_id: str, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
+        item = self.get_item(item_id)
+        if not item:
+            return {"error": "物品未在仓库中找到。"}
+        if item.is_appraised_fake is not None:
+            return {"error": "物品已经鉴定过了。"}
+        method_info = APPRAISAL_METHODS.get(method, APPRAISAL_METHODS["standard"])
+        facility_level = self.facilities["appraisal_room"]
+        skill_level = self.skills["appraisal"]["level"]
+        base_cost = max(160, int(item.market_value * 0.08 * self.economy_index))
+        discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
+        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.45, discount))))
+        if self.cash < cost:
+            return {"error": f"鉴定资金不足，需要 ${cost}。"}
+
+        self.cash -= cost
+        self.daily_summary["upgrades"] += cost
+        accuracy = min(0.92, max(0.25, 0.45 + skill_level * 0.035 + facility_level * 0.04 + (0.12 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
+        detects_fake = item.is_fake and random.random() < accuracy
+        item.is_appraised_fake = detects_fake if item.is_fake else False
+        error_margin = max(0.06, float(method_info["value_margin"]) - (skill_level - 1) * 0.015 - (facility_level - 1) * 0.02 - (0.04 if self.staff["appraiser"] else 0))
+        estimate_noise = random.uniform(-error_margin * 0.75, error_margin * 0.75)
+        item.appraised_value = max(10, int(item.actual_value * (1 + estimate_noise)))
+        item.appraised_value_low = max(10, int(item.appraised_value * (1 - error_margin)))
+        item.appraised_value_high = max(item.appraised_value_low + 1, int(item.appraised_value * (1 + error_margin)))
+        item.appraisal_confidence = int(accuracy * 100)
+        item.appraisal_verdict = "发现明显作伪" if detects_fake else "未见明显作伪"
+        fallback_notes = [
+            f"鉴定方法：{method_info['name_cn']}。{method_info['desc']}",
+            f"观察成色：{item.condition}，修复难度 {item.repair_difficulty}/5。",
+            f"市场趋势系数：{self.market_trends.get(item.category, 1.0):.2f}。",
+            f"年代线索：{item.era}；损坏记录：{item.damage_report}",
+            f"估值区间约 ${item.appraised_value_low} - ${item.appraised_value_high}，结论可信度约 {item.appraisal_confidence}%。",
+        ]
+        item.appraisal_notes = ai_notes if ai_notes else fallback_notes
+
+        self.add_skill_xp("appraisal", method_info["xp"])
+        self._record_transaction("appraisal_fee", item, -cost)
+        self._check_achievements("appraise", {"method": method, "detected_fake": detects_fake})
+        return {
+            "cost": cost,
+            "method_name": method_info["name_cn"],
+            "is_fake": item.is_appraised_fake,
+            "verdict": item.appraisal_verdict,
+            "confidence": item.appraisal_confidence,
+            "appraised_value": item.appraised_value,
+            "appraised_value_low": item.appraised_value_low,
+            "appraised_value_high": item.appraised_value_high,
+            "notes": item.appraisal_notes,
+        }
+
+    async def async_appraise_inventory_item(self, ai_client, item_id: str, method: str = "standard") -> Dict[str, Any]:
+        result = self.appraise_inventory_item(item_id, method)
+        if "error" in result:
+            return result
+        item = self.get_item(item_id)
+        if not item:
+            return result
+        appraisal_item = item.to_dict()
+        appraisal_item.pop("actual_value", None)
+        appraisal_item.pop("is_fake", None)
+        appraisal_item.pop("appraised_value", None)
+        appraisal_item.pop("appraised_value_low", None)
+        appraisal_item.pop("appraised_value_high", None)
+        appraisal_item.pop("is_appraised_fake", None)
+        ai_notes = await ai_client.generate_appraisal_notes(
+            appraisal_item,
+            method,
+            str(result.get("verdict") or "未见明显作伪"),
+            int(result.get("confidence") or 0),
+            int(result.get("appraised_value_low") or result.get("appraised_value") or 0),
+            int(result.get("appraised_value_high") or result.get("appraised_value") or 0),
+        )
+        if ai_notes:
+            item.appraisal_notes = ai_notes
+            result["notes"] = ai_notes
+        return result
+
     def get_item(self, item_id: str) -> Optional[Item]:
         return next((item for item in self.inventory if item.id == item_id), None)
 

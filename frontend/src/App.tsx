@@ -439,6 +439,7 @@ export default function App() {
   const [listingPrice, setListingPrice] = useState<Record<string, number>>({});
   const [showcasePrice, setShowcasePrice] = useState<Record<string, number>>({});
   const [appraisalMethod, setAppraisalMethod] = useState('standard');
+  const [inventoryAppraiseMethod, setInventoryAppraiseMethod] = useState<Record<string, string>>({});
   const [repairMethod, setRepairMethod] = useState<Record<string, string>>({});
   const [boardType, setBoardType] = useState<BoardType>('assets');
   const [leaderboard, setLeaderboard] = useState<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null>(null);
@@ -786,6 +787,23 @@ export default function App() {
     }
   };
 
+  const appraiseInventoryItem = async (itemId: string, method: string) => {
+    setLoading(true);
+    try {
+      const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; verdict?: string; confidence?: number; appraised_value: number; appraised_value_low?: number; appraised_value_high?: number; notes?: string[] }; state: GameState }>('/api/appraise_inventory', { item_id: itemId, method });
+      setState(data.state);
+      playSound('appraise');
+      const result = data.appraise_result;
+      const low = result.appraised_value_low ?? result.appraised_value;
+      const high = result.appraised_value_high ?? result.appraised_value;
+      setSuccessMsg(`${result.method_name || '鉴定'}完成：${result.verdict || '未见明显作伪'}，估值区间 $${low.toLocaleString()} - $${high.toLocaleString()}，可信度约 ${result.confidence ?? 0}%，花费 $${result.cost.toLocaleString()}。`);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '鉴定失败。');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const negotiate = async (event: React.FormEvent) => {
     event.preventDefault();
     const playerMessage = message.trim();
@@ -998,13 +1016,16 @@ export default function App() {
               listingPrice={listingPrice}
               showcasePrice={showcasePrice}
               repairMethod={repairMethod}
+              inventoryAppraiseMethod={inventoryAppraiseMethod}
               setListingPrice={setListingPrice}
               setRepairMethod={setRepairMethod}
               setShowcasePrice={setShowcasePrice}
+              setInventoryAppraiseMethod={setInventoryAppraiseMethod}
               onAction={runStateAction}
               onList={listToMarket}
               onSetShowcasePrice={setShowcaseItemPrice}
               onClearShowcasePrice={clearShowcaseItemPrice}
+              onAppraise={appraiseInventoryItem}
             />
           )}
           {activeTab === 'market' && (
@@ -1323,7 +1344,7 @@ function Chat({ avatarUrl, children, right, speaker }: { avatarUrl?: string; chi
   );
 }
 
-function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setShowcasePrice }: { state: GameState; listingPrice: Record<string, number>; repairMethod: Record<string, string>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void> }) {
+function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMethod, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setInventoryAppraiseMethod, setShowcasePrice, onAppraise }: { state: GameState; listingPrice: Record<string, number>; repairMethod: Record<string, string>; inventoryAppraiseMethod: Record<string, string>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setInventoryAppraiseMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void>; onAppraise: (itemId: string, method: string) => Promise<void> }) {
   const activeItems = state.inventory.filter((item) => item.status !== 'sold');
   const repairPreview = (item: Item) => {
     const method = state.repair_methods[repairMethod[item.id] || 'standard'] || state.repair_methods.standard;
@@ -1368,16 +1389,45 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
       {activeItems.map((item) => (
         <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
           <ItemText item={item} />
-          <div className="w-full xl:w-[460px] flex flex-wrap gap-2 justify-start xl:justify-end mt-2 xl:mt-0">
-            <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} placeholder="挂售价" value={listingPrice[item.id] ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || 0 })} />
-            <button onClick={() => onList(item)} disabled={!['stored', 'displayed'].includes(item.status)} className="btn-secondary !h-9 !px-4">挂售</button>
-            {item.status === 'displayed' ? <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="btn-secondary !h-9 !px-4">下架</button> : <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="btn-secondary !h-9 !px-4">展示</button>}
-            {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} placeholder="橱窗价" value={showcasePrice[item.id] ?? item.showcase_price ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || 0 })} />}
-            {item.status === 'displayed' && <button onClick={() => onSetShowcasePrice(item)} className="btn-secondary !h-9 !px-4">橱窗价</button>}
-            {item.status === 'displayed' && item.showcase_price && <button onClick={() => onClearShowcasePrice(item)} className="btn-secondary !h-9 !px-4">取消价</button>}
-            <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="input-field !h-9 !px-3 w-[120px]"><option value="conservative">保守修复</option><option value="standard">标准修复</option><option value="premium">高阶修复</option></select>
-            <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
-            <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
+          <div className="w-full xl:w-[500px] flex flex-wrap gap-x-6 gap-y-4 justify-start xl:justify-end mt-4 xl:mt-0 items-end">
+            {item.is_appraised_fake === null && (
+              <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
+                <select value={inventoryAppraiseMethod[item.id] || 'standard'} onChange={(event) => setInventoryAppraiseMethod({ ...inventoryAppraiseMethod, [item.id]: event.target.value })} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px]">
+                  <option value="standard">标准鉴定</option>
+                  <option value="expert">专家鉴定</option>
+                  <option value="quick">快速鉴定</option>
+                </select>
+                <button onClick={() => onAppraise(item.id, inventoryAppraiseMethod[item.id] || 'standard')} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors">鉴定</button>
+              </div>
+            )}
+            <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
+              <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px] disabled:opacity-50">
+                <option value="conservative">保守修复</option>
+                <option value="standard">标准修复</option>
+                <option value="premium">高阶修复</option>
+              </select>
+              <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap disabled:opacity-50 transition-colors">修复</button>
+            </div>
+            <div className="flex items-center gap-3 border-b border-[#2A2D34] pb-1">
+              <div className="flex items-center gap-2">
+                <input type="number" className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[70px] placeholder:text-[#616161]" placeholder="橱窗价" value={showcasePrice[item.id] ?? item.showcase_price ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || 0 })} />
+                {item.status === 'displayed' ? (
+                  <>
+                    <button onClick={() => onSetShowcasePrice(item)} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors">改价</button>
+                    {item.showcase_price && <button onClick={() => onClearShowcasePrice(item)} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors">撤价</button>}
+                    <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="text-[#9E9E9E] hover:text-[#E0E0E0] text-sm whitespace-nowrap transition-colors">下架</button>
+                  </>
+                ) : (
+                  <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap disabled:opacity-50 transition-colors">展示</button>
+                )}
+              </div>
+              <div className="w-[1px] h-4 bg-[#2A2D34]"></div>
+              <div className="flex items-center gap-2">
+                <input type="number" className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[70px] placeholder:text-[#616161]" placeholder="挂售价" value={listingPrice[item.id] ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || 0 })} />
+                <button onClick={() => onList(item)} disabled={!['stored', 'displayed'].includes(item.status)} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap disabled:opacity-50 transition-colors">挂售</button>
+              </div>
+            </div>
+            <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-8 !px-4 ml-auto xl:ml-0 disabled:opacity-50 text-sm">系统出售</button>
             {item.status !== 'repairing' && (() => {
               const preview = systemSellPreview(item);
               const rangeText = preview.minVal !== null ? `$${preview.minVal.toLocaleString()} - $${preview.maxVal?.toLocaleString()}` : '未知（需鉴定）';

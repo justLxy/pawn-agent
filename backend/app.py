@@ -462,6 +462,17 @@ async def appraise_item(req: Optional[AppraiseRequest] = None, player: Dict[str,
     return state_response(player, state, "appraise_result", await state.async_appraise_active_item(ai_client, (req.method if req else "standard") or "standard"))
 
 
+class AppraiseInventoryRequest(BaseModel):
+    item_id: str
+    method: str = "standard"
+
+
+@app.post("/api/appraise_inventory")
+async def appraise_inventory_item(req: AppraiseInventoryRequest, player: Dict[str, Any] = Depends(current_player)):
+    state = await get_engine(player)
+    return state_response(player, state, "appraise_result", await state.async_appraise_inventory_item(ai_client, req.item_id, req.method))
+
+
 @app.post("/api/display")
 async def display_item(req: ItemRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
