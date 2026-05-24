@@ -1151,6 +1151,19 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
     const days = Math.max(1, item.repair_difficulty - Math.floor(state.facilities.restoration_workshop / 2) + method.days_delta);
     return { cost, days, method, nextCondition, nextValue };
   };
+  const systemSellPreview = (item: Item) => {
+    const commerce = state.skills.commerce?.level ?? 1;
+    const showcaseBonus = item.status === 'displayed' ? 0.04 * state.facilities.showcase : 0;
+    const rarityBonus = { common: 0, rare: 0.06, epic: 0.12, legendary: 0.2 }[item.rarity as 'common' | 'rare' | 'epic' | 'legendary'] ?? 0;
+    const fixedBonus = commerce * 0.025 + showcaseBonus + rarityBonus;
+    return {
+      min: Math.max(10, Math.floor(item.market_value * (0.72 + fixedBonus))),
+      max: Math.max(10, Math.floor(item.market_value * (0.92 + fixedBonus))),
+      commerce,
+      showcaseBonus,
+      rarityBonus,
+    };
+  };
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
       {activeItems.map((item) => (
@@ -1166,6 +1179,7 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
             <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="input-field !h-9 !px-3 w-[120px]"><option value="conservative">保守修复</option><option value="standard">标准修复</option><option value="premium">高阶修复</option></select>
             <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
+            {item.status !== 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">系统出售预计：${systemSellPreview(item).min.toLocaleString()} - ${systemSellPreview(item).max.toLocaleString()}（市场估值 × 随机渠道 72%-92%，商业 Lv.{systemSellPreview(item).commerce}{systemSellPreview(item).showcaseBonus > 0 ? '，展示加成' : ''}{systemSellPreview(item).rarityBonus > 0 ? '，稀有度加成' : ''}）</div>}
             {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，市场估值约 ${repairPreview(item).nextValue.toLocaleString()}，费用约 ${repairPreview(item).cost.toLocaleString()} / {repairPreview(item).days} 天</div>}
             {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {item.repair_days_remaining} 天，营业结算后推进进度。</div>}
           </div>
