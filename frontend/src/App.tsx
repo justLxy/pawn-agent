@@ -1549,7 +1549,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   );
   const tradeMode = customer.role === 'seller'
     ? { label: '向顾客收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
-    : { label: '出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
+    : { label: '向顾客出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
   const sessionClosed = customer.session_closed;
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
