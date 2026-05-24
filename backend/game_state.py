@@ -738,6 +738,16 @@ class Customer:
             return "strained"
         return "new"
 
+    def _player_has_spoken(self) -> bool:
+        return any(entry.get("role") == "player" for entry in self.dialogue_history)
+
+    def refresh_pre_negotiation_dialogue(self):
+        """Regenerate opening line so item name and offer match current target."""
+        if self._player_has_spoken():
+            return
+        self.dialogue_history = []
+        self.ensure_opening_greeting()
+
     def retarget_item(self, item: Item, note: Optional[str] = None):
         self.item = item
         calculated_limit, calculated_offer = self._calculate_prices()
@@ -746,7 +756,9 @@ class Customer:
         self.initial_offer = calculated_offer
         if self.role == "buyer":
             self.backstory = f"{self.name} 转而对店里的 {item.name} 产生兴趣，想听听你的报价。"
-        if note:
+        if not self._player_has_spoken():
+            self.refresh_pre_negotiation_dialogue()
+        elif note:
             self.dialogue_history.append({"role": "customer", "content": note})
 
     def to_dict(self) -> Dict[str, Any]:
@@ -818,6 +830,7 @@ class Customer:
         )
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
+        customer.refresh_pre_negotiation_dialogue()
         return customer
 
 
