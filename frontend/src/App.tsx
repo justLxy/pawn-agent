@@ -489,6 +489,7 @@ export default function App() {
   const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
   const [resetting, setResetting] = useState(false);
   const [appraising, setAppraising] = useState(false);
+  const [inventoryAppraisingId, setInventoryAppraisingId] = useState<string | null>(null);
   const [negotiatingMsg, setNegotiatingMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -841,7 +842,9 @@ export default function App() {
   };
 
   const appraiseInventoryItem = async (itemId: string, method: string) => {
-    setLoading(true);
+    if (inventoryAppraisingId) return;
+    setInventoryAppraisingId(itemId);
+    setErrorMsg(null);
     try {
       const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; verdict?: string; confidence?: number; appraised_value: number; appraised_value_low?: number; appraised_value_high?: number; notes?: string[] }; state: GameState }>('/api/appraise_inventory', { item_id: itemId, method });
       setState(data.state);
@@ -853,7 +856,7 @@ export default function App() {
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '鉴定失败。');
     } finally {
-      setLoading(false);
+      setInventoryAppraisingId(null);
     }
   };
 
@@ -1077,6 +1080,7 @@ export default function App() {
               showcasePrice={showcasePrice}
               repairMethod={repairMethod}
               inventoryAppraiseMethod={inventoryAppraiseMethod}
+              inventoryAppraisingId={inventoryAppraisingId}
               setListingPrice={setListingPrice}
               setRepairMethod={setRepairMethod}
               setShowcasePrice={setShowcasePrice}
@@ -1509,7 +1513,7 @@ function Chat({ avatarUrl, children, right, speaker, narrator }: { avatarUrl?: s
   );
 }
 
-function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMethod, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setInventoryAppraiseMethod, setShowcasePrice, onAppraise }: { state: GameState; listingPrice: Record<string, number>; repairMethod: Record<string, string>; inventoryAppraiseMethod: Record<string, string>; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setInventoryAppraiseMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void>; onAppraise: (itemId: string, method: string) => Promise<void> }) {
+function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMethod, inventoryAppraisingId, showcasePrice, onAction, onClearShowcasePrice, onList, onSetShowcasePrice, setListingPrice, setRepairMethod, setInventoryAppraiseMethod, setShowcasePrice, onAppraise }: { state: GameState; listingPrice: Record<string, number>; repairMethod: Record<string, string>; inventoryAppraiseMethod: Record<string, string>; inventoryAppraisingId: string | null; showcasePrice: Record<string, number>; setListingPrice: (value: Record<string, number>) => void; setRepairMethod: (value: Record<string, string>) => void; setInventoryAppraiseMethod: (value: Record<string, string>) => void; setShowcasePrice: (value: Record<string, number>) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void>; onList: (item: Item) => Promise<void>; onSetShowcasePrice: (item: Item) => Promise<void>; onClearShowcasePrice: (item: Item) => Promise<void>; onAppraise: (itemId: string, method: string) => Promise<void> }) {
   const activeItems = state.inventory.filter((item) => item.status !== 'sold');
   const repairPreview = (item: Item) => {
     const method = state.repair_methods[repairMethod[item.id] || 'standard'] || state.repair_methods.standard;
@@ -1551,18 +1555,26 @@ function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMeth
   };
   return (
     <ListPage title="仓库藏品" subtitle={`当前库存 ${activeItems.length} 件，可展示、修复、出售或挂入玩家市场。`}>
-      {activeItems.map((item) => (
-        <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
+      {activeItems.map((item) => {
+        const isAppraising = inventoryAppraisingId === item.id;
+        return (
+        <div key={item.id} className={`py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4 transition-opacity ${isAppraising ? 'opacity-80' : ''}`}>
           <ItemText item={item} />
           <div className="w-full xl:w-[500px] flex flex-wrap gap-x-6 gap-y-4 justify-start xl:justify-end mt-4 xl:mt-0 items-end">
             {item.is_appraised_fake === null && (
               <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
-                <select value={inventoryAppraiseMethod[item.id] || 'standard'} onChange={(event) => setInventoryAppraiseMethod({ ...inventoryAppraiseMethod, [item.id]: event.target.value })} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px]">
+                <select value={inventoryAppraiseMethod[item.id] || 'standard'} onChange={(event) => setInventoryAppraiseMethod({ ...inventoryAppraiseMethod, [item.id]: event.target.value })} disabled={isAppraising || inventoryAppraisingId !== null} className="bg-transparent text-[#E0E0E0] outline-none text-sm w-[90px] disabled:opacity-50">
                   {Object.entries(state.appraisal_methods).map(([key, info]) => (
                     <option key={key} value={key}>{info.name_cn}</option>
                   ))}
                 </select>
-                <button onClick={() => onAppraise(item.id, inventoryAppraiseMethod[item.id] || 'standard')} className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors">鉴定</button>
+                <button
+                  onClick={() => onAppraise(item.id, inventoryAppraiseMethod[item.id] || 'standard')}
+                  disabled={isAppraising || inventoryAppraisingId !== null}
+                  className="text-[#D4B88A] hover:text-[#C8A97E] text-sm whitespace-nowrap transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5 min-w-[4.5rem]"
+                >
+                  {isAppraising ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />鉴定中</> : '鉴定'}
+                </button>
               </div>
             )}
             <div className="flex items-center gap-2 border-b border-[#2A2D34] pb-1">
@@ -1608,10 +1620,12 @@ function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMeth
               成本 ${Number(item.purchase_price || item.base_value_at_purchase || 0).toLocaleString()}；
               累计持有成本 ${Number(item.holding_cost_paid || 0).toLocaleString()}
             </div>
+            {isAppraising && <div className="basis-full text-right text-xs text-[#C8A97E] animate-slide-up">正在鉴定，请稍候…</div>}
             {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {item.repair_days_remaining} 天，营业结算后推进进度。</div>}
           </div>
         </div>
-      ))}
+        );
+      })}
     </ListPage>
   );
 }
