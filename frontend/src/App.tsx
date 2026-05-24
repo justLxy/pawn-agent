@@ -1169,9 +1169,6 @@ export default function App() {
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
-          <div className="md:hidden font-sans text-xs text-[#9E9E9E] mr-1 shrink-0">
-            <span className="text-[#C8A97E] font-semibold">${state.cash.toLocaleString()}</span>
-          </div>
           <div className="md:hidden">
             <button
               type="button"
