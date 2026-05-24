@@ -1026,7 +1026,9 @@ export default function App() {
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
-          <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9 md:hidden" title="信息栏"><Info className="w-4 h-4" /></button>
+          <div className="md:hidden">
+            <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9" title="信息栏"><Info className="w-4 h-4" /></button>
+          </div>
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
           <button onClick={deleteAccount} disabled={loading} className="btn-icon !w-9 !h-9 hover:!text-[#F44336]" title="注销账号"><Trash2 className="w-4 h-4" /></button>
