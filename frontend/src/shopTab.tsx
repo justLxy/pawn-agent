@@ -218,7 +218,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
       <div className="shop-appeal-box font-sans text-sm leading-relaxed text-[#9E9E9E]">
         <p className="text-[#C8A97E] font-semibold mb-2">写给愿意支持的朋友</p>
         <p>
-          说实话，我一个人在做前后端和 AI 接入。玩家越多，豆包 API 的账单就越难看；云主机到期日也总在提醒我续费。
+          说实话，我一个人在做前后端和 AI 接入。玩家越多，对话与生成带来的开销就越大；云主机到期日也总在提醒我续费。
           有时半夜看消费短信，会比看当铺账本还心慌。你的每一笔 ¥5 / ¥10，不是「氪金变强」，只是<strong className="text-[#E0E0E0] font-normal">赞助展示</strong>：
           流光店招、匾额、橱窗文案——让我在排行榜上还能体面地说一声：「多谢捧场，店还在。」
         </p>

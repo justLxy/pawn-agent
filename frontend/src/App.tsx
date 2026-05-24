@@ -903,8 +903,11 @@ export default function App() {
       const data = await apiPost<{ token: string; player: Player }>(endpoint, authForm);
       localStorage.setItem(TOKEN_KEY, data.token);
       setPlayer(data.player);
+      if (authMode === 'register') {
+        setSuccessMsg('账号已创建，正在载入当铺…');
+      }
       await loadCloudState();
-      setSuccessMsg(authMode === 'login' ? '欢迎回来。' : '账号创建成功。');
+      setSuccessMsg(authMode === 'login' ? '欢迎回来。' : '当铺创建成功，可以开始营业了。');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '操作失败。');
     } finally {
@@ -1573,7 +1576,17 @@ function AuthScreen(props: {
           <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名（支持中文）" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
           <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="密码" type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />
           {authMode === 'register' && <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="当铺名称" value={authForm.shop_name} onChange={(event) => setAuthForm({ ...authForm, shop_name: event.target.value })} />}
-          <button disabled={loading} className="btn-primary w-full">{authMode === 'login' ? '进入当铺' : '创建云端当铺'}</button>
+          <button disabled={loading} className="btn-primary w-full">
+            {loading
+              ? authMode === 'register'
+                ? '正在创建当铺…'
+                : authMode === 'login'
+                  ? '正在进入…'
+                  : '查询中…'
+              : authMode === 'login'
+                ? '进入当铺'
+                : '创建云端当铺'}
+          </button>
           {authMode === 'login' && (
             <button type="button" onClick={() => switchMode('recover')} className="w-full text-center text-sm text-[#9E9E9E] font-sans hover:text-[#C8A97E] transition-colors">
               忘记用户名？用密码找回
