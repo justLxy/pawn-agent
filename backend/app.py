@@ -67,6 +67,9 @@ day_prewarm_cache: Dict[int, Dict[str, Any]] = {}
 day_prewarm_tasks: Dict[int, asyncio.Task] = {}
 day_prewarm_task_metadata: Dict[int, Dict[str, int]] = {}
 day_prewarm_generations: Dict[int, int] = {}
+queue_refill_cache: Dict[int, Dict[str, Any]] = {}
+queue_refill_tasks: Dict[int, asyncio.Task] = {}
+queue_refill_generations: Dict[int, int] = {}
 
 
 async def generate_next_day_prewarm(player_id: int, source_day: int, generation: int, state_snapshot: Dict[str, Any]) -> None:
@@ -77,7 +80,7 @@ async def generate_next_day_prewarm(player_id: int, source_day: int, generation:
         preview_state.day += 1
         preview_state.initialize_day()
         result = await preview_state.async_initialize_day_with_fallback(ai_client)
-        if result.get("fallback"):
+        if result.get("fallback") is True:
             logger.info("Skipped fallback day prewarm for player %s day %s: %s", player_id, source_day + 1, result.get("reason"))
             return
 
@@ -88,12 +91,99 @@ async def generate_next_day_prewarm(player_id: int, source_day: int, generation:
             "source_day": source_day,
             "target_day": source_day + 1,
             "customers": customers,
+            "partial": result.get("fallback") == "partial",
         }
-        logger.info("Prewarmed %s AI customers for player %s day %s", len(customers), player_id, source_day + 1)
+        logger.info(
+            "Prewarmed %s AI customers for player %s day %s (partial=%s)",
+            len(customers),
+            player_id,
+            source_day + 1,
+            result.get("fallback") == "partial",
+        )
     except asyncio.CancelledError:
         raise
     except Exception as exc:
         logger.warning("Next day prewarm failed for player %s: %s", player_id, exc)
+
+
+async def generate_queue_refill(player_id: int, day: int, generation: int, state_snapshot: Dict[str, Any]) -> None:
+    try:
+        preview_state = GameStateManager.from_dict(state_snapshot)
+        if int(preview_state.day) != day:
+            return
+        batch_size = preview_state.queue_refill_batch_size()
+        if batch_size <= 0:
+            return
+
+        customers: List[Any] = []
+        for _ in range(batch_size):
+            if queue_refill_generations.get(player_id) != generation:
+                return
+            seller = await preview_state.generate_ai_seller_customer(ai_client)
+            if seller:
+                customers.append(seller)
+
+        if not customers or queue_refill_generations.get(player_id) != generation:
+            return
+
+        queue_refill_cache[player_id] = {"day": day, "customers": customers}
+        logger.info("Queue refill prepared %s AI sellers for player %s day %s", len(customers), player_id, day)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Queue refill failed for player %s: %s", player_id, exc)
+
+
+def finish_queue_refill_task(player_id: int, task: asyncio.Task) -> None:
+    if queue_refill_tasks.get(player_id) is task:
+        queue_refill_tasks.pop(player_id, None)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error:
+        logger.warning("Queue refill task failed for player %s: %s", player_id, error)
+
+
+def apply_pending_queue_refill(player_id: int, state: GameStateManager) -> int:
+    cached = queue_refill_cache.pop(player_id, None)
+    if not cached:
+        return 0
+    if int(cached.get("day", 0)) != int(state.day):
+        return 0
+    customers = cached.get("customers") or []
+    if not customers:
+        return 0
+    return state.apply_queue_refill(customers)
+
+
+def schedule_queue_refill(player: Dict[str, Any], state: GameStateManager) -> None:
+    if not bool(getattr(ai_client, "available", lambda: False)()):
+        return
+    if state.pending_event or state.day_ended:
+        return
+    if state.queue_refill_batch_size() <= 0:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    player_id = int(player["id"])
+    day = int(state.day)
+    cached = queue_refill_cache.get(player_id)
+    if cached and int(cached.get("day", 0)) == day and cached.get("customers"):
+        return
+
+    running_task = queue_refill_tasks.get(player_id)
+    if running_task and not running_task.done():
+        return
+
+    generation = queue_refill_generations.get(player_id, 0) + 1
+    queue_refill_generations[player_id] = generation
+    state_snapshot = state.to_dict()
+    task = asyncio.create_task(generate_queue_refill(player_id, day, generation, state_snapshot))
+    queue_refill_tasks[player_id] = task
+    task.add_done_callback(lambda completed_task, pid=player_id: finish_queue_refill_task(pid, completed_task))
 
 
 def finish_prewarm_task(player_id: int, task: asyncio.Task) -> None:
@@ -266,7 +356,9 @@ async def get_engine(player: Dict[str, Any]) -> GameStateManager:
 
 def commit_state(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
     state.shop_name = state.shop_name or player["shop_name"]
+    apply_pending_queue_refill(int(player["id"]), state)
     save_state(player["id"], state)
+    schedule_queue_refill(player, state)
     schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
@@ -476,6 +568,9 @@ def me(player: Dict[str, Any] = Depends(current_player)):
 @app.get("/api/state")
 async def get_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    apply_pending_queue_refill(int(player["id"]), state)
+    save_state(player["id"], state)
+    schedule_queue_refill(player, state)
     schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
@@ -483,6 +578,9 @@ async def get_state(player: Dict[str, Any] = Depends(current_player)):
 @app.get("/api/cloud/state")
 async def cloud_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    apply_pending_queue_refill(int(player["id"]), state)
+    save_state(player["id"], state)
+    schedule_queue_refill(player, state)
     schedule_next_day_prewarm(player, state)
     return state.to_dict()
 

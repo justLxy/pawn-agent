@@ -198,7 +198,9 @@ CONDITION_VALUE_DRIFT = {
     "Mint": 0.002,
 }
 
-AI_DAY_GENERATION_TIMEOUT = 55.0
+AI_DAY_GENERATION_TIMEOUT = 90.0
+AI_CUSTOMER_GENERATION_TIMEOUT = 12.0
+SELLER_CUSTOMER_RATIO = 0.62
 EVENT_BASE_CHANCE = 0.62
 EVENT_GUARANTEE_AFTER_QUIET_DAYS = 1
 
@@ -621,12 +623,14 @@ class Customer:
         last_deal_summary: Optional[str] = None,
         satisfaction: int = 50,
         referred_by: Optional[str] = None,
+        generation_source: str = "local",
     ):
         self.customer_id = customer_id or str(uuid.uuid4())[:10]
         self.name = name
         self.trait = trait if trait in CUSTOMER_TRAITS else "hesitant"
         self.role = role if role in ["seller", "buyer"] else "seller"
         self.item = item
+        self.generation_source = generation_source if generation_source in ("ai", "local", "prewarm") else "local"
         self.is_returning = bool(is_returning)
         self.visit_count = max(1, int(visit_count or 1))
         self.satisfaction = clamp(int(satisfaction), 0, 100)
@@ -880,6 +884,7 @@ class Customer:
             "dialogue_history": self.dialogue_history,
             "session_closed": self.session_closed,
             "deal_summary": self.deal_summary,
+            "generation_source": self.generation_source,
         }
 
     @classmethod
@@ -910,6 +915,7 @@ class Customer:
             last_deal_summary=data.get("last_deal_summary"),
             satisfaction=int(data.get("satisfaction", 50)),
             referred_by=data.get("referred_by"),
+            generation_source=str(data.get("generation_source") or "local"),
         )
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
@@ -1000,12 +1006,83 @@ class GameStateManager:
         }
         self._refresh_market_trends()
 
+    async def _generate_one_customer_ai_or_local(self, ai_client, timeout: float = AI_CUSTOMER_GENERATION_TIMEOUT) -> Customer:
+        import asyncio
+
+        ai_available = bool(getattr(ai_client, "available", lambda: False)())
+        if ai_available:
+            try:
+                customer = await asyncio.wait_for(self.generate_random_customer_async(ai_client), timeout=timeout)
+                customer.generation_source = "ai"
+                return customer
+            except Exception:
+                pass
+        customer = self.generate_random_customer()
+        customer.generation_source = "local"
+        return customer
+
+    def count_local_sellers_in_queue(self) -> int:
+        return sum(
+            1
+            for customer in self.daily_customer_queue
+            if customer.role == "seller" and getattr(customer, "generation_source", "local") == "local"
+        )
+
+    def queue_refill_batch_size(self) -> int:
+        if self.pending_event or self.day_ended:
+            return 0
+        local_sellers = self.count_local_sellers_in_queue()
+        if local_sellers <= 0 and len(self.daily_customer_queue) >= 2:
+            return 0
+        return min(4, max(local_sellers, 2))
+
+    def apply_queue_refill(self, ai_customers: List["Customer"]) -> int:
+        if not ai_customers:
+            return 0
+        pending = list(ai_customers)
+        applied = 0
+        for index, customer in enumerate(list(self.daily_customer_queue)):
+            if not pending:
+                break
+            if customer.role != "seller" or getattr(customer, "generation_source", "local") != "local":
+                continue
+            replacement = pending.pop(0)
+            replacement.generation_source = "ai"
+            replacement.session_closed = None
+            replacement.deal_summary = None
+            replacement.ensure_opening_greeting()
+            self.daily_customer_queue[index] = replacement
+            applied += 1
+        while pending:
+            replacement = pending.pop(0)
+            replacement.generation_source = "ai"
+            replacement.session_closed = None
+            replacement.deal_summary = None
+            replacement.ensure_opening_greeting()
+            self.daily_customer_queue.append(replacement)
+            applied += 1
+        return applied
+
     async def async_initialize_day(self, ai_client):
         import asyncio
 
         self.daily_customer_queue = []
-        tasks = [self.generate_random_customer_async(ai_client) for _ in range(self.total_customers_today)]
-        self.daily_customer_queue.extend(await asyncio.gather(*tasks))
+        total = max(1, self.total_customers_today)
+
+        first = await self._generate_one_customer_ai_or_local(ai_client)
+        self.daily_customer_queue.append(first)
+
+        if total > 1:
+            tasks = [self._generate_one_customer_ai_or_local(ai_client) for _ in range(total - 1)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Customer):
+                    self.daily_customer_queue.append(result)
+                else:
+                    fallback = self.generate_random_customer()
+                    fallback.generation_source = "local"
+                    self.daily_customer_queue.append(fallback)
+
         self._inject_relationship_customers()
         self._open_day_customer_queue()
 
@@ -1017,16 +1094,32 @@ class GameStateManager:
             self.initialize_day_fast()
             return {"success": True, "fallback": True, "reason": "ai_unavailable"}
 
+        had_active = self.active_customer is not None
         try:
             await asyncio.wait_for(self.async_initialize_day(ai_client), timeout=timeout)
             return {"success": True, "fallback": False}
+        except asyncio.TimeoutError:
+            if self.daily_customer_queue and not had_active and self.active_customer is None:
+                self._inject_relationship_customers()
+                self._open_day_customer_queue()
+            if self.daily_customer_queue or self.active_customer:
+                return {"success": True, "fallback": "partial", "reason": "ai_timeout_partial"}
+            self.initialize_day_fast()
+            return {"success": True, "fallback": True, "reason": "ai_timeout_or_error"}
         except Exception:
+            if self.daily_customer_queue or self.active_customer:
+                if not had_active and self.active_customer is None and self.daily_customer_queue:
+                    self._inject_relationship_customers()
+                    self._open_day_customer_queue()
+                return {"success": True, "fallback": "partial", "reason": "ai_error_partial"}
             self.initialize_day_fast()
             return {"success": True, "fallback": True, "reason": "ai_timeout_or_error"}
 
     def initialize_day_fast(self):
-        """Initialize a playable day immediately with local templates."""
+        """Initialize a playable day immediately with local placeholders (queue refill upgrades to AI)."""
         self.daily_customer_queue = [self.generate_random_customer() for _ in range(self.total_customers_today)]
+        for customer in self.daily_customer_queue:
+            customer.generation_source = "local"
         self._inject_relationship_customers()
         self._open_day_customer_queue()
 
@@ -1043,15 +1136,22 @@ class GameStateManager:
             self.initialize_day_fast()
             return {"success": False, "fallback": True, "reason": "empty_prewarm"}
 
+        prewarm_count = len(prepared_customers)
         if len(prepared_customers) < self.total_customers_today:
             missing = self.total_customers_today - len(prepared_customers)
-            prepared_customers.extend(self.generate_random_customer() for _ in range(missing))
+            for _ in range(missing):
+                placeholder = self.generate_random_customer()
+                placeholder.generation_source = "local"
+                prepared_customers.append(placeholder)
         elif len(prepared_customers) > self.total_customers_today:
-            prepared_customers = prepared_customers[:self.total_customers_today]
+            prepared_customers = prepared_customers[: self.total_customers_today]
+            prewarm_count = len(prepared_customers)
 
-        for customer in prepared_customers:
+        for index, customer in enumerate(prepared_customers):
             customer.session_closed = None
             customer.deal_summary = None
+            if index < prewarm_count and customer.generation_source == "local" and customer.role == "seller":
+                customer.generation_source = "prewarm"
             customer.ensure_opening_greeting()
 
         self.daily_customer_queue = prepared_customers
@@ -1069,14 +1169,15 @@ class GameStateManager:
         name = random.choice(CUSTOMER_NAMES)
         trait = random.choice(list(CUSTOMER_TRAITS.keys()))
         saleable_items = self._saleable_items()
-        role = "buyer" if saleable_items and random.random() < 0.45 else "seller"
+        role = "buyer" if saleable_items and random.random() < (1 - SELLER_CUSTOMER_RATIO) else "seller"
 
         if role == "seller":
-            return self._generate_local_seller_customer(name, trait)
+            customer = self._generate_local_seller_customer(name, trait)
         else:
             item = self._choose_saleable_item() or random.choice(saleable_items)
+            customer = Customer(name=name, trait=trait, role=role, item=item, shop_level=self.shop_level, marketer_active=self.staff["marketer"])
 
-        customer = Customer(name=name, trait=trait, role=role, item=item, shop_level=self.shop_level, marketer_active=self.staff["marketer"])
+        customer.generation_source = "local"
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
         return customer
 
@@ -1111,16 +1212,24 @@ class GameStateManager:
             marketer_active=self.staff["marketer"],
         )
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
+        customer.generation_source = "local"
         return customer
 
-    def _relationship_cn(self, level: str) -> str:
-        return {
-            "new": "新客",
-            "familiar": "熟客",
-            "loyal": "忠实顾客",
-            "vip": "贵宾",
-            "strained": "关系紧张",
-        }.get(level, "新客")
+    async def generate_ai_seller_customer(self, ai_client, timeout: float = AI_CUSTOMER_GENERATION_TIMEOUT) -> Optional["Customer"]:
+        import asyncio
+
+        if not bool(getattr(ai_client, "available", lambda: False)()):
+            return None
+        for _ in range(3):
+            try:
+                customer = await asyncio.wait_for(self.generate_random_customer_async(ai_client), timeout=timeout)
+                if customer.role != "seller":
+                    continue
+                customer.generation_source = "ai"
+                return customer
+            except Exception:
+                continue
+        return None
 
     def _customer_record(self, customer: Customer) -> Dict[str, Any]:
         return {
@@ -1745,7 +1854,7 @@ class GameStateManager:
         trait = random.choice(list(CUSTOMER_TRAITS.keys()))
 
         saleable_items = self._saleable_items()
-        role = "buyer" if saleable_items and random.random() < 0.45 else "seller"
+        role = "buyer" if saleable_items and random.random() < (1 - SELLER_CUSTOMER_RATIO) else "seller"
 
         if role == "seller":
             category = random.choice(list(ITEM_TEMPLATES.keys()))
@@ -1811,6 +1920,7 @@ class GameStateManager:
         greeting = await ai_client.generate_customer_greeting(customer.negotiation_context())
         if greeting.strip():
             customer.dialogue_history = [{"role": "customer", "content": greeting.strip()[:480]}]
+        customer.generation_source = "ai"
         return customer
 
     def select_next_customer(self) -> bool:
