@@ -405,29 +405,59 @@ function tokenHeader(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers: tokenHeader() });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '服务器响应异常。');
+const AUTH_EXPIRED_EVENT = 'pawnshop-auth-expired';
+
+class AuthExpiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthExpiredError';
+  }
+}
+
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const payload = await response.json().catch(() => null);
+  if (payload && typeof payload.detail === 'string') return payload.detail;
+  return fallback;
+}
+
+async function apiRequest<T>(path: string, options: RequestInit, fallback: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, options);
+  } catch {
+    throw new Error('网络请求失败，请检查后端服务或跨域配置。');
+  }
+  if (!response.ok) {
+    const message = await readApiError(response, fallback);
+    if (response.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      if (path !== '/api/auth/logout') {
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+      }
+      throw new AuthExpiredError(message);
+    }
+    throw new Error(message);
+  }
   return response.json();
+}
+
+async function apiGet<T>(path: string): Promise<T> {
+  return apiRequest<T>(path, { headers: tokenHeader() }, '服务器响应异常。');
 }
 
 async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  return apiRequest<T>(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: body ? JSON.stringify(body) : undefined
-  });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '操作失败。');
-  return response.json();
+  }, '操作失败。');
 }
 
 async function apiDelete<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  return apiRequest<T>(path, {
     method: 'DELETE',
     headers: tokenHeader()
-  });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '删除失败。');
-  return response.json();
+  }, '删除失败。');
 }
 
 export default function App() {
@@ -464,6 +494,22 @@ export default function App() {
   const lastAchievementRef = useRef<string | null>(null);
   const musicContextRef = useRef<AudioContext | null>(null);
   const musicNodesRef = useRef<{ oscillators: OscillatorNode[]; intervals: number[]; gain: GainNode } | null>(null);
+
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setPlayer(null);
+      setState(null);
+      setLeaderboard(null);
+      setShowcase(null);
+      setListings([]);
+      setMyListings([]);
+      setTrades([]);
+      setSuccessMsg(null);
+      setErrorMsg('登录已失效，请重新登录。');
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
+  }, []);
 
   const playSound = (type: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade' | 'patience_down') => {
     if (!soundEnabled) return;
