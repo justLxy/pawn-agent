@@ -483,6 +483,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', shop_name: '' });
   const [loading, setLoading] = useState(false);
+  const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
   const [resetting, setResetting] = useState(false);
   const [appraising, setAppraising] = useState(false);
   const [negotiatingMsg, setNegotiatingMsg] = useState<string | null>(null);
@@ -800,6 +801,8 @@ export default function App() {
   };
 
   const runStateAction = async (path: string, body: unknown, resultKey: string, fallback: string, sound: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade' = 'click') => {
+    const transitionMode = path === '/api/end_day' ? 'end_day' : path === '/api/next_day' ? 'next_day' : null;
+    if (transitionMode) setDayTransition(transitionMode);
     setLoading(true);
     try {
       const data = await apiPost<Record<string, any>>(path, body);
@@ -813,6 +816,7 @@ export default function App() {
       setErrorMsg(err instanceof Error ? err.message : '操作失败。');
     } finally {
       setLoading(false);
+      if (transitionMode) setDayTransition(null);
     }
   };
 
@@ -1044,6 +1048,7 @@ export default function App() {
             <LobbyTab
               state={state}
               loading={loading}
+              dayTransition={dayTransition}
               message={message}
               negotiatingMsg={negotiatingMsg}
               appraising={appraising}
@@ -1237,8 +1242,42 @@ function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () =>
   );
 }
 
-function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
+  const config = mode === 'end_day'
+    ? {
+        title: '正在结算今日经营',
+        subtitle: 'AI 正在整理账本，并生成本日随机事件',
+        tips: ['核对今日交易流水…', '结算员工薪水与运营成本…', '更新库存持有与市场趋势…', 'AI 正在撰写今日经营轶事…', '检查是否有待处理的突发事件…']
+      }
+    : {
+        title: '正在开启新的一天',
+        subtitle: 'AI 正在生成新顾客与今日到访队列',
+        tips: ['推进日历，刷新经济指数…', '整理仓库与展示柜状态…', 'AI 正在构思新顾客背景…', '生成物品与谈判开场白…', '准备开门迎客…']
+      };
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setTipIndex((index) => (index + 1) % config.tips.length), 2800);
+    return () => window.clearInterval(timer);
+  }, [config.tips.length]);
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center text-center px-6 animate-slide-up">
+      <div className="relative mb-8 flex items-center justify-center">
+        <div className="day-loader-ring" />
+        <Clock className="w-7 h-7 text-[#C8A97E] absolute day-loader-icon" />
+      </div>
+      <h1 className="text-[28px] md:text-[32px] font-bold text-[#C8A97E] mb-3">{config.title}</h1>
+      <p className="text-[#9E9E9E] text-sm mb-8 max-w-md">{config.subtitle}</p>
+      <div className="day-loader-track mb-6" />
+      <p key={tipIndex} className="text-[#616161] text-xs font-sans day-loader-tip min-h-[20px]">{config.tips[tipIndex]}</p>
+    </div>
+  );
+}
+
+function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onAppraise, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
+  if (dayTransition === 'next_day' && state.day_ended) {
+    return <DayTransitionLoader mode="next_day" />;
+  }
   if (state.day_ended) {
     return (
       <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col justify-center">
@@ -1263,12 +1302,25 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
             <div className="space-y-2">{state.pending_event.choices.map((choice) => <button key={choice.id} onClick={() => onAction('/api/event/choice', { choice_id: choice.id }, 'event_result', '事件已处理。')} className="w-full text-left py-3 border-b border-[#2A2D34] hover:text-[#C8A97E]">{choice.label}<span className="block text-xs text-[#616161]">{choice.effect}</span></button>)}</div>
           </div>
         )}
-        <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={loading || !!state.pending_event} className="btn-primary w-full md:w-auto">开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></button>
+        <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={loading || !!state.pending_event} className="btn-primary w-full md:w-auto">
+          {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />正在准备…</> : <>开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></>}
+        </button>
       </div>
     );
   }
   if (!customer) {
-    return <div className="flex-1 flex flex-col items-center justify-center text-center"><Clock className="w-12 h-12 text-[#616161] mb-6" /><h1 className="text-[32px] font-bold mb-4">今日打烊</h1><button onClick={() => onAction('/api/end_day', undefined, 'summary', '结算完成。', 'deal')} disabled={loading} className="btn-primary">营业结算</button></div>;
+    if (dayTransition === 'end_day') {
+      return <DayTransitionLoader mode="end_day" />;
+    }
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-center">
+        <Clock className="w-12 h-12 text-[#616161] mb-6" />
+        <h1 className="text-[32px] font-bold mb-4">今日打烊</h1>
+        <button onClick={() => onAction('/api/end_day', undefined, 'summary', '结算完成。', 'deal')} disabled={loading} className="btn-primary">
+          {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />结算中…</> : '营业结算'}
+        </button>
+      </div>
+    );
   }
   const quickOffer = (ratio: number) => {
     const price = Math.max(1, Math.round(customer.current_offer * ratio));
@@ -1601,7 +1653,7 @@ function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }
 
 function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
   const normalizeAmount = (entry: TransactionEntry) => {
-    const expenseTypes = new Set(['buy', 'market_buy', 'showcase_buy']);
+    const expenseTypes = new Set(['buy', 'market_buy', 'showcase_buy', 'appraisal_fee']);
     if (expenseTypes.has(entry.type)) return -Math.abs(entry.amount);
     return entry.amount;
   };
@@ -1610,6 +1662,7 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
     buy: '收购物品',
     sell: '顾客购买',
     direct_sell: '系统出售',
+    appraisal_fee: '鉴定费用',
     market_buy: '市场购入',
     market_sell: '市场售出',
     showcase_buy: '橱窗购入',

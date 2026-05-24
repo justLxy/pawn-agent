@@ -241,3 +241,59 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
 .animate-slide-right {
   animation: slideInRightFade 0.3s ease forwards;
 }
+
+@keyframes dayLoaderSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dayLoaderPulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes dayLoaderShimmer {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
+@keyframes dayLoaderTipFade {
+  0% { opacity: 0; transform: translateY(6px); }
+  12% { opacity: 1; transform: translateY(0); }
+  88% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-4px); }
+}
+
+.day-loader-ring {
+  width: 72px;
+  height: 72px;
+  border: 2px solid rgba(200, 169, 126, 0.12);
+  border-top-color: #C8A97E;
+  border-right-color: rgba(200, 169, 126, 0.45);
+  border-radius: 50%;
+  animation: dayLoaderSpin 1.1s linear infinite;
+}
+
+.day-loader-icon {
+  animation: dayLoaderPulse 2.4s ease-in-out infinite;
+}
+
+.day-loader-track {
+  width: min(320px, 72vw);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+  position: relative;
+}
+
+.day-loader-track::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 38%;
+  background: linear-gradient(90deg, transparent, rgba(200, 169, 126, 0.25), #C8A97E, rgba(200, 169, 126, 0.25), transparent);
+  animation: dayLoaderShimmer 1.9s ease-in-out infinite;
+}
+
+.day-loader-tip {
+  animation: dayLoaderTipFade 2.8s ease forwards;
+}
