@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Award,
+  BookOpen,
   Briefcase,
   CheckCircle,
   Clock,
@@ -24,7 +25,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
-type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements';
+type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements' | 'codex';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
 type MarketView = 'browse' | 'mine' | 'trades';
@@ -126,6 +127,61 @@ interface AchievementUnlock {
   reward: Record<string, unknown>;
 }
 
+interface CustomerCodexEntry {
+  customer_id: string;
+  name: string;
+  trait: string;
+  trait_cn: string;
+  trait_desc: string;
+  role: 'buyer' | 'seller';
+  age: number;
+  appearance: string;
+  backstory: string;
+  avatar_url: string;
+  transaction_prefs: string[];
+  persuasion_points: string[];
+  is_returning: boolean;
+  visit_count: number;
+  relationship_level: string;
+  relationship_cn: string;
+  satisfaction: number;
+  last_deal_summary?: string | null;
+  first_seen_day: number;
+  last_seen_day: number;
+  times_seen: number;
+  sources: string[];
+  last_item_name?: string;
+}
+
+interface ItemCodexEntry {
+  id: string;
+  name: string;
+  category: string;
+  condition: string;
+  rarity: string;
+  rarity_cn: string;
+  era: string;
+  description: string;
+  story: string;
+  market_value: number;
+  appraised_value: number | null;
+  appraisal_verdict: string | null;
+  appraisal_confidence: number | null;
+  is_appraised_fake: boolean | null;
+  status: ItemStatus;
+  first_seen_day: number;
+  last_seen_day: number;
+  times_seen: number;
+  sources: string[];
+  owned: boolean;
+  sold: boolean;
+  purchase_price: number | null;
+  selling_price: number | null;
+  value_trend_note?: string;
+  special_effects: string[];
+  authentication_tips: string[];
+}
+
 interface GameState {
   cash: number;
   day: number;
@@ -158,6 +214,8 @@ interface GameState {
   achievement_unlocks: AchievementUnlock[];
   achievement_stats: Record<string, number>;
   customer_registry: Record<string, { name: string; visit_count: number; satisfaction: number; relationship_level: string; last_deal_summary?: string }>;
+  customer_codex: Record<string, CustomerCodexEntry>;
+  item_codex: Record<string, ItemCodexEntry>;
   successful_trades: number;
   positive_reviews: number;
   daily_customer_queue: Customer[];
@@ -914,6 +972,7 @@ export default function App() {
           <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" />
           <NavButton tab="leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} icon={<ListOrdered className="w-5 h-5" />} label="全服排行" />
           <NavButton tab="achievements" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Award className="w-5 h-5" />} label="经营成就" />
+          <NavButton tab="codex" activeTab={activeTab} setActiveTab={setActiveTab} icon={<BookOpen className="w-5 h-5" />} label="经营图鉴" />
           <NavButton tab="history" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Clock className="w-5 h-5" />} label="交易记录" />
           <NavButton tab="management" activeTab={activeTab} setActiveTab={setActiveTab} icon={<TrendingUp className="w-5 h-5" />} label="经营财务" />
           <NavButton tab="staff" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Users className="w-5 h-5" />} label="员工管理" />
@@ -977,6 +1036,9 @@ export default function App() {
           )}
           {activeTab === 'achievements' && (
             <AchievementsTab achievements={state.achievements || []} unlocks={state.achievement_unlocks || []} />
+          )}
+          {activeTab === 'codex' && (
+            <CodexTab customers={state.customer_codex || {}} items={state.item_codex || {}} />
           )}
           {activeTab === 'showcase' && showcase && (
             <ShowcaseTab showcase={showcase} buy={buyShowcaseItem} back={() => setActiveTab('market')} />
@@ -1073,6 +1135,7 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'market', label: '市场', icon: <Landmark className="w-5 h-5" /> },
     { tab: 'leaderboard', label: '排行', icon: <ListOrdered className="w-5 h-5" /> },
     { tab: 'achievements', label: '成就', icon: <Award className="w-5 h-5" /> },
+    { tab: 'codex', label: '图鉴', icon: <BookOpen className="w-5 h-5" /> },
     { tab: 'history', label: '流水', icon: <Clock className="w-5 h-5" /> },
     { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
     { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
@@ -1517,6 +1580,105 @@ function AchievementsTab({ achievements, unlocks }: { achievements: Achievement[
   );
 }
 
+function CodexTab({ customers, items }: { customers: Record<string, CustomerCodexEntry>; items: Record<string, ItemCodexEntry> }) {
+  const [view, setView] = useState<'customers' | 'items'>('customers');
+  const customerList = Object.values(customers).sort((a, b) => b.last_seen_day - a.last_seen_day || b.times_seen - a.times_seen);
+  const itemList = Object.values(items).sort((a, b) => b.last_seen_day - a.last_seen_day || b.market_value - a.market_value);
+  const sourceText = (sources: string[] = []) => sources.slice(-3).map((source) => {
+    if (source.startsWith('customer:')) return `顾客携带：${source.replace('customer:', '')}`;
+    return {
+      daily_queue: '当日到访',
+      served: '柜台接待',
+      retarget: '转看藏品',
+      appraisal: '鉴定记录',
+      acquired: '收购入库',
+      customer_sale: '顾客购走',
+      direct_sell: '渠道出售',
+      display: '展示柜',
+      storage: '仓库存放',
+      repair_started: '送修',
+      repair_completed: '修复完成',
+      value_tick: '价值结算',
+      market_buy: '市场购入',
+      market_sell: '市场售出',
+      market_list: '市场挂售',
+      market_unlist: '市场下架',
+      showcase_buy: '橱窗购入',
+      showcase_sell: '橱窗售出',
+    }[source] || source;
+  }).join(' / ');
+  return (
+    <ListPage title="经营图鉴" subtitle={`记录所有遇到过的顾客和物品：顾客 ${customerList.length} 位，物品 ${itemList.length} 件。`}>
+      <div className="sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 border-b border-[#2A2D34] mb-2 flex gap-8 pb-2">
+        <button onClick={() => setView('customers')} className={`pb-2 ${view === 'customers' ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>顾客图鉴</button>
+        <button onClick={() => setView('items')} className={`pb-2 ${view === 'items' ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>物品图鉴</button>
+      </div>
+      {view === 'customers' ? (
+        customerList.length === 0 ? (
+          <div className="py-16 text-center text-[#616161]">还没有顾客记录。开门接待后，图鉴会自动补全。</div>
+        ) : customerList.map((customer) => (
+          <div key={customer.customer_id} className="py-5 border-b border-[#2A2D34] flex gap-4">
+            <img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34] object-cover shrink-0" referrerPolicy="no-referrer" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h3 className="text-lg font-bold text-[#E0E0E0]">{customer.name}</h3>
+                <span className="text-sm text-[#C8A97E]">{customer.relationship_cn || '新客'}</span>
+                <span className="text-xs text-[#616161]">第 {customer.first_seen_day} 天初遇 / 最近第 {customer.last_seen_day} 天</span>
+              </div>
+              <p className="text-sm text-[#9E9E9E] mt-1">{customer.trait_cn} · {customer.role === 'seller' ? '卖家' : '买家'} · {customer.appearance}</p>
+              <p className="text-sm text-[#9E9E9E] mt-2 line-clamp-2">{customer.backstory}</p>
+              <div className="ui-text flex flex-wrap gap-x-5 gap-y-1 text-xs text-[#616161] mt-2">
+                <span>到访：{customer.visit_count} 次</span>
+                <span>记录：{customer.times_seen} 次</span>
+                <span>满意度：{customer.satisfaction}</span>
+                {customer.last_item_name && <span>最近物品：{customer.last_item_name}</span>}
+                {customer.last_deal_summary && <span>旧账：{customer.last_deal_summary}</span>}
+                {sourceText(customer.sources) && <span>来源：{sourceText(customer.sources)}</span>}
+              </div>
+            </div>
+          </div>
+        ))
+      ) : (
+        itemList.length === 0 ? (
+          <div className="py-16 text-center text-[#616161]">还没有物品记录。顾客带来的物品、库存和交易品都会进入这里。</div>
+        ) : itemList.map((item) => (
+          <div key={item.id} className="py-5 border-b border-[#2A2D34]">
+            <div className="flex flex-col xl:flex-row xl:items-start gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <h3 className="text-lg font-bold text-[#E0E0E0]">{item.name}</h3>
+                  <span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>{item.rarity_cn}</span>
+                  <span className="text-xs text-[#616161]">第 {item.first_seen_day} 天初见 / 最近第 {item.last_seen_day} 天</span>
+                </div>
+                <p className="text-sm text-[#9E9E9E] mt-2 line-clamp-2">{item.story || item.description}</p>
+                <div className="ui-text flex flex-wrap gap-x-5 gap-y-1 text-xs text-[#616161] mt-2">
+                  <span>类别：{categoryLabel(item.category)}</span>
+                  <span>年代：{item.era}</span>
+                  <span>成色：{CONDITION_MAP[item.condition] || item.condition}</span>
+                  <span>状态：{STATUS_MAP[item.status] || item.status}</span>
+                  <span>估值：${item.market_value.toLocaleString()}</span>
+                  <span>记录：{item.times_seen} 次</span>
+                  {item.owned && <span className="text-[#C8A97E]">当前持有</span>}
+                  {item.sold && <span>已售出</span>}
+                  {item.appraisal_verdict && <span>鉴定：{item.appraisal_verdict}{item.appraisal_confidence ? ` / ${item.appraisal_confidence}%` : ''}</span>}
+                  {sourceText(item.sources) && <span>来源：{sourceText(item.sources)}</span>}
+                </div>
+              </div>
+              <div className="xl:w-[220px] text-xs text-[#9E9E9E] space-y-1">
+                {item.purchase_price !== null && <div>买入：${item.purchase_price.toLocaleString()}</div>}
+                {item.selling_price !== null && <div>卖出：${item.selling_price.toLocaleString()}</div>}
+                {item.value_trend_note && <div>{item.value_trend_note}</div>}
+                {item.special_effects?.slice(0, 2).map((effect, index) => <div key={`effect-${item.id}-${index}`}>亮点：{effect}</div>)}
+                {item.authentication_tips?.slice(0, 2).map((tip, index) => <div key={`tip-${item.id}-${index}`}>鉴别：{tip}</div>)}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </ListPage>
+  );
+}
+
 function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ownerId: number, itemId: string) => Promise<void>; back: () => void }) {
   return (
     <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。只能购买标有橱窗售价的展示品。`}>
@@ -1631,6 +1793,7 @@ function InfoSidebar({ state }: { state: GameState }) {
         <Stat label="指数" value={`${(state.economy_index || 1).toFixed(3)}`} />
         <Stat label="日变化" value={formatSignedPercent(state.inflation_rate || 0)} />
         <Stat label="成就" value={`${(state.achievements || []).filter((item) => item.unlocked).length}/${(state.achievements || []).length}`} />
+        <Stat label="图鉴" value={`${Object.keys(state.customer_codex || {}).length} 客 / ${Object.keys(state.item_codex || {}).length} 物`} />
       </div>
       {(state.achievement_unlocks || []).length > 0 && (
         <>

@@ -124,6 +124,7 @@ def list_item(player_id: int, item_id: str, price: int) -> Dict[str, Any]:
     state.inventory = [existing for existing in state.inventory if existing.id != item_id]
     item.status = "listed"
     item.display_slot = None
+    state._record_item_encounter(item, "market_list")
     now = int(time.time())
     listing_id = str(uuid.uuid4())[:12]
     with transaction() as conn:
@@ -173,6 +174,7 @@ def unlist_item(player_id: int, listing_id: str) -> Dict[str, Any]:
         item.status = "stored"
         item.display_slot = None
         state.inventory.append(item)
+        state._record_item_encounter(item, "market_unlist")
         now = int(time.time())
         conn.execute("UPDATE market_listings SET status = 'cancelled', updated_at = ? WHERE id = ?", (now, listing_id))
         conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(state.to_dict(), ensure_ascii=False), now, player_id))
@@ -285,6 +287,8 @@ def buy_showcase_item(buyer_id: int, owner_id: int, item_id: str) -> Dict[str, A
         buyer.cash -= price
         buyer.inventory.append(item)
         owner.cash += owner_income
+        buyer._record_item_encounter(item, "showcase_buy")
+        owner._record_item_encounter(item, "showcase_sell")
         buyer.transaction_log.append({"day": buyer.day, "type": "showcase_buy", "item": item.name, "amount": -price})
         owner.transaction_log.append({"day": owner.day, "type": "showcase_sell", "item": item.name, "amount": owner_income})
         buyer.successful_trades += 1
@@ -346,6 +350,8 @@ def buy_listing(buyer_id: int, listing_id: str) -> Dict[str, Any]:
         item.display_slot = None
         buyer.cash -= price
         buyer.inventory.append(item)
+        buyer._record_item_encounter(item, "market_buy")
+        seller._record_item_encounter(item, "market_sell")
         buyer.transaction_log.append({"day": buyer.day, "type": "market_buy", "item": item.name, "amount": -price})
         buyer.successful_trades += 1
         buyer.reputation += 1

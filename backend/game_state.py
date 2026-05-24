@@ -620,6 +620,8 @@ class GameStateManager:
         self.successful_trades = 0
         self.positive_reviews = 0
         self.customer_registry: Dict[str, Dict[str, Any]] = {}
+        self.customer_codex: Dict[str, Dict[str, Any]] = {}
+        self.item_codex: Dict[str, Dict[str, Any]] = {}
         self.achievements: Dict[str, Dict[str, Any]] = {}
         self.achievement_unlocks: List[Dict[str, Any]] = []
         self.achievement_stats: Dict[str, int] = {
@@ -685,6 +687,7 @@ class GameStateManager:
         self._rebalance_buyer_targets()
         self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
+        self._record_daily_customer_codex()
 
     def initialize_day_fast(self):
         """Initialize a playable day immediately with local templates."""
@@ -693,6 +696,7 @@ class GameStateManager:
         self._rebalance_buyer_targets()
         self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
+        self._record_daily_customer_codex()
 
     def generate_random_customer(self) -> Customer:
         name = random.choice(CUSTOMER_NAMES)
@@ -768,6 +772,83 @@ class GameStateManager:
             "negative_deals": 0,
             "referrals_generated": 0,
         }
+
+    def _record_item_encounter(self, item: Item, source: str = "unknown"):
+        existing = self.item_codex.get(item.id, {})
+        sources = list(existing.get("sources", []))
+        if source not in sources:
+            sources.append(source)
+        first_seen_day = int(existing.get("first_seen_day", self.day))
+        entry = {
+            "id": item.id,
+            "name": item.name,
+            "category": item.category,
+            "category_cn": item.category,
+            "condition": item.condition,
+            "rarity": item.rarity,
+            "rarity_cn": RARITY_INFO[item.rarity]["name_cn"],
+            "era": item.era,
+            "description": item.description,
+            "story": item.story,
+            "market_value": item.market_value,
+            "appraised_value": item.appraised_value,
+            "appraisal_verdict": item.appraisal_verdict,
+            "appraisal_confidence": item.appraisal_confidence,
+            "is_appraised_fake": item.is_appraised_fake,
+            "status": item.status,
+            "first_seen_day": first_seen_day,
+            "last_seen_day": self.day,
+            "times_seen": int(existing.get("times_seen", 0)) + 1,
+            "sources": sources[-8:],
+            "owned": any(owned.id == item.id for owned in self.inventory),
+            "sold": any(sold.id == item.id for sold in self.sold_items),
+            "purchase_price": item.purchase_price,
+            "selling_price": item.selling_price,
+            "value_trend_note": item.value_trend_note,
+            "special_effects": item.special_effects[:3],
+            "authentication_tips": item.authentication_tips[:3],
+        }
+        self.item_codex[item.id] = entry
+
+    def _record_customer_encounter(self, customer: Customer, source: str = "visit"):
+        existing = self.customer_codex.get(customer.customer_id, {})
+        sources = list(existing.get("sources", []))
+        if source not in sources:
+            sources.append(source)
+        first_seen_day = int(existing.get("first_seen_day", self.day))
+        entry = {
+            "customer_id": customer.customer_id,
+            "name": customer.name,
+            "trait": customer.trait,
+            "trait_cn": CUSTOMER_TRAITS[customer.trait]["name_cn"],
+            "trait_desc": CUSTOMER_TRAITS[customer.trait]["desc"],
+            "role": customer.role,
+            "age": customer.age,
+            "appearance": customer.appearance,
+            "backstory": customer.backstory,
+            "avatar_url": customer.avatar_url,
+            "transaction_prefs": customer.transaction_prefs[:4],
+            "persuasion_points": customer.persuasion_points[:4],
+            "is_returning": customer.is_returning,
+            "visit_count": customer.visit_count,
+            "relationship_level": customer.relationship_level,
+            "relationship_cn": customer.to_dict().get("relationship_cn", "新客"),
+            "satisfaction": customer.satisfaction,
+            "last_deal_summary": customer.last_deal_summary,
+            "referred_by": customer.referred_by,
+            "first_seen_day": first_seen_day,
+            "last_seen_day": self.day,
+            "times_seen": int(existing.get("times_seen", 0)) + 1,
+            "sources": sources[-8:],
+            "last_item_id": customer.item.id,
+            "last_item_name": customer.item.name,
+        }
+        self.customer_codex[customer.customer_id] = entry
+        self._record_item_encounter(customer.item, f"customer:{customer.name}")
+
+    def _record_daily_customer_codex(self):
+        for customer in ([self.active_customer] if self.active_customer else []) + list(self.daily_customer_queue):
+            self._record_customer_encounter(customer, "daily_queue")
 
     def _generate_customer_from_record(self, record: Dict[str, Any], referred_by: Optional[str] = None) -> Customer:
         saleable_items = self._saleable_items()
@@ -876,6 +957,10 @@ class GameStateManager:
         record["appearance"] = customer.appearance
         record["avatar_url"] = customer.avatar_url
         self.customer_registry[customer.customer_id] = record
+        customer.satisfaction = satisfaction
+        customer.relationship_level = record["relationship_level"]
+        customer.last_deal_summary = record.get("last_deal_summary")
+        self._record_customer_encounter(customer, outcome)
         if outcome in ["reject", "walk_out"] and random.random() < 0.10:
             self.reputation -= 1
             self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
@@ -895,6 +980,7 @@ class GameStateManager:
             return True
         note = f"刚才那件已经不合适了，我再看看这件【{item.name}】。" if announce else None
         customer.retarget_item(item, note)
+        self._record_customer_encounter(customer, "retarget")
         if target_counts is not None:
             target_counts[item.id] = target_counts.get(item.id, 0) + 1
         return True
@@ -1143,6 +1229,7 @@ class GameStateManager:
                 {"day": self.day, "market_value": new_value, "delta": value_delta, "holding_cost": holding_cost}
             ]
             item.value_history = item.value_history[-12:]
+            self._record_item_encounter(item, "value_tick")
             total_holding_cost += holding_cost
             total_value_delta += value_delta
             changed_items += 1
@@ -1257,6 +1344,8 @@ class GameStateManager:
             if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
                 if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
                     self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
+            if self.active_customer:
+                self._record_customer_encounter(self.active_customer, "served")
             return True
         self.active_customer = None
         return False
@@ -1309,6 +1398,7 @@ class GameStateManager:
         if detects_fake:
             self.achievement_stats["fakes_detected"] = int(self.achievement_stats.get("fakes_detected", 0)) + 1
             self._record_customer_outcome(self.active_customer, "fraud_detected")
+        self._record_item_encounter(item, "appraisal")
         self._check_achievements("appraise", {"method": method, "detected_fake": detects_fake})
         return {
             "success": True,
@@ -1373,6 +1463,7 @@ class GameStateManager:
             return {"error": "展示柜已满，请升级展示柜或下架其他物品。"}
         item.status = "displayed"
         item.display_slot = displayed.index(item) + 1 if item in displayed else len(displayed) + 1
+        self._record_item_encounter(item, "display")
         return {"success": True, "message": f"【{item.name}】已摆入展示柜。"}
 
     def undisplay_item(self, item_id: str) -> Dict[str, Any]:
@@ -1384,6 +1475,7 @@ class GameStateManager:
         item.status = "stored"
         item.display_slot = None
         item.showcase_price = None
+        self._record_item_encounter(item, "storage")
         return {"success": True, "message": f"【{item.name}】已收入仓库。"}
 
     def start_repair(self, item_id: str, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -1418,6 +1510,7 @@ class GameStateManager:
         item.appraisal_notes = list(item.appraisal_notes) + notes
         self.daily_summary["upgrades"] += cost
         self.add_skill_xp("restoration", int(method_info["xp"]))
+        self._record_item_encounter(item, "repair_started")
         return {"success": True, "message": f"【{item.name}】已按【{method_info['name_cn']}】送入修复工坊，预计 {item.repair_days_remaining} 天完成。", "cost": cost, "method": method, "method_name": method_info["name_cn"], "notes": notes}
 
     async def async_start_repair(self, ai_client, item_id: str, method: str = "standard") -> Dict[str, Any]:
@@ -1459,6 +1552,7 @@ class GameStateManager:
         self.daily_summary["revenue"] += price
         self.transaction_log.append({"day": self.day, "type": "direct_sell", "item": item.name, "amount": price})
         self.add_skill_xp("commerce", 35)
+        self._record_item_encounter(item, "direct_sell")
         self._check_achievements("direct_sell", {"item": item.to_dict(), "price": price})
         message = f"你通过渠道卖出了【{item.name}】，收入 ${price}。"
         if active_buyer_waiting:
@@ -1492,6 +1586,7 @@ class GameStateManager:
             item.status = "stored"
             self.inventory.append(item)
             self.daily_summary["revenue"] -= price
+            self._record_item_encounter(item, "acquired")
             message = "交易成功！你买下了该物品。"
             tx_type = "buy"
         else:
@@ -1507,6 +1602,7 @@ class GameStateManager:
             self.inventory = [i for i in self.inventory if i.id != item.id]
             self.sold_items.append(item)
             self.daily_summary["revenue"] += price
+            self._record_item_encounter(item, "customer_sale")
             message = "交易成功！你卖出了该物品。"
             tx_type = "sell"
 
@@ -1635,6 +1731,7 @@ class GameStateManager:
             item.status = "stored"
             item.repair_days_remaining = 0
             item.repair_success_bonus = 0.0
+            self._record_item_encounter(item, "repair_completed")
         if events:
             self._check_achievements("repair")
         return events
@@ -1929,6 +2026,8 @@ class GameStateManager:
             "successful_trades": self.successful_trades,
             "positive_reviews": self.positive_reviews,
             "customer_registry": self.customer_registry,
+            "customer_codex": self.customer_codex,
+            "item_codex": self.item_codex,
             "achievements": self.achievement_list(),
             "achievement_unlocks": self.achievement_unlocks[-12:],
             "achievement_stats": self.achievement_stats,
@@ -2002,6 +2101,30 @@ class GameStateManager:
             for key, value in (data.get("customer_registry") or {}).items()
             if isinstance(value, dict)
         }
+        state.customer_codex = {
+            str(key): dict(value)
+            for key, value in (data.get("customer_codex") or {}).items()
+            if isinstance(value, dict)
+        }
+        state.item_codex = {
+            str(key): dict(value)
+            for key, value in (data.get("item_codex") or {}).items()
+            if isinstance(value, dict)
+        }
+        if not state.customer_codex:
+            for key, record in state.customer_registry.items():
+                state.customer_codex[key] = {
+                    **record,
+                    "trait_cn": CUSTOMER_TRAITS.get(record.get("trait", "hesitant"), CUSTOMER_TRAITS["hesitant"])["name_cn"],
+                    "trait_desc": CUSTOMER_TRAITS.get(record.get("trait", "hesitant"), CUSTOMER_TRAITS["hesitant"])["desc"],
+                    "first_seen_day": int(record.get("last_visit_day", state.day)),
+                    "last_seen_day": int(record.get("last_visit_day", state.day)),
+                    "times_seen": int(record.get("visit_count", 1)),
+                    "sources": ["legacy_relationship"],
+                }
+        if not state.item_codex:
+            for item in state.inventory + state.sold_items:
+                state._record_item_encounter(item, "legacy_inventory")
         state.achievements = {
             str(item.get("id") or key): dict(item)
             for key, item in (data.get("achievements") or {}).items()
