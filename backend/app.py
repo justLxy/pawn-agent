@@ -15,7 +15,7 @@ from env_loader import load_env_file
 load_env_file()
 
 from ai_client import AIClient
-from auth import current_player, delete_player_account, login_player, logout_player, register_player
+from auth import current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
 from database import init_db
 from game_state import GameStateManager
 from online_services import (
@@ -266,6 +266,10 @@ class AuthRequest(BaseModel):
     username: str
     password: str
     shop_name: Optional[str] = None
+
+
+class RecoverUsernameRequest(BaseModel):
+    password: str
 
 
 class OfferRequest(BaseModel):
@@ -604,6 +608,23 @@ async def register(req: AuthRequest):
     save_state(auth["player"]["id"], state)
     schedule_next_day_prewarm(auth["player"], state)
     return auth
+
+
+@app.post("/api/auth/recover_username")
+async def recover_username(req: RecoverUsernameRequest):
+    usernames = recover_usernames_by_password(req.password)
+    if not usernames:
+        return {
+            "usernames": [],
+            "count": 0,
+            "message": "未找到使用该密码的账号，请确认密码是否输入正确。",
+        }
+    if len(usernames) == 1:
+        message = f"找到 1 个账号：{usernames[0]}"
+    else:
+        joined = "、".join(usernames)
+        message = f"找到 {len(usernames)} 个使用该密码的账号：{joined}"
+    return {"usernames": usernames, "count": len(usernames), "message": message}
 
 
 @app.post("/api/auth/login")

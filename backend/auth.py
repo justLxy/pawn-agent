@@ -85,6 +85,18 @@ def register_player(username: str, password: str, shop_name: str) -> Dict[str, A
     return {"token": token, "player": _public_player(player)}
 
 
+def recover_usernames_by_password(password: str) -> list[str]:
+    if len(password) < 4:
+        raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")
+    matches: list[str] = []
+    with get_connection() as conn:
+        rows = conn.execute("SELECT username, password_hash, salt FROM players").fetchall()
+    for row in rows:
+        if _verify_password(password, row["password_hash"], row["salt"]):
+            matches.append(row["username"])
+    return sorted(matches)
+
+
 def login_player(username: str, password: str) -> Dict[str, Any]:
     username = _normalize_username(username)
     now = int(time.time())

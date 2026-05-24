@@ -579,7 +579,8 @@ export default function App() {
   const [hotShowcases, setHotShowcases] = useState<HotShowcaseEntry[]>([]);
   const [offerPrices, setOfferPrices] = useState<Record<string, number>>({});
   const [counterPrices, setCounterPrices] = useState<Record<string, number>>({});
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'recover'>('login');
+  const [recoveredUsernames, setRecoveredUsernames] = useState<string[]>([]);
   const [authForm, setAuthForm] = useState({ username: '', password: '', shop_name: '' });
   const [loading, setLoading] = useState(false);
   const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
@@ -870,7 +871,22 @@ export default function App() {
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
+    setRecoveredUsernames([]);
     try {
+      if (authMode === 'recover') {
+        const data = await apiPost<{ usernames: string[]; count: number; message: string }>('/api/auth/recover_username', {
+          password: authForm.password
+        });
+        setRecoveredUsernames(data.usernames);
+        if (data.count > 0) {
+          setSuccessMsg(data.message);
+          setErrorMsg(null);
+        } else {
+          setSuccessMsg(null);
+          setErrorMsg(data.message);
+        }
+        return;
+      }
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const data = await apiPost<{ token: string; player: Player }>(endpoint, authForm);
       localStorage.setItem(TOKEN_KEY, data.token);
@@ -878,10 +894,23 @@ export default function App() {
       await loadCloudState();
       setSuccessMsg(authMode === 'login' ? '欢迎回来。' : '账号创建成功。');
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '登录失败。');
+      setErrorMsg(err instanceof Error ? err.message : '操作失败。');
     } finally {
       setLoading(false);
     }
+  };
+
+  const changeAuthMode = (mode: 'login' | 'register' | 'recover') => {
+    setAuthMode(mode);
+    if (mode !== 'recover') setRecoveredUsernames([]);
+  };
+
+  const useRecoveredUsername = (username: string) => {
+    setAuthForm({ ...authForm, username });
+    setRecoveredUsernames([]);
+    setAuthMode('login');
+    setSuccessMsg(`已填入用户名「${username}」，请输入密码登录。`);
+    setErrorMsg(null);
   };
 
   const logout = async () => {
@@ -1233,9 +1262,11 @@ export default function App() {
           authForm={authForm}
           authMode={authMode}
           loading={loading}
+          recoveredUsernames={recoveredUsernames}
           setAuthForm={setAuthForm}
-          setAuthMode={setAuthMode}
+          setAuthMode={changeAuthMode}
           onSubmit={handleAuth}
+          onUseRecoveredUsername={useRecoveredUsername}
         />
         <Notifications errorMsg={errorMsg} successMsg={successMsg} setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
       </div>
@@ -1410,13 +1441,18 @@ export default function App() {
 
 function AuthScreen(props: {
   authForm: { username: string; password: string; shop_name: string };
-  authMode: 'login' | 'register';
+  authMode: 'login' | 'register' | 'recover';
   loading: boolean;
+  recoveredUsernames: string[];
   setAuthForm: (form: { username: string; password: string; shop_name: string }) => void;
-  setAuthMode: (mode: 'login' | 'register') => void;
+  setAuthMode: (mode: 'login' | 'register' | 'recover') => void;
   onSubmit: (event: React.FormEvent) => void;
+  onUseRecoveredUsername: (username: string) => void;
 }) {
-  const { authForm, authMode, loading, onSubmit, setAuthForm, setAuthMode } = props;
+  const { authForm, authMode, loading, onSubmit, recoveredUsernames, setAuthForm, setAuthMode, onUseRecoveredUsername } = props;
+  const switchMode = (mode: 'login' | 'register' | 'recover') => {
+    setAuthMode(mode);
+  };
   return (
     <div className="w-full max-w-[520px]">
       <div className="flex items-center gap-3 mb-10">
@@ -1426,19 +1462,67 @@ function AuthScreen(props: {
           <p className="text-[#616161] text-sm font-sans">联机市场与全服排行已开启</p>
         </div>
       </div>
-      <div className="flex gap-8 border-b border-[#2A2D34] mb-8">
-        {(['login', 'register'] as const).map((mode) => (
-          <button key={mode} onClick={() => setAuthMode(mode)} className={`pb-3 font-sans ${authMode === mode ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}>
-            {mode === 'login' ? '登录账号' : '注册当铺'}
+      <div className="flex gap-6 md:gap-8 border-b border-[#2A2D34] mb-8 overflow-x-auto custom-scrollbar">
+        {([
+          ['login', '登录账号'],
+          ['register', '注册当铺'],
+          ['recover', '找回账号']
+        ] as const).map(([mode, label]) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => switchMode(mode)}
+            className={`pb-3 font-sans shrink-0 whitespace-nowrap ${authMode === mode ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}
+          >
+            {label}
           </button>
         ))}
       </div>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名（支持中文）" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
-        <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="密码" type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />
-        {authMode === 'register' && <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="当铺名称" value={authForm.shop_name} onChange={(event) => setAuthForm({ ...authForm, shop_name: event.target.value })} />}
-        <button disabled={loading} className="btn-primary w-full">{authMode === 'login' ? '进入当铺' : '创建云端当铺'}</button>
-      </form>
+      {authMode === 'recover' ? (
+        <form onSubmit={onSubmit} className="space-y-4">
+          <p className="text-sm text-[#9E9E9E] font-sans leading-relaxed border-l-2 border-[#C8A97E] pl-4">
+            忘记用户名了？输入你注册时设置的密码，系统会列出所有使用该密码的账号。若多人碰巧密码相同，会一并显示。
+          </p>
+          <input
+            className="input-field w-full"
+            style={{ paddingLeft: 16 }}
+            placeholder="注册时使用的密码"
+            type="password"
+            value={authForm.password}
+            onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+          />
+          <button disabled={loading} className="btn-primary w-full">
+            {loading ? '查找中…' : '查找用户名'}
+          </button>
+          {recoveredUsernames.length > 0 && (
+            <div className="border-t border-[#2A2D34] pt-4 space-y-2">
+              <p className="text-xs text-[#616161] font-sans">点击用户名可填入登录页：</p>
+              {recoveredUsernames.map((username) => (
+                <button
+                  key={username}
+                  type="button"
+                  onClick={() => onUseRecoveredUsername(username)}
+                  className="w-full text-left px-4 py-3 border-l-2 border-[#C8A97E] bg-[rgba(200,169,126,0.08)] hover:bg-[rgba(200,169,126,0.14)] transition-colors font-sans text-[#E0E0E0]"
+                >
+                  {username}
+                </button>
+              ))}
+            </div>
+          )}
+        </form>
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-4">
+          <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名（支持中文）" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
+          <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="密码" type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />
+          {authMode === 'register' && <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="当铺名称" value={authForm.shop_name} onChange={(event) => setAuthForm({ ...authForm, shop_name: event.target.value })} />}
+          <button disabled={loading} className="btn-primary w-full">{authMode === 'login' ? '进入当铺' : '创建云端当铺'}</button>
+          {authMode === 'login' && (
+            <button type="button" onClick={() => switchMode('recover')} className="w-full text-center text-sm text-[#9E9E9E] font-sans hover:text-[#C8A97E] transition-colors">
+              忘记用户名？用密码找回
+            </button>
+          )}
+        </form>
+      )}
     </div>
   );
 }
@@ -1657,7 +1741,8 @@ function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
   );
 }
 
-const CASE_ACTION_ORDER = ['chat', 'visual', 'appraise', 'provenance', 'records', 'expert'] as const;
+/** 鉴定走底部方法选择 +「鉴定」按钮，不占案件簿按钮位 */
+const CASE_ACTION_ORDER = ['chat', 'visual', 'provenance', 'records', 'expert'] as const;
 
 function caseClueTypeLabel(type: string) {
   const labels: Record<string, string> = {
@@ -1869,7 +1954,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
               ))}
             </ul>
           ) : (
-            <p className="text-[#616161] text-xs mb-3">尚未取得线索。先调查再谈判，能避免赝品与漏判。</p>
+            <p className="text-[#616161] text-xs mb-3">尚未取得线索。可先套话、查档；专业鉴定用下方方法选择后点「鉴定」（同样消耗 1 调查点）。</p>
           )}
           <div className="flex flex-wrap gap-1.5">
             {CASE_ACTION_ORDER.map((action) => {
@@ -1986,6 +2071,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
               type="button"
               onClick={() => onInvestigate('appraise')}
               disabled={!canCaseInvestigate('appraise')}
+              title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
               className="btn-secondary !h-10 !px-3 !text-sm shrink-0 touch-manipulation"
             >
               {investigating ? '…' : caseUsed.includes('appraise') ? '已鉴' : '鉴定'}
@@ -2015,7 +2101,15 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
                 );
               })}
             </select>
-            <button type="button" onClick={() => onInvestigate('appraise')} disabled={!canCaseInvestigate('appraise')} className="btn-secondary flex-1 !h-10">{investigating ? '调查中...' : caseUsed.includes('appraise') ? '已鉴定' : '鉴定'}</button>
+            <button
+              type="button"
+              onClick={() => onInvestigate('appraise')}
+              disabled={!canCaseInvestigate('appraise')}
+              title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
+              className="btn-secondary flex-1 !h-10"
+            >
+              {investigating ? '调查中...' : caseUsed.includes('appraise') ? '已鉴定' : '鉴定'}
+            </button>
             <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
             <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
           </div>
