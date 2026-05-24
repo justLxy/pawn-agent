@@ -1169,8 +1169,19 @@ export default function App() {
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
+          <div className="md:hidden font-sans text-xs text-[#9E9E9E] mr-1 shrink-0">
+            <span className="text-[#C8A97E] font-semibold">${state.cash.toLocaleString()}</span>
+          </div>
           <div className="md:hidden">
-            <button onClick={() => setMobileInfoOpen(true)} className="btn-icon !w-9 !h-9" title="信息栏"><Info className="w-4 h-4" /></button>
+            <button
+              type="button"
+              onClick={() => setMobileInfoOpen(true)}
+              className="flex items-center gap-1.5 h-9 px-2.5 border border-[#C8A97E]/45 bg-[rgba(200,169,126,0.14)] text-[#C8A97E] text-xs font-semibold rounded-sm shrink-0 touch-manipulation"
+              title="查看经营与物证详情"
+            >
+              <Info className="w-4 h-4 shrink-0" />
+              <span>详情</span>
+            </button>
           </div>
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
@@ -1178,6 +1189,8 @@ export default function App() {
           <button onClick={logout} className="btn-icon !w-9 !h-9" title="退出"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
+
+      <MobileStatusBar state={state} displayedCount={displayedCount} hasActiveCustomer={Boolean(activeCustomer)} />
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="hidden md:flex w-[64px] xl:w-[240px] shrink-0 bg-[#14171C] border-r border-[#2A2D34] flex-col py-6 overflow-y-auto custom-scrollbar z-30 transition-all duration-300">
@@ -1336,7 +1349,7 @@ function AuthScreen(props: {
 
 function Notifications({ errorMsg, successMsg, setErrorMsg, setSuccessMsg }: { errorMsg: string | null; successMsg: string | null; setErrorMsg: (value: string | null) => void; setSuccessMsg: (value: string | null) => void }) {
   return (
-    <div className="fixed top-20 right-4 md:right-6 z-50 flex flex-col gap-2 pointer-events-none w-[90%] md:w-auto max-w-[420px]">
+    <div className="fixed top-[7.25rem] md:top-20 right-4 md:right-6 z-50 flex flex-col gap-2 pointer-events-none w-[90%] md:w-auto max-w-[420px]">
       {errorMsg && <Toast type="error" message={errorMsg} onClose={() => setErrorMsg(null)} />}
       {successMsg && <Toast type="success" message={successMsg} onClose={() => setSuccessMsg(null)} />}
     </div>
@@ -1395,13 +1408,98 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
   );
 }
 
+function getTradeMode(customer: Customer) {
+  return customer.role === 'seller'
+    ? { label: '向顾客收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价', itemSource: '顾客带货上门' }
+    : { label: '向顾客出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价', itemSource: '店内库存出货' };
+}
+
+function MobileStatusBar({ state, displayedCount, hasActiveCustomer }: { state: GameState; displayedCount: number; hasActiveCustomer: boolean }) {
+  const served = Math.min(state.customers_served_today + (hasActiveCustomer ? 1 : 0), state.total_customers_today);
+  const pills = [
+    { label: '天数', value: `第 ${state.day} 天`, accent: false },
+    { label: '现金', value: `$${state.cash.toLocaleString()}`, accent: true },
+    { label: '声誉', value: String(state.reputation), accent: false },
+    { label: '经济', value: `${(state.economy_index || 1).toFixed(2)}x`, accent: false },
+    { label: '客流', value: `${served}/${state.total_customers_today}`, accent: false },
+    { label: '展示', value: `${displayedCount}/${state.display_capacity}`, accent: false },
+  ];
+  return (
+    <div className="md:hidden shrink-0 border-b border-[#2A2D34] bg-[#14171C]/95 backdrop-blur-[12px] z-30">
+      <div className="px-3 py-2 overflow-x-auto custom-scrollbar">
+        <div className="flex gap-2 min-w-max font-sans">
+          {pills.map((pill) => (
+            <div
+              key={pill.label}
+              className={`px-3 py-1.5 border rounded-sm shrink-0 ${pill.accent ? 'border-[#C8A97E]/50 bg-[rgba(200,169,126,0.12)]' : 'border-[#2A2D34] bg-[rgba(255,255,255,0.03)]'}`}
+            >
+              <div className="text-[10px] tracking-[0.12em] text-[#616161]">{pill.label}</div>
+              <div className={`text-xs font-semibold mt-0.5 ${pill.accent ? 'text-[#C8A97E]' : 'text-[#E0E0E0]'}`}>{pill.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobileNegotiationBrief({ customer }: { customer: Customer }) {
+  const tradeMode = getTradeMode(customer);
+  const item = customer.item;
+  const condition = CONDITION_MAP[item.condition] || item.condition;
+  const appraisal = item.is_appraised_fake !== null ? appraisalVerdict(item) : null;
+  const range = appraisalRange(item);
+  return (
+    <div className="md:hidden sticky top-0 z-20 -mx-4 mb-4 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
+      <div className="px-3 py-3 border-b border-[#2A2D34]/80 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-[#C8A97E] text-xs font-bold tracking-[0.2em]">{tradeMode.label}</span>
+            <span className="text-[10px] text-[#616161] border border-[#2A2D34] px-1.5 py-0.5">{tradeMode.itemSource}</span>
+          </div>
+          <h3 className="text-[15px] font-bold text-[#E0E0E0] leading-snug">{item.name}</h3>
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-[10px] text-[#616161]">{tradeMode.priceLabel}</div>
+          <div className="text-[#C8A97E] text-lg font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
+        </div>
+      </div>
+      <div className="px-3 py-2.5 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] font-sans border-b border-[#2A2D34]/60">
+        <span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>稀有 · {item.rarity_cn}</span>
+        <span className="text-[#C8A97E]">成色 · {condition}</span>
+        <span className="text-[#9E9E9E]">年代 · {item.era}</span>
+        <span className="text-[#9E9E9E]">市价约 ${item.market_value.toLocaleString()}</span>
+      </div>
+      <div className="px-3 py-2.5 space-y-1.5 text-[11px] font-sans text-[#9E9E9E]">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span>{customer.name}</span>
+          <span>{customer.trait_cn}</span>
+          <span>耐心 {customer.patience}</span>
+          {customer.is_returning && <span className="text-[#C8A97E]">{customer.relationship_cn}</span>}
+        </div>
+        {range && <p>鉴定区间 <span className="text-[#E0E0E0]">{range}</span></p>}
+        {appraisal && (
+          <p>
+            鉴定结论 <span className="text-[#E0E0E0]">{appraisal}{item.appraisal_confidence !== null ? ` / ${item.appraisal_confidence}%` : ''}</span>
+          </p>
+        )}
+        {customer.last_deal_summary && <p className="text-[#616161]">上次往来：{customer.last_deal_summary}</p>}
+        {customer.transaction_prefs?.[0] && <p>偏好：{customer.transaction_prefs[0]}</p>}
+        {customer.persuasion_points?.[0] && <p className="text-[#C8A97E]/90">突破口：{customer.persuasion_points[0]}</p>}
+        {item.authentication_tips?.[0] && <p>鉴别：{item.authentication_tips[0]}</p>}
+      </div>
+    </div>
+  );
+}
+
 function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () => void }) {
   return (
     <div className="md:hidden fixed inset-0 z-[60]">
       <button aria-label="关闭信息栏" onClick={onClose} className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
-      <aside className="absolute right-0 top-0 h-full w-[86vw] max-w-[360px] bg-[#14171C] border-l border-[#2A2D34] py-6 px-5 overflow-y-auto custom-scrollbar shadow-2xl animate-slide-right">
+      <aside className="absolute inset-x-0 bottom-0 max-h-[88vh] bg-[#14171C] border-t border-[#2A2D34] rounded-t-md py-5 px-5 overflow-y-auto custom-scrollbar shadow-2xl animate-slide-up pb-[calc(16px+env(safe-area-inset-bottom))]">
+        <div className="w-10 h-1 rounded-full bg-[#2A2D34] mx-auto mb-4" aria-hidden />
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-[#C8A97E] font-bold text-lg">当铺信息</h2>
+          <h2 className="text-[#C8A97E] font-bold text-lg">经营与物证详情</h2>
           <button onClick={onClose} className="btn-icon !w-9 !h-9" title="关闭"><X className="w-4 h-4" /></button>
         </div>
         <InfoSidebar state={state} />
@@ -1547,13 +1645,12 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
     appraisalContext.hasAppraiser,
     state.economy_index || 1
   );
-  const tradeMode = customer.role === 'seller'
-    ? { label: '向顾客收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
-    : { label: '向顾客出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价' };
+  const tradeMode = getTradeMode(customer);
   const sessionClosed = customer.session_closed;
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
-      <div className="mb-6 border-b border-[#2A2D34] pb-4 pt-4 md:pt-8 -mt-4 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10">
+      <MobileNegotiationBrief customer={customer} />
+      <div className="mb-6 border-b border-[#2A2D34] pb-4 pt-2 md:pt-8 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 hidden md:block">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans">
           <div>
             <div className="flex items-center gap-3 mb-1">
