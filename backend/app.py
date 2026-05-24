@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -411,17 +412,38 @@ def terminal_negotiation_dialogue(customer: Any, accepted: bool, walk_out: bool,
     return f"{customer.name}按住钱夹，仍没有点头：「这个价我还不能接。若你愿意松到 ${new_offer:,}，我可以继续听。」"
 
 
-def normalize_negotiation_dialogue(customer: Any, dialogue: str, accepted: bool, walk_out: bool, new_offer: int) -> str:
+def _dialogue_claims_deal_without_accept(text: str) -> bool:
+    """Detect AI falsely claiming a deal while economics say otherwise."""
+    if re.search(r"(?<![肯])定了(?=[。！？」』\s]|$)", text):
+        return True
+    deal_markers = ("成交了", "就成交", "成交吧", "归你了", "说定了", "就这么定了", "那就定了", "我认了", "拿去", "成交")
+    if any(marker in text for marker in deal_markers):
+        return True
+    if "包起来" in text and re.search(r"(帮你|给你|成交|拿走|要了)", text):
+        return True
+    return False
+
+
+def normalize_negotiation_dialogue(
+    customer: Any,
+    dialogue: str,
+    accepted: bool,
+    walk_out: bool,
+    new_offer: int,
+    intent: str = "persuade",
+    has_price_offer: bool = False,
+) -> str:
     from game_state import customer_dialogue_conflicts_role
 
     text = (dialogue or "").strip()
-    deal_markers = ["成交", "定了", "归你", "包起来", "我认了"]
     refusal_markers = ["太低", "太高", "不够", "做不了", "没法", "不能", "不卖", "不买", "再添", "加一点", "去别家", "算了"]
     if accepted or walk_out:
         return terminal_negotiation_dialogue(customer, accepted, walk_out, new_offer)
     if not text or customer_dialogue_conflicts_role(text, customer.role):
         return terminal_negotiation_dialogue(customer, False, False, new_offer)
-    if any(marker in text for marker in deal_markers):
+    if intent in ("question", "persuade") and not has_price_offer:
+        return text
+    if _dialogue_claims_deal_without_accept(text):
         return terminal_negotiation_dialogue(customer, False, False, new_offer)
     if any(marker in text for marker in refusal_markers):
         return text
@@ -467,6 +489,34 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
     }
 
 
+def is_stale_negotiation_finalize(state: GameStateManager, stream_customer_id: str) -> bool:
+    customer = state.active_customer
+    if not customer:
+        return True
+    if customer.customer_id != stream_customer_id:
+        return True
+    if customer.session_closed:
+        return True
+    return False
+
+
+def build_stale_negotiation_payload(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
+    return {
+        "negotiation": {
+            "stale": True,
+            "patience_change": 0,
+            "remaining_patience": state.active_customer.patience if state.active_customer else 0,
+            "new_offer": state.active_customer.current_offer if state.active_customer else 0,
+            "accepted": False,
+            "walk_out": False,
+        },
+        "deal_completed": False,
+        "walk_out_completed": False,
+        "stale": True,
+        "state": commit_state(player, state),
+    }
+
+
 def apply_negotiation_outcome(
     player: Dict[str, Any],
     state: GameStateManager,
@@ -490,7 +540,15 @@ def apply_negotiation_outcome(
     customer.patience = max(0, customer.patience + patience_change)
     if customer.patience == 0:
         walk_out = True
-    dialogue = normalize_negotiation_dialogue(customer, dialogue, accepted, walk_out, new_offer)
+    dialogue = normalize_negotiation_dialogue(
+        customer,
+        dialogue,
+        accepted,
+        walk_out,
+        new_offer,
+        intent=intent,
+        has_price_offer=player_offer is not None,
+    )
     if not accepted and not walk_out and new_offer != previous_offer:
         customer.dialogue_history.append({
             "role": "narrator",
@@ -734,19 +792,19 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
     }
     customer_context = customer.negotiation_context()
     previous_offer = customer.current_offer
-    effective_offer = player_offer if player_offer is not None else customer.current_offer
     rule_response = ai_client._calculate_algorithmic_fallback(
         role=customer.role,
         trait=customer.trait,
         limit_price=customer.limit_price,
         current_offer=customer.current_offer,
-        player_offer=effective_offer,
+        player_offer=player_offer,
         patience=customer.patience,
         intent=intent,
         negotiation_level=state.skills["negotiation"]["level"],
         charm_level=state.skills["charm"]["level"],
     )
     ai_response = sanitize_negotiation_result(state, rule_response, player_offer, intent)
+    stream_customer_id = customer.customer_id
 
     async def stream():
         def line(payload: Dict[str, Any]) -> str:
@@ -761,6 +819,8 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
                 bool(ai_response["accepted"]),
                 bool(ai_response["walk_out"]),
                 int(ai_response["new_offer"]),
+                intent=intent,
+                has_price_offer=player_offer is not None,
             )
             yield line({"type": "chunk", "content": streamed_dialogue})
         else:
@@ -794,6 +854,11 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 
         ai_response["dialogue"] = streamed_dialogue.strip()[:480]
         try:
+            fresh_state = await ensure_player_state(player, ai_client)
+            if is_stale_negotiation_finalize(fresh_state, stream_customer_id):
+                payload = build_stale_negotiation_payload(player, fresh_state)
+                yield line({"type": "final", "payload": payload})
+                return
             payload = apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
         except HTTPException as exc:
             logger.warning("Negotiation stream finalization failed: %s", exc.detail)

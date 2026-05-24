@@ -337,9 +337,10 @@ interface TradeLog {
 }
 
 interface NegotiationStreamPayload {
-  negotiation: { patience_change: number };
+  negotiation: { patience_change: number; stale?: boolean };
   deal_completed: boolean;
   walk_out_completed: boolean;
+  stale?: boolean;
   deal_result?: { message?: string };
   state: GameState;
 }
@@ -591,6 +592,8 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const negotiateAbortRef = useRef<AbortController | null>(null);
+  const negotiateGenerationRef = useRef(0);
   const lastAchievementRef = useRef<string | null>(null);
   const musicContextRef = useRef<AudioContext | null>(null);
   const musicNodesRef = useRef<{ oscillators: OscillatorNode[]; intervals: number[]; gain: GainNode } | null>(null);
@@ -937,7 +940,17 @@ export default function App() {
     }
   };
 
+  const abortInFlightNegotiation = () => {
+    negotiateGenerationRef.current += 1;
+    negotiateAbortRef.current?.abort();
+    negotiateAbortRef.current = null;
+    setNegotiatingMsg(null);
+  };
+
   const runStateAction = async (path: string, body: unknown, resultKey: string, fallback: string, sound: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade' = 'click') => {
+    if (path === '/api/reject' || path === '/api/deal') {
+      abortInFlightNegotiation();
+    }
     const transitionMode = path === '/api/end_day' ? 'end_day' : path === '/api/next_day' ? 'next_day' : null;
     if (transitionMode) setDayTransition(transitionMode);
     setLoading(true);
@@ -1040,13 +1053,19 @@ export default function App() {
     };
     setState(optimisticState);
     setMessage('');
+    const negotiationGeneration = negotiateGenerationRef.current + 1;
+    negotiateGenerationRef.current = negotiationGeneration;
+    negotiateAbortRef.current?.abort();
+    const abortController = new AbortController();
+    negotiateAbortRef.current = abortController;
     setLoading(true);
     setNegotiatingMsg('对方正在思索...');
     try {
       const response = await fetch(`${API_BASE_URL}/api/negotiate/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...tokenHeader() },
-        body: JSON.stringify({ message: playerMessage })
+        body: JSON.stringify({ message: playerMessage }),
+        signal: abortController.signal
       });
       if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || '谈判失败。');
       if (!response.body) throw new Error('当前浏览器不支持流式谈判。');
@@ -1057,6 +1076,7 @@ export default function App() {
       const streamResult: { finalPayload?: NegotiationStreamPayload; error?: string } = {};
       let streamedDialogue = '';
       const updateStreamedDialogue = (content: string) => {
+        if (negotiationGeneration !== negotiateGenerationRef.current) return;
         streamedDialogue += content;
         setNegotiatingMsg(null);
         setState((current) => {
@@ -1091,7 +1111,14 @@ export default function App() {
       if (streamResult.error) throw new Error(streamResult.error);
       if (!streamResult.finalPayload) throw new Error('谈判响应中断，尚未完成结算，请重试。');
 
+      if (negotiationGeneration !== negotiateGenerationRef.current) return;
+
       const data = streamResult.finalPayload;
+      if (data.stale || data.negotiation.stale) {
+        setState(data.state);
+        setNegotiatingMsg(null);
+        return;
+      }
       setState(data.state);
       setNegotiatingMsg(null);
       if (data.negotiation.patience_change < 0) playSound('patience_down');
@@ -1101,12 +1128,22 @@ export default function App() {
       }
       if (data.walk_out_completed) setErrorMsg('顾客离场，交易中止，声誉 -2。');
     } catch (err) {
+      if (negotiationGeneration !== negotiateGenerationRef.current) return;
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setNegotiatingMsg(null);
+        return;
+      }
       setState(previousState);
       setMessage(playerMessage);
       setNegotiatingMsg(null);
       setErrorMsg(err instanceof Error ? err.message : '谈判失败。');
     } finally {
-      setLoading(false);
+      if (negotiateAbortRef.current === abortController) {
+        negotiateAbortRef.current = null;
+      }
+      if (negotiationGeneration === negotiateGenerationRef.current) {
+        setLoading(false);
+      }
     }
   };
 

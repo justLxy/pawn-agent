@@ -541,8 +541,6 @@ class AIClient:
     ) -> Dict[str, Any]:
         if player_offer is None and intent == "accept":
             player_offer = current_offer
-        if player_offer is None:
-            player_offer = current_offer
 
         history = ""
         for turn in dialogue_history[-8:]:
@@ -561,7 +559,7 @@ class AIClient:
 你的心理底线/上限价：{limit_price}
 当前报价：{current_offer}
 玩家解析意图：{intent}
-玩家报价：{player_offer}
+玩家报价：{player_offer if player_offer is not None else "（本轮未报价，可能在问鉴定/来历/真伪）"}
 玩家谈判技能：{negotiation_level}，魅力：{charm_level}
 耐心值：{patience}/8
 经济环境：指数 {economy_context.get("economy_index", 1.0)}，压力 {economy_context.get("economic_pressure", "stable")}，物品分类趋势 {economy_context.get("market_trend", 1.0)}。
@@ -645,7 +643,7 @@ class AIClient:
             return value.strip().lower() in ["true", "1", "yes", "是", "成交"]
         return bool(value)
 
-    def _normalize_negotiation_result(self, result: Dict[str, Any], current_offer: int, player_offer: int) -> Dict[str, Any]:
+    def _normalize_negotiation_result(self, result: Dict[str, Any], current_offer: int, player_offer: Optional[int]) -> Dict[str, Any]:
         return {
             "dialogue": str(result.get("dialogue", "嗯，我再想想这个价。")),
             "new_offer": max(1, int(result.get("new_offer", current_offer))),
@@ -661,7 +659,7 @@ class AIClient:
         trait: str,
         limit_price: int,
         current_offer: int,
-        player_offer: int,
+        player_offer: Optional[int],
         patience: int,
         intent: str,
         negotiation_level: int,
@@ -670,19 +668,32 @@ class AIClient:
         if intent == "reject":
             return {"dialogue": "既然掌柜的没兴趣，那我就不打扰了。", "new_offer": current_offer, "patience_change": -1, "accepted": False, "walk_out": True, "parsed_offer": player_offer}
 
+        if player_offer is None and intent in ("question", "persuade"):
+            patience_change = 1 if charm_level >= 4 else 0
+            return {
+                "dialogue": "嗯，你问得仔细，让我想想怎么说清楚。",
+                "new_offer": current_offer,
+                "patience_change": patience_change,
+                "accepted": False,
+                "walk_out": False,
+                "parsed_offer": None,
+            }
+
+        effective_offer = player_offer if player_offer is not None else current_offer
+
         skill_relief = 0.015 * negotiation_level + 0.01 * charm_level
         patience_change = 0
         accepted = False
         walk_out = False
 
         if role == "seller":
-            acceptable = player_offer >= int(limit_price * (1 - skill_relief))
+            acceptable = effective_offer >= int(limit_price * (1 - skill_relief))
             if acceptable or intent == "accept":
-                accepted = player_offer >= int(limit_price * 0.9)
-                new_offer = player_offer if accepted else max(limit_price, int(current_offer * 0.96))
-                dialogue = f"你这话说得还算有诚意。{player_offer} 元" + ("成交！" if accepted else f"还差点意思，最低 {new_offer}。")
+                accepted = effective_offer >= int(limit_price * 0.9)
+                new_offer = effective_offer if accepted else max(limit_price, int(current_offer * 0.96))
+                dialogue = f"你这话说得还算有诚意。{effective_offer} 元" + ("成交！" if accepted else f"还差点意思，最低 {new_offer}。")
             else:
-                ratio = player_offer / max(1, current_offer)
+                ratio = effective_offer / max(1, current_offer)
                 patience_change = -2 if ratio < 0.35 and trait in ["hardball", "fraud"] else -1
                 if patience + patience_change <= 0:
                     walk_out = True
@@ -691,15 +702,15 @@ class AIClient:
                 else:
                     step = 0.18 + skill_relief
                     new_offer = max(limit_price, int(current_offer - (current_offer - limit_price) * step))
-                    dialogue = f"你说得有点道理，但 {player_offer} 不够。这样，{new_offer} 元，别再压了。"
+                    dialogue = f"你说得有点道理，但 {effective_offer} 不够。这样，{new_offer} 元，别再压了。"
         else:
-            acceptable = player_offer <= int(limit_price * (1 + skill_relief))
+            acceptable = effective_offer <= int(limit_price * (1 + skill_relief))
             if acceptable or intent == "accept":
-                accepted = player_offer <= int(limit_price * 1.1)
-                new_offer = player_offer if accepted else min(limit_price, int(current_offer * 1.05))
+                accepted = effective_offer <= int(limit_price * 1.1)
+                new_offer = effective_offer if accepted else min(limit_price, int(current_offer * 1.05))
                 dialogue = f"这个价我能考虑。" + ("成交，帮我包起来。" if accepted else f"不过最多 {new_offer}。")
             else:
-                ratio = player_offer / max(1, current_offer)
+                ratio = effective_offer / max(1, current_offer)
                 patience_change = -2 if ratio > 2.6 and trait in ["hardball", "expert"] else -1
                 if patience + patience_change <= 0:
                     walk_out = True
@@ -708,7 +719,7 @@ class AIClient:
                 else:
                     step = 0.18 + skill_relief
                     new_offer = min(limit_price, int(current_offer + (limit_price - current_offer) * step))
-                    dialogue = f"{player_offer} 太高。看在你会说话的份上，我能出到 {new_offer}。"
+                    dialogue = f"{effective_offer} 太高。看在你会说话的份上，我能出到 {new_offer}。"
 
         if intent in ["question", "persuade"] and not accepted and not walk_out:
             patience_change = min(0, patience_change + (1 if charm_level >= 4 else 0))
@@ -718,7 +729,7 @@ class AIClient:
             "patience_change": patience_change,
             "accepted": accepted,
             "walk_out": walk_out,
-            "parsed_offer": player_offer,
+            "parsed_offer": player_offer if player_offer is not None else effective_offer,
         }
 
     async def generate_investigation_beat(
