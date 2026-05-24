@@ -167,10 +167,10 @@ class AIClient:
     async def generate_random_event(self, context: Dict[str, Any]) -> Dict[str, Any]:
         if not self.available():
             return {}
-        system_prompt = f"""你是《当铺代理人》的随机事件导演。根据状态生成一个当铺经营随机事件。
+        system_prompt = f"""你是《当铺代理人》的随机事件导演。根据状态生成一个当铺经营随机事件，要求有具体人物、地点或物件线索，避免泛泛而谈。
 状态：当铺等级 {context.get("shop_level")}，现金 {context.get("cash")}，天数 {context.get("day")}，声誉 {context.get("reputation")}，经济指数 {context.get("economy_index", 1.0)}，经济压力 {context.get("economic_pressure", "stable")}，资金供给分数 {context.get("money_supply_score", 0)}。
-事件类型可包含抢劫、诈骗、名人来访、稀有物品出现、市场波动、法律纠纷、员工问题。
-严格输出 JSON：{{"title":"事件标题","description":"80字内描述","type":"theft|scam|celebrity|rare_item|market|legal|staff","choices":[{{"id":"a","label":"选择文案","effect":"预期效果","cash_delta":整数,"reputation_delta":整数,"skill":"negotiation|appraisal|restoration|charm|commerce|null","skill_xp":整数}}]}}。必须给 2 个 choices。"""
+事件类型可包含抢劫、诈骗、名人来访、稀有物品出现、市场波动、法律纠纷、员工问题、修复事故、鉴定线索、银行授信、老客介绍、天气影响、街坊传闻。
+严格输出 JSON：{{"title":"事件标题","description":"80字内描述","type":"theft|scam|celebrity|rare_item|market|legal|staff|restoration|appraisal|finance|customer|weather","choices":[{{"id":"a","label":"选择文案","effect":"预期效果","cash_delta":整数,"reputation_delta":整数,"skill":"negotiation|appraisal|restoration|charm|commerce|null","skill_xp":整数}}]}}。必须给 2 个 choices。"""
         try:
             result = await self._chat_json(system_prompt, "生成事件。", timeout=14.0)
             return result if isinstance(result, dict) else {}

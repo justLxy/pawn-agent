@@ -115,6 +115,8 @@ CONDITION_VALUE_DRIFT = {
 }
 
 AI_DAY_GENERATION_TIMEOUT = 30.0
+EVENT_BASE_CHANCE = 0.62
+EVENT_GUARANTEE_AFTER_QUIET_DAYS = 1
 
 RARITY_HOLDING_RATE = {
     "common": 0.0012,
@@ -122,6 +124,117 @@ RARITY_HOLDING_RATE = {
     "epic": 0.0021,
     "legendary": 0.0028,
 }
+
+LOCAL_EVENT_TEMPLATES = [
+    {
+        "type": "theft",
+        "title": "夜间异响",
+        "description": "打烊后有人在后门徘徊，似乎盯上了你的仓库。",
+        "choices": [
+            {"id": "guard", "label": "让保安和安全系统处理", "effect": "安全等级越高，损失越低。", "outcome": {"cash_delta": [-1800, -700], "mitigate_by": {"facility": "security", "staff": "guard", "per_level": 350, "staff_bonus": 700, "min_loss": 0}}},
+            {"id": "cash", "label": "花钱请街坊巡夜", "effect": "支付一笔费用，但基本避免损失。", "outcome": {"cash_delta": [-650, -250], "skill": "charm", "skill_xp": 15}},
+        ],
+    },
+    {
+        "type": "scam",
+        "title": "可疑典当",
+        "description": "一名顾客留下了过于完美的来源故事，但票据编号和物品磨损对不上。",
+        "choices": [
+            {"id": "inspect", "label": "追加鉴定并追问来源", "effect": "花费少量现金，可能避免诈骗并获得鉴定经验。", "outcome": {"cash_delta": [-360, -120], "reputation_delta": 2, "skill": "appraisal", "skill_xp": 45}},
+            {"id": "decline", "label": "直接谢绝这笔买卖", "effect": "稳妥避险，但可能错过机会。", "outcome": {"skill": "negotiation", "skill_xp": 20}},
+        ],
+    },
+    {
+        "type": "celebrity",
+        "title": "名人来访",
+        "description": "一位低调的收藏节目主持人想来店里拍摄一段素材。",
+        "choices": [
+            {"id": "host", "label": "热情接待", "effect": "可能提高声望和现金收入。", "outcome": {"cash_delta": [500, 1800], "reputation_delta": 2, "skill": "charm", "skill_xp": 45}},
+            {"id": "private", "label": "保持低调", "effect": "获得少量稳定收益。", "outcome": {"cash_delta": [250, 700], "skill": "charm", "skill_xp": 20}},
+        ],
+    },
+    {
+        "type": "market",
+        "title": "市场风向变化",
+        "description": "拍卖圈传出新消息，某一类藏品可能短期升温。",
+        "choices": [
+            {"id": "follow", "label": "跟进市场热点", "effect": "随机分类市场系数上升。", "outcome": {"market_shift": 0.18, "skill": "commerce", "skill_xp": 20}},
+            {"id": "ignore", "label": "维持稳健经营", "effect": "获得商业经验。", "outcome": {"skill": "commerce", "skill_xp": 45}},
+        ],
+    },
+    {
+        "type": "legal",
+        "title": "来源质疑",
+        "description": "有人质疑你的一件藏品来源不清，需要尽快处理。",
+        "choices": [
+            {"id": "lawyer", "label": "请律师和鉴定师处理", "effect": "花费较高，但风险更低。", "outcome": {"cash_delta": [-1500, -500], "mitigate_by": {"facility": "security", "per_level": 80, "min_loss": 100}, "skill": "appraisal", "skill_xp": 30}},
+            {"id": "settle", "label": "私下和解", "effect": "花费中等，可能影响声望。", "outcome": {"cash_delta": [-1000, -300], "reputation_delta": -1, "skill": "negotiation", "skill_xp": 25}},
+        ],
+    },
+    {
+        "type": "staff",
+        "title": "员工小问题",
+        "description": "店员之间因为排班和提成产生了争执。",
+        "choices": [
+            {"id": "bonus", "label": "发放小额奖金", "effect": "花费现金，提升团队稳定。", "outcome": {"cash_delta": [-420, -180], "reputation_delta": 1}},
+            {"id": "talk", "label": "亲自调解", "effect": "获得魅力经验。", "outcome": {"skill": "charm", "skill_xp": 35}},
+        ],
+    },
+    {
+        "type": "rare_item",
+        "title": "巷口传闻",
+        "description": "旧货圈有人提到一批来路清楚的老物件，消息只在今晚有效。",
+        "choices": [
+            {"id": "tip", "label": "付线人费追消息", "effect": "花钱换市场机会，商业经验提升。", "outcome": {"cash_delta": [-900, -300], "market_shift": 0.12, "skill": "commerce", "skill_xp": 35}},
+            {"id": "wait", "label": "等消息自然发酵", "effect": "不冒进，保留现金。", "outcome": {"skill": "appraisal", "skill_xp": 15}},
+        ],
+    },
+    {
+        "type": "restoration",
+        "title": "修复师来信",
+        "description": "一位手艺人愿意短期接你的活，但材料费需要你先垫付。",
+        "choices": [
+            {"id": "hire_day", "label": "请他临时坐镇", "effect": "支出材料费，修复经验提升。", "outcome": {"cash_delta": [-800, -280], "skill": "restoration", "skill_xp": 55}},
+            {"id": "consult", "label": "只买一份修复建议", "effect": "花费较少，获得少量经验。", "outcome": {"cash_delta": [-260, -90], "skill": "restoration", "skill_xp": 25}},
+        ],
+    },
+    {
+        "type": "appraisal",
+        "title": "鉴定讲座",
+        "description": "城里的拍卖行临时开放一场内部讲座，名额有限。",
+        "choices": [
+            {"id": "attend", "label": "关门半日去听课", "effect": "支付费用，鉴定能力成长明显。", "outcome": {"cash_delta": [-520, -180], "skill": "appraisal", "skill_xp": 60}},
+            {"id": "notes", "label": "托熟人带讲义", "effect": "收益较低但不耽误经营。", "outcome": {"cash_delta": [-180, -60], "skill": "appraisal", "skill_xp": 25}},
+        ],
+    },
+    {
+        "type": "customer",
+        "title": "老客介绍",
+        "description": "一位熟客给你介绍了潜在买家，对方很看重店铺口碑。",
+        "choices": [
+            {"id": "receive", "label": "亲自接待并备茶", "effect": "小额花费换取声望与魅力经验。", "outcome": {"cash_delta": [-220, -80], "reputation_delta": 2, "skill": "charm", "skill_xp": 35}},
+            {"id": "schedule", "label": "约到明天详谈", "effect": "稳住关系，获得谈判经验。", "outcome": {"reputation_delta": 1, "skill": "negotiation", "skill_xp": 25}},
+        ],
+    },
+    {
+        "type": "finance",
+        "title": "银行经理电话",
+        "description": "银行经理提醒你近期利率可能调整，问你是否要重谈授信。",
+        "choices": [
+            {"id": "renegotiate", "label": "主动重谈授信", "effect": "花时间沟通，商业经验提升。", "outcome": {"skill": "commerce", "skill_xp": 45, "reputation_delta": 1}},
+            {"id": "ignore_bank", "label": "暂时不理会", "effect": "避免额外牵扯，保持现状。", "outcome": {"skill": "negotiation", "skill_xp": 10}},
+        ],
+    },
+    {
+        "type": "weather",
+        "title": "暴雨压街",
+        "description": "突如其来的暴雨让客流变少，但也有人急着把东西换成现金。",
+        "choices": [
+            {"id": "open_late", "label": "延长营业等急客", "effect": "增加收入机会，但有额外成本。", "outcome": {"cash_delta": [-320, 900], "skill": "negotiation", "skill_xp": 30}},
+            {"id": "close_early", "label": "提前打烊整理库存", "effect": "稳妥经营，获得商业经验。", "outcome": {"skill": "commerce", "skill_xp": 25}},
+        ],
+    },
+]
 
 
 def _achievement_defs() -> Dict[str, Dict[str, Any]]:
@@ -1752,68 +1865,16 @@ class GameStateManager:
         return events
 
     def _generate_pending_event(self) -> Optional[Dict[str, Any]]:
-        if random.random() > 0.42:
+        quiet_days = int(self.achievement_stats.get("quiet_event_days", 0))
+        if quiet_days < EVENT_GUARANTEE_AFTER_QUIET_DAYS and random.random() > EVENT_BASE_CHANCE:
+            self.achievement_stats["quiet_event_days"] = quiet_days + 1
             return None
-        event_type = random.choice(["theft", "scam", "celebrity", "market", "legal", "staff"])
-        if event_type == "theft":
-            return {
-                "id": str(uuid.uuid4())[:8],
-                "title": "夜间异响",
-                "description": "打烊后有人在后门徘徊，似乎盯上了你的仓库。",
-                "choices": [
-                    {"id": "guard", "label": "让保安和安全系统处理", "effect": "安全等级越高，损失越低。"},
-                    {"id": "cash", "label": "花钱请街坊巡夜", "effect": "支付一笔费用，但基本避免损失。"},
-                ],
-            }
-        if event_type == "scam":
-            return {
-                "id": str(uuid.uuid4())[:8],
-                "title": "可疑典当",
-                "description": "一名顾客留下了过于完美的来源故事，但票据编号和物品磨损对不上。",
-                "choices": [
-                    {"id": "inspect", "label": "追加鉴定并追问来源", "effect": "花费少量现金，可能避免诈骗并获得鉴定经验。"},
-                    {"id": "decline", "label": "直接谢绝这笔买卖", "effect": "稳妥避险，但可能错过机会。"},
-                ],
-            }
-        if event_type == "celebrity":
-            return {
-                "id": str(uuid.uuid4())[:8],
-                "title": "名人来访",
-                "description": "一位低调的收藏节目主持人想来店里拍摄一段素材。",
-                "choices": [
-                    {"id": "host", "label": "热情接待", "effect": "可能提高声望和现金收入。"},
-                    {"id": "private", "label": "保持低调", "effect": "获得少量稳定收益。"},
-                ],
-            }
-        if event_type == "market":
-            return {
-                "id": str(uuid.uuid4())[:8],
-                "title": "市场风向变化",
-                "description": "拍卖圈传出新消息，某一类藏品可能短期升温。",
-                "choices": [
-                    {"id": "follow", "label": "跟进市场热点", "effect": "随机分类市场系数上升。"},
-                    {"id": "ignore", "label": "维持稳健经营", "effect": "获得商业经验。"},
-                ],
-            }
-        if event_type == "legal":
-            return {
-                "id": str(uuid.uuid4())[:8],
-                "title": "来源质疑",
-                "description": "有人质疑你的一件藏品来源不清，需要尽快处理。",
-                "choices": [
-                    {"id": "lawyer", "label": "请律师和鉴定师处理", "effect": "花费较高，但风险更低。"},
-                    {"id": "settle", "label": "私下和解", "effect": "花费中等，可能影响声望。"},
-                ],
-            }
-        return {
-            "id": str(uuid.uuid4())[:8],
-            "title": "员工小问题",
-            "description": "店员之间因为排班和提成产生了争执。",
-            "choices": [
-                {"id": "bonus", "label": "发放小额奖金", "effect": "花费现金，提升团队稳定。"},
-                {"id": "talk", "label": "亲自调解", "effect": "获得魅力经验。"},
-            ],
-        }
+
+        self.achievement_stats["quiet_event_days"] = 0
+        event = deepcopy(random.choice(LOCAL_EVENT_TEMPLATES))
+        event["id"] = str(uuid.uuid4())[:8]
+        event["local_generated"] = True
+        return event
 
     def _normalize_ai_event(self, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if not event or not isinstance(event.get("choices"), list):
@@ -1868,36 +1929,70 @@ class GameStateManager:
                     self.daily_summary["events"][-1] = f"待处理事件：{ai_event['title']}。"
         return self.daily_summary
 
+    def _roll_event_amount(self, value: Any) -> int:
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            low = int(value[0])
+            high = int(value[1])
+            return random.randint(min(low, high), max(low, high))
+        return int(value or 0)
+
+    def _apply_event_mitigation(self, cash_delta: int, mitigation: Optional[Dict[str, Any]]) -> int:
+        if cash_delta >= 0 or not mitigation:
+            return cash_delta
+        loss = abs(cash_delta)
+        facility = mitigation.get("facility")
+        if facility in self.facilities:
+            loss -= self.facilities[facility] * int(mitigation.get("per_level", 0))
+        staff = mitigation.get("staff")
+        if staff in self.staff and self.staff[staff]:
+            loss -= int(mitigation.get("staff_bonus", 0))
+        return -max(int(mitigation.get("min_loss", 0)), loss)
+
+    def _resolve_structured_event_choice(self, event: Dict[str, Any], choice: Dict[str, Any]) -> Dict[str, Any]:
+        outcome = choice.get("outcome") if isinstance(choice.get("outcome"), dict) else choice
+        cash_delta = self._roll_event_amount(outcome.get("cash_delta", 0))
+        cash_delta = self._apply_event_mitigation(cash_delta, outcome.get("mitigate_by") if isinstance(outcome.get("mitigate_by"), dict) else None)
+        reputation_delta = int(outcome.get("reputation_delta") or 0)
+
+        self.cash += cash_delta
+        self.reputation += reputation_delta
+        if cash_delta > 0:
+            self.daily_summary["revenue"] = int(self.daily_summary.get("revenue", 0)) + cash_delta
+
+        skill = outcome.get("skill")
+        if skill in SKILL_INFO:
+            self.add_skill_xp(skill, int(outcome.get("skill_xp") or 0))
+
+        message = f"{choice.get('label')}：{choice.get('effect')}"
+        if cash_delta:
+            message += f"，现金{'+' if cash_delta > 0 else ''}${cash_delta}"
+        if reputation_delta:
+            message += f"，声誉{'+' if reputation_delta > 0 else ''}{reputation_delta}"
+
+        market_shift = float(outcome.get("market_shift") or 0)
+        if market_shift:
+            category = random.choice(list(self.market_trends.keys()))
+            self.market_trends[category] = round(max(0.72, min(1.6, self.market_trends[category] + market_shift)), 2)
+            message += f"，{category} 市场系数调整至 {self.market_trends[category]:.2f}"
+
+        self.daily_summary["events"].append(f"{event['title']}：{message}")
+        self.pending_event = None
+        self.daily_summary["ending_cash"] = self.cash
+        self.daily_summary["net_profit"] = self.cash - self.daily_summary.get("starting_cash", self.cash)
+        self._check_achievements("event", {"title": event["title"], "choice": choice.get("id")})
+        return {"success": True, "message": message}
+
     def resolve_event(self, choice_id: str) -> Dict[str, Any]:
         if not self.pending_event:
             return {"error": "当前没有待处理事件。"}
         event = self.pending_event
         title = event["title"]
         message = ""
-        if event.get("ai_generated"):
-            choice = next((item for item in event.get("choices", []) if item.get("id") == choice_id), None)
+        choice = next((item for item in event.get("choices", []) if item.get("id") == choice_id), None)
+        if event.get("ai_generated") or event.get("local_generated"):
             if not choice:
                 return {"error": "未知的事件选择。"}
-            cash_delta = int(choice.get("cash_delta") or 0)
-            reputation_delta = int(choice.get("reputation_delta") or 0)
-            self.cash += cash_delta
-            self.reputation += reputation_delta
-            if cash_delta > 0:
-                self.daily_summary["revenue"] += cash_delta
-            skill = choice.get("skill")
-            if skill in SKILL_INFO:
-                self.add_skill_xp(skill, int(choice.get("skill_xp") or 0))
-            message = f"{choice.get('label')}：{choice.get('effect')}"
-            if cash_delta:
-                message += f"，现金{'+' if cash_delta > 0 else ''}${cash_delta}"
-            if reputation_delta:
-                message += f"，声誉{'+' if reputation_delta > 0 else ''}{reputation_delta}"
-            self.daily_summary["events"].append(f"{title}：{message}")
-            self.pending_event = None
-            self.daily_summary["ending_cash"] = self.cash
-            self.daily_summary["net_profit"] = self.cash - self.daily_summary.get("starting_cash", self.cash)
-            self._check_achievements("event", {"title": title, "choice": choice_id})
-            return {"success": True, "message": message}
+            return self._resolve_structured_event_choice(event, choice)
         if title == "夜间异响":
             if choice_id == "guard":
                 mitigation = self.facilities["security"] + (2 if self.staff["guard"] else 0)
