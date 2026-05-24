@@ -720,3 +720,45 @@ class AIClient:
             "walk_out": walk_out,
             "parsed_offer": player_offer,
         }
+
+    async def generate_investigation_beat(
+        self,
+        action: str,
+        customer_context: Dict[str, Any],
+        clue: Optional[Dict[str, Any]],
+        fallback_narration: str,
+    ) -> Dict[str, str]:
+        action_names = {
+            "chat": "套话盘问",
+            "visual": "现场目检",
+            "appraise": "专业鉴定",
+            "provenance": "追问来历",
+            "records": "查档打听",
+            "expert": "专家会诊",
+        }
+        action_cn = action_names.get(action, "调查")
+        clue_block = ""
+        if clue:
+            clue_block = f"已发现线索：{clue.get('title')} — {clue.get('detail')}"
+        if not self.available():
+            return {"narrator_line": fallback_narration, "customer_line": ""}
+        system_prompt = f"""你是《当铺代理人》的柜台调查导演。玩家正在对上门顾客进行【{action_cn}】。
+{self._format_persona_block(customer_context)}
+{clue_block}
+要求：
+- 输出 JSON：{{"narrator_line":"20-45字旁白，描述调查过程","customer_line":"0-35字顾客反应，可为空字符串"}}
+- 不要泄露未调查出的隐藏信息；旁白可基于已有线索润色，但不要编造全新事实
+- 顾客反应需符合性格与是否欺诈；若线索涉及真伪风险，顾客可略显紧张"""
+        try:
+            parsed = await self._chat_json(
+                system_prompt,
+                f"请为【{action_cn}】生成调查片段。参考：{fallback_narration[:180]}",
+                timeout=10.0,
+                temperature=0.75,
+            )
+            narrator_line = str(parsed.get("narrator_line") or fallback_narration).strip()
+            customer_line = str(parsed.get("customer_line") or "").strip()
+            return {"narrator_line": narrator_line[:220], "customer_line": customer_line[:160]}
+        except Exception as exc:
+            logger.warning("Investigation beat generation failed: %s", exc)
+            return {"narrator_line": fallback_narration, "customer_line": ""}

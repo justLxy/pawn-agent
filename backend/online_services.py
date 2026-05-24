@@ -36,7 +36,7 @@ def load_state(player_id: int) -> GameStateManager:
 
 def save_state(player_id: int, state: GameStateManager) -> None:
     now = int(time.time())
-    payload = json.dumps(state.to_dict(), ensure_ascii=False)
+    payload = json.dumps(state.to_dict(for_client=False), ensure_ascii=False)
     with get_connection() as conn:
         conn.execute(
             """

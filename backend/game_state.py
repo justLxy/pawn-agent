@@ -117,6 +117,167 @@ CUSTOMER_TRAITS = {
     "expert": {"name_cn": "专家", "desc": "眼光毒辣，对价值和真伪非常敏感。"},
 }
 
+CASE_INVESTIGATION_ACTIONS = {
+    "chat": {"name_cn": "套话盘问", "cost_points": 1, "patience_cost": 1},
+    "visual": {"name_cn": "现场目检", "cost_points": 1},
+    "appraise": {"name_cn": "专业鉴定", "cost_points": 1},
+    "provenance": {"name_cn": "追问来历", "cost_points": 1, "patience_cost": 1},
+    "records": {"name_cn": "查档打听", "cost_points": 1},
+    "expert": {"name_cn": "专家会诊", "cost_points": 1, "requires_staff": "appraiser"},
+}
+
+
+def build_case_clue_pool(customer: "Customer") -> List[Dict[str, Any]]:
+    item = customer.item
+    pool: List[Dict[str, Any]] = []
+    clue_index = 0
+
+    def add_clue(action: str, clue_type: str, title: str, detail: str, reliability: float, tags: Optional[List[str]] = None):
+        nonlocal clue_index
+        clue_index += 1
+        pool.append(
+            {
+                "id": f"clue_{clue_index}",
+                "action": action,
+                "type": clue_type,
+                "title": title,
+                "detail": detail,
+                "reliability": round(clamp(int(reliability * 100), 35, 98) / 100.0, 2),
+                "tags": tags or [],
+            }
+        )
+
+    add_clue(
+        "visual",
+        "condition",
+        "品相记录",
+        f"{condition_cn(item.condition)}成色。{item.damage_report}",
+        0.88,
+    )
+    story_excerpt = (item.story or item.description or "")[:120]
+    if story_excerpt:
+        add_clue(
+            "provenance",
+            "provenance",
+            "来历叙述",
+            story_excerpt,
+            0.72 if not customer.fraud_intent else 0.55,
+        )
+    if customer.fraud_intent or item.is_fake:
+        tip = (item.authentication_tips or ["材质与款识需要交叉验证"])[0]
+        add_clue(
+            "chat",
+            "authenticity",
+            "真伪疑点",
+            f"对话中多处回避细节；{tip}",
+            0.68 if customer.fraud_intent else 0.58,
+            tags=["fake_risk"],
+        )
+        add_clue(
+            "provenance",
+            "risk",
+            "来源矛盾",
+            "顾客口述的来历与包装、年代线索对不上，时间线含糊。",
+            0.7,
+            tags=["fake_risk"],
+        )
+    for hidden in item.hidden_attrs[:2]:
+        add_clue(
+            "records",
+            "value",
+            "隐藏线索",
+            hidden,
+            0.8,
+            tags=["hidden_bonus"],
+        )
+    for tip in (item.authentication_tips or [])[:2]:
+        add_clue(
+            "expert",
+            "authenticity",
+            "鉴别要点",
+            tip,
+            0.9 if item.is_fake else 0.82,
+            tags=["fake_risk"] if item.is_fake else [],
+        )
+    for effect in (item.special_effects or [])[:1]:
+        add_clue(
+            "records",
+            "value",
+            "市场亮点",
+            effect,
+            0.78,
+            tags=["hidden_bonus"],
+        )
+    add_clue(
+        "appraise",
+        "value",
+        "专业估值",
+        "需通过鉴定手段确认市场区间与真伪结论。",
+        0.85,
+        tags=["appraisal"],
+    )
+    if not any(clue.get("type") == "value" for clue in pool):
+        add_clue(
+            "chat",
+            "value",
+            "行情印象",
+            f"同类 {ITEM_CATEGORY_CN.get(item.category, item.category)} 近期波动明显，成交需谨慎。",
+            0.65,
+        )
+    return pool
+
+
+def build_initial_case_state(customer: "Customer", shop_level: int, appraisal_room: int) -> Dict[str, Any]:
+    points_max = 3 + (1 if shop_level >= 4 else 0) + (1 if appraisal_room >= 3 else 0)
+    return {
+        "phase": "investigate",
+        "points_max": points_max,
+        "points_remaining": points_max,
+        "clues": [],
+        "flags": {
+            "knows_fake_risk": False,
+            "knows_hidden_bonus": False,
+            "customer_angered": False,
+            "graceful_reject": False,
+        },
+        "investigations_used": [],
+        "clue_pool": build_case_clue_pool(customer),
+    }
+
+
+def case_state_for_client(case_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not case_state:
+        return {
+            "phase": "negotiate",
+            "points_max": 3,
+            "points_remaining": 0,
+            "clues": [],
+            "flags": {
+                "knows_fake_risk": False,
+                "knows_hidden_bonus": False,
+                "customer_angered": False,
+                "graceful_reject": False,
+            },
+            "investigations_used": [],
+        }
+    public = {key: value for key, value in case_state.items() if key != "clue_pool"}
+    public.setdefault("phase", "investigate")
+    public.setdefault("points_max", 3)
+    public.setdefault("points_remaining", public.get("points_max", 3))
+    public.setdefault("clues", [])
+    public.setdefault(
+        "flags",
+        {
+            "knows_fake_risk": False,
+            "knows_hidden_bonus": False,
+            "customer_angered": False,
+            "graceful_reject": False,
+        },
+    )
+    public.setdefault("investigations_used", [])
+    return public
+
+
 STAFF_TYPES = {
     "appraiser": {"name_cn": "鉴定师", "hire_cost": 800, "daily_salary": 100, "desc": "提高鉴定准确度，并降低专业鉴定费用。"},
     "restorer": {"name_cn": "修复师", "hire_cost": 1000, "daily_salary": 120, "desc": "每日推进修复进度，并降低修复失败风险。"},
@@ -576,8 +737,8 @@ class Item:
         self.last_trade_at = last_trade_at
         self.showcase_price = showcase_price
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
+    def to_dict(self, for_player_view: bool = False) -> Dict[str, Any]:
+        data = {
             "id": self.id,
             "name": self.name,
             "category": self.category,
@@ -618,6 +779,12 @@ class Item:
             "last_trade_at": self.last_trade_at,
             "showcase_price": self.showcase_price,
         }
+        if for_player_view:
+            data.pop("is_fake", None)
+            data["hidden_attrs"] = []
+            if self.is_appraised_fake is None:
+                data["authentication_tips"] = []
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Item":
@@ -693,6 +860,9 @@ class Customer:
         satisfaction: int = 50,
         referred_by: Optional[str] = None,
         generation_source: str = "local",
+        case_state: Optional[Dict[str, Any]] = None,
+        shop_level_for_case: int = 1,
+        appraisal_room_for_case: int = 1,
     ):
         self.customer_id = customer_id or str(uuid.uuid4())[:10]
         self.name = name
@@ -738,6 +908,80 @@ class Customer:
         self.initial_offer = int(initial_offer if initial_offer is not None else self.current_offer)
         self.session_closed: Optional[str] = None
         self.deal_summary: Optional[str] = None
+        self.case_state = case_state if case_state else build_initial_case_state(self, shop_level_for_case, appraisal_room_for_case)
+
+    def ensure_case_state(self, shop_level: int, appraisal_room: int):
+        if not self.case_state or not self.case_state.get("clue_pool"):
+            self.case_state = build_initial_case_state(self, shop_level, appraisal_room)
+
+    def case_negotiation_relief(self) -> float:
+        flags = (self.case_state or {}).get("flags") or {}
+        bonus = 0.0
+        if self.role == "seller" and flags.get("knows_fake_risk"):
+            bonus += 0.025
+        if self.role == "seller" and flags.get("knows_hidden_bonus"):
+            bonus += 0.01
+        return bonus
+
+    def reveal_case_clue(self, clue: Dict[str, Any]) -> Dict[str, Any]:
+        public = {
+            "id": clue["id"],
+            "type": clue["type"],
+            "title": clue["title"],
+            "detail": clue["detail"],
+            "reliability": clue["reliability"],
+        }
+        clues = self.case_state.setdefault("clues", [])
+        if not any(existing.get("id") == public["id"] for existing in clues):
+            clues.append(public)
+        flags = self.case_state.setdefault("flags", {})
+        tags = clue.get("tags") or []
+        if "fake_risk" in tags or clue.get("type") == "authenticity":
+            flags["knows_fake_risk"] = True
+            if self.fraud_intent or self.item.is_fake:
+                flags["graceful_reject"] = True
+        if "hidden_bonus" in tags:
+            flags["knows_hidden_bonus"] = True
+        return public
+
+    def pop_clue_for_action(self, action: str, clue_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        pool = list((self.case_state or {}).get("clue_pool") or [])
+        revealed_ids = {clue.get("id") for clue in (self.case_state or {}).get("clues") or []}
+        for index, clue in enumerate(pool):
+            if clue.get("id") in revealed_ids:
+                continue
+            if clue.get("action") != action:
+                continue
+            if clue_type and clue.get("type") != clue_type:
+                continue
+            pool.pop(index)
+            self.case_state["clue_pool"] = pool
+            return clue
+        for index, clue in enumerate(pool):
+            if clue.get("id") in revealed_ids:
+                continue
+            if clue.get("action") != action:
+                continue
+            pool.pop(index)
+            self.case_state["clue_pool"] = pool
+            return clue
+        return None
+
+    def spend_case_points(self, action: str) -> bool:
+        info = CASE_INVESTIGATION_ACTIONS.get(action)
+        if not info:
+            return False
+        remaining = int((self.case_state or {}).get("points_remaining", 0))
+        cost = int(info.get("cost_points", 1))
+        if remaining < cost:
+            return False
+        self.case_state["points_remaining"] = remaining - cost
+        used = self.case_state.setdefault("investigations_used", [])
+        if action not in used:
+            used.append(action)
+        if self.case_state["points_remaining"] <= 0:
+            self.case_state["phase"] = "negotiate"
+        return True
 
     def item_blurb(self) -> str:
         item = self.item
@@ -952,7 +1196,7 @@ class Customer:
         elif note:
             self.dialogue_history.append({"role": "customer", "content": note})
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, for_client: bool = True) -> Dict[str, Any]:
         return {
             "customer_id": self.customer_id,
             "name": self.name,
@@ -960,7 +1204,8 @@ class Customer:
             "trait_cn": CUSTOMER_TRAITS[self.trait]["name_cn"],
             "trait_desc": CUSTOMER_TRAITS[self.trait]["desc"],
             "role": self.role,
-            "item": self.item.to_dict(),
+            "item": self.item.to_dict(for_player_view=True),
+            "case_state": case_state_for_client(self.case_state) if for_client else dict(self.case_state or {}),
             "age": self.age,
             "appearance": self.appearance,
             "backstory": self.backstory,
@@ -1020,7 +1265,15 @@ class Customer:
             satisfaction=int(data.get("satisfaction", 50)),
             referred_by=data.get("referred_by"),
             generation_source=str(data.get("generation_source") or "local"),
+            case_state=data.get("case_state"),
+            shop_level_for_case=1,
+            appraisal_room_for_case=1,
         )
+        if data.get("case_state"):
+            stored = dict(data["case_state"])
+            if "clue_pool" not in stored:
+                stored["clue_pool"] = build_case_clue_pool(customer)
+            customer.case_state = stored
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
         customer.backstory = normalize_customer_backstory(
@@ -1304,6 +1557,8 @@ class GameStateManager:
         self._rebalance_buyer_targets()
         self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
+        if self.active_customer:
+            self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
         self._record_daily_customer_codex()
 
     def generate_random_customer(self) -> Customer:
@@ -1316,7 +1571,16 @@ class GameStateManager:
             customer = self._generate_local_seller_customer(name, trait)
         else:
             item = self._choose_saleable_item() or random.choice(saleable_items)
-            customer = Customer(name=name, trait=trait, role=role, item=item, shop_level=self.shop_level, marketer_active=self.staff["marketer"])
+            customer = Customer(
+                name=name,
+                trait=trait,
+                role=role,
+                item=item,
+                shop_level=self.shop_level,
+                marketer_active=self.staff["marketer"],
+                shop_level_for_case=self.shop_level,
+                appraisal_room_for_case=self.facilities["appraisal_room"],
+            )
 
         customer.generation_source = "local"
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
@@ -1352,6 +1616,8 @@ class GameStateManager:
             item=item,
             shop_level=self.shop_level,
             marketer_active=self.staff["marketer"],
+            shop_level_for_case=self.shop_level,
+            appraisal_room_for_case=self.facilities["appraisal_room"],
         )
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
         customer.generation_source = "local"
@@ -1497,6 +1763,8 @@ class GameStateManager:
             item=item,
             shop_level=self.shop_level,
             marketer_active=self.staff["marketer"],
+            shop_level_for_case=self.shop_level,
+            appraisal_room_for_case=self.facilities["appraisal_room"],
             age=record.get("age"),
             appearance=record.get("appearance"),
             backstory=backstory,
@@ -1548,7 +1816,14 @@ class GameStateManager:
             source["referrals_generated"] = int(source.get("referrals_generated", 0)) + 1
             self.achievement_stats["referrals_generated"] = int(self.achievement_stats.get("referrals_generated", 0)) + 1
 
-    def _record_customer_outcome(self, customer: Customer, outcome: str, price: Optional[int] = None, item: Optional[Item] = None):
+    def _record_customer_outcome(
+        self,
+        customer: Customer,
+        outcome: str,
+        price: Optional[int] = None,
+        item: Optional[Item] = None,
+        skip_reputation_penalty: bool = False,
+    ):
         record = self.customer_registry.get(customer.customer_id) or self._customer_record(customer)
         record["visit_count"] = max(int(record.get("visit_count", 0)), customer.visit_count)
         record["last_visit_day"] = self.day
@@ -1581,7 +1856,7 @@ class GameStateManager:
         customer.relationship_level = record["relationship_level"]
         customer.last_deal_summary = record.get("last_deal_summary")
         self._record_customer_encounter(customer, outcome)
-        if outcome == "reject":
+        if outcome == "reject" and not skip_reputation_penalty:
             self.reputation -= 1
             self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
             if self.daily_summary:
@@ -1607,6 +1882,7 @@ class GameStateManager:
             return True
         note = f"刚才那件已经不合适了，我再看看这件【{item.name}】。" if announce else None
         customer.retarget_item(item, note)
+        customer.case_state = build_initial_case_state(customer, self.shop_level, self.facilities["appraisal_room"])
         self._record_customer_encounter(customer, "retarget")
         if target_counts is not None:
             target_counts[item.id] = target_counts.get(item.id, 0) + 1
@@ -2058,6 +2334,8 @@ class GameStateManager:
             item=item,
             shop_level=self.shop_level,
             marketer_active=self.staff["marketer"],
+            shop_level_for_case=self.shop_level,
+            appraisal_room_for_case=self.facilities["appraisal_room"],
             age=profile.get("age"),
             appearance=profile.get("appearance"),
             backstory=normalize_customer_backstory(
@@ -2085,10 +2363,199 @@ class GameStateManager:
                 if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
                     self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
             if self.active_customer:
+                self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
                 self._record_customer_encounter(self.active_customer, "served")
             return True
         self.active_customer = None
         return False
+
+    def _case_investigation_narration(self, customer: Customer, action: str, clue: Optional[Dict[str, Any]], extra: str = "") -> str:
+        action_name = CASE_INVESTIGATION_ACTIONS.get(action, {}).get("name_cn", "调查")
+        if not clue:
+            return f"你以【{action_name}】仔细查看，但暂时没有新的突破口。{extra}".strip()
+        reliability = int(float(clue.get("reliability", 0.7)) * 100)
+        return f"【{action_name}】获得线索「{clue.get('title')}」：{clue.get('detail')}（可信度约 {reliability}%）。{extra}".strip()
+
+    def investigate_case(self, action: str, method: str = "standard") -> Dict[str, Any]:
+        customer = self.active_customer
+        if not customer:
+            return {"error": "当前没有顾客。"}
+        if customer.session_closed:
+            return {"error": "请先送离当前顾客。"}
+        action_info = CASE_INVESTIGATION_ACTIONS.get(action)
+        if not action_info:
+            return {"error": "未知的调查行动。"}
+        customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
+        if action in list(customer.case_state.get("investigations_used") or []):
+            return {"error": f"本案件已使用过【{action_info['name_cn']}】。"}
+        if int(customer.case_state.get("points_remaining", 0)) < int(action_info.get("cost_points", 1)):
+            return {"error": "调查点数已用尽，可以直接谈判或成交。"}
+        if action_info.get("requires_staff") == "appraiser" and not self.staff["appraiser"]:
+            return {"error": "需要先雇佣鉴定师，才能进行专家会诊。"}
+
+        item = customer.item
+        cost_cash = 0
+        revealed: Optional[Dict[str, Any]] = None
+        walk_out = False
+        extra_note = ""
+
+        if action == "records":
+            cost_cash = max(200, int(item.market_value * 0.03 * self.economy_index))
+            if self.cash < cost_cash:
+                return {"error": f"查档资金不足，需要 ${cost_cash}。"}
+            self.cash -= cost_cash
+            self.daily_summary["upgrades"] = int(self.daily_summary.get("upgrades", 0)) + cost_cash
+
+        if action == "appraise":
+            if int(customer.case_state.get("points_remaining", 0)) < int(action_info.get("cost_points", 1)):
+                return {"error": "调查点数已用尽，可以直接谈判或成交。"}
+            appraise_result = self.appraise_active_item(method)
+            if "error" in appraise_result:
+                return appraise_result
+            if not customer.spend_case_points(action):
+                return {"error": "调查点数不足。"}
+            verdict = str(appraise_result.get("verdict") or "未见明显作伪")
+            low = int(appraise_result.get("appraised_value_low") or appraise_result.get("appraised_value") or 0)
+            high = int(appraise_result.get("appraised_value_high") or appraise_result.get("appraised_value") or 0)
+            confidence = int(appraise_result.get("confidence") or 0)
+            clue_payload = {
+                "id": f"clue_appraise_{len(customer.case_state.get('clues', [])) + 1}",
+                "type": "authenticity" if appraise_result.get("is_fake") else "value",
+                "title": "鉴定结论",
+                "detail": f"{verdict}，估值区间 ${low:,} - ${high:,}，可信度约 {confidence}%。",
+                "reliability": round(min(0.98, confidence / 100.0), 2),
+                "tags": ["fake_risk"] if appraise_result.get("is_fake") else ["appraisal"],
+            }
+            revealed = customer.reveal_case_clue(clue_payload)
+            narration = self._case_investigation_narration(customer, action, revealed, f"鉴定花费 ${int(appraise_result.get('cost', 0)):,}。")
+            customer.dialogue_history.append({"role": "narrator", "content": narration})
+            self.add_skill_xp("appraisal", 6)
+            return {
+                "success": True,
+                "action": action,
+                "action_name": action_info["name_cn"],
+                "clue": revealed,
+                "narration": narration,
+                "cost_cash": int(appraise_result.get("cost", 0)),
+                "points_remaining": customer.case_state.get("points_remaining"),
+                "phase": customer.case_state.get("phase"),
+                "appraise_result": appraise_result,
+            }
+
+        if not customer.spend_case_points(action):
+            return {"error": "调查点数不足。"}
+
+        patience_cost = int(action_info.get("patience_cost", 0))
+        if patience_cost > 0:
+            customer.patience = max(0, customer.patience - patience_cost)
+
+        if action == "chat":
+            clue = customer.pop_clue_for_action("chat")
+            if not clue and (customer.fraud_intent or item.is_fake):
+                clue = {
+                    "id": f"clue_chat_{uuid.uuid4().hex[:6]}",
+                    "type": "authenticity",
+                    "title": "言语破绽",
+                    "detail": "对方描述前后矛盾，对关键细节含糊其辞。",
+                    "reliability": 0.66,
+                    "tags": ["fake_risk"],
+                }
+            elif not clue:
+                clue = customer.pop_clue_for_action("chat", "value") or {
+                    "id": f"clue_chat_{uuid.uuid4().hex[:6]}",
+                    "type": "risk",
+                    "title": "态度观察",
+                    "detail": f"对方{'显得急切' if customer.trait == 'eager' else '比较谨慎'}，谈判风格与 {CUSTOMER_TRAITS[customer.trait]['name_cn']} 相符。",
+                    "reliability": 0.6,
+                    "tags": [],
+                }
+            revealed = customer.reveal_case_clue(clue)
+        elif action == "visual":
+            clue = customer.pop_clue_for_action("visual", "condition")
+            if clue:
+                revealed = customer.reveal_case_clue(clue)
+        elif action == "provenance":
+            if customer.trait == "hardball" and random.random() < 0.18:
+                walk_out = True
+            clue = customer.pop_clue_for_action("provenance")
+            if clue:
+                revealed = customer.reveal_case_clue(clue)
+        elif action == "records":
+            clue = customer.pop_clue_for_action("records", "value")
+            if not clue:
+                clue = customer.pop_clue_for_action("records")
+            if clue:
+                revealed = customer.reveal_case_clue(clue)
+            extra_note = f"查档花费 ${cost_cash:,}。"
+        elif action == "expert":
+            clue = customer.pop_clue_for_action("expert", "authenticity")
+            if not clue:
+                clue = customer.pop_clue_for_action("expert")
+            if clue:
+                reliability = min(0.98, float(clue.get("reliability", 0.85)) + 0.06)
+                clue = {**clue, "reliability": round(reliability, 2)}
+                revealed = customer.reveal_case_clue(clue)
+            self.add_skill_xp("appraisal", 10)
+        else:
+            return {"error": "未知的调查行动。"}
+
+        narration = self._case_investigation_narration(customer, action, revealed, extra_note)
+        customer.dialogue_history.append({"role": "narrator", "content": narration})
+
+        if walk_out or customer.patience <= 0:
+            if customer.patience <= 0:
+                customer.deal_summary = "对方耐心耗尽，收起东西离开了当铺。"
+            else:
+                customer.deal_summary = "追问来历触怒了对方，对方不愿再谈，径直离去。"
+            customer.session_closed = "walk_out"
+            self._record_customer_outcome(customer, "walk_out")
+            self.reputation = max(0, self.reputation - 1)
+            return {
+                "success": True,
+                "action": action,
+                "action_name": action_info["name_cn"],
+                "clue": revealed,
+                "narration": narration,
+                "walk_out": True,
+                "cost_cash": cost_cash,
+                "points_remaining": customer.case_state.get("points_remaining"),
+                "phase": customer.case_state.get("phase"),
+            }
+
+        if action == "chat":
+            self.add_skill_xp("charm", 6)
+        return {
+            "success": True,
+            "action": action,
+            "action_name": action_info["name_cn"],
+            "clue": revealed,
+            "narration": narration,
+            "walk_out": False,
+            "cost_cash": cost_cash,
+            "points_remaining": customer.case_state.get("points_remaining"),
+            "phase": customer.case_state.get("phase"),
+        }
+
+    async def async_investigate_case(self, ai_client, action: str, method: str = "standard") -> Dict[str, Any]:
+        result = self.investigate_case(action, method)
+        if "error" in result or not self.active_customer:
+            return result
+        customer = self.active_customer
+        clue = result.get("clue")
+        beat = await ai_client.generate_investigation_beat(
+            action,
+            customer.negotiation_context(),
+            clue,
+            str(result.get("narration") or ""),
+        )
+        if beat.get("customer_line"):
+            customer.dialogue_history.append({"role": "customer", "content": beat["customer_line"].strip()})
+        if beat.get("narrator_line"):
+            for entry in customer.dialogue_history:
+                if entry.get("role") == "narrator" and entry.get("content") == result.get("narration"):
+                    entry["content"] = beat["narrator_line"].strip()
+                    break
+        return result
 
     def add_skill_xp(self, skill: str, amount: int):
         if skill not in self.skills:
@@ -2447,6 +2914,26 @@ class GameStateManager:
             self._record_item_encounter(item, "acquired")
             message = "交易成功！你买下了该物品。"
             tx_type = "buy"
+            flags = (customer.case_state or {}).get("flags") or {}
+            if flags.get("knows_hidden_bonus"):
+                boost = random.uniform(0.08, 0.15)
+                item.actual_value = max(1, int(item.actual_value * (1 + boost)))
+                item.market_value = max(1, int(item.market_value * (1 + boost)))
+                item.base_value_at_purchase = item.market_value
+                message += f" 调查线索显示另有隐藏价值，入库估值上浮约 {int(boost * 100)}%。"
+            if item.is_fake and item.is_appraised_fake is not True:
+                penalty = max(400, int(price * 0.32))
+                self.cash -= penalty
+                self.reputation = max(0, self.reputation - 3)
+                self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
+                message += f" 事后发现可能是赝品，额外损失 ${penalty:,}，声誉受损。"
+                if self.daily_summary:
+                    self.daily_summary["events"].append(f"误收赝品【{item.name}】，额外损失 ${penalty:,}。")
+            elif item.is_fake and flags.get("knows_fake_risk"):
+                penalty = max(180, int(price * 0.14))
+                self.cash -= penalty
+                self.reputation = max(0, self.reputation - 1)
+                message += f" 你明知风险仍收下赝品，额外损失 ${penalty:,}。"
         else:
             inventory_item = self.get_item(item.id)
             if not inventory_item or inventory_item.status not in ["stored", "displayed"]:
@@ -2487,8 +2974,15 @@ class GameStateManager:
         if self.active_customer.session_closed:
             return {"error": "请先送离当前顾客。"}
         customer = self.active_customer
+        flags = (customer.case_state or {}).get("flags") or {}
+        graceful = bool(flags.get("graceful_reject") or flags.get("knows_fake_risk"))
         customer.dialogue_history.append({"role": "customer", "content": customer.build_reject_farewell()})
         customer.session_closed = "walk_out"
+        if graceful:
+            customer.deal_summary = "你依据调查线索婉拒了这笔交易，对方虽然不快，但也没有闹事。"
+            self._record_customer_outcome(customer, "reject", skip_reputation_penalty=True)
+            self._check_achievements("reject")
+            return {"success": True, "message": "已依据线索拒收，未损声誉。"}
         customer.deal_summary = "你婉拒了这笔交易，对方离开了当铺。"
         self._record_customer_outcome(customer, "reject")
         self._check_achievements("reject")
@@ -3057,8 +3551,13 @@ class GameStateManager:
         self._check_achievements("end_day")
         return self.daily_summary
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, for_client: bool = True) -> Dict[str, Any]:
         self.ensure_active_customer_target()
+        customer_payload = (
+            (lambda customer: customer.to_dict(for_client=for_client))
+            if for_client
+            else (lambda customer: customer.to_dict(for_client=False))
+        )
         return {
             "cash": self.cash,
             "day": self.day,
@@ -3093,8 +3592,8 @@ class GameStateManager:
             "achievement_stats": self.achievement_stats,
             "ranking_badge": self.ranking_badge,
             "ranking_reward_bonus": self.ranking_reward_bonus,
-            "active_customer": self.active_customer.to_dict() if self.active_customer else None,
-            "daily_customer_queue": [c.to_dict() for c in self.daily_customer_queue],
+            "active_customer": customer_payload(self.active_customer) if self.active_customer else None,
+            "daily_customer_queue": [customer_payload(customer) for customer in self.daily_customer_queue],
             "customers_served_today": self.customers_served_today,
             "total_customers_today": self.total_customers_today,
             "day_ended": self.day_ended,
@@ -3107,6 +3606,10 @@ class GameStateManager:
             "staff_info": STAFF_TYPES,
             "appraisal_methods": APPRAISAL_METHODS,
             "repair_methods": REPAIR_METHODS,
+            "case_investigation_actions": {
+                key: {"name_cn": value["name_cn"], "cost_points": value.get("cost_points", 1), "patience_cost": value.get("patience_cost", 0), "requires_staff": value.get("requires_staff")}
+                for key, value in CASE_INVESTIGATION_ACTIONS.items()
+            },
         }
 
     def facility_info_for_state(self) -> Dict[str, Dict[str, Any]]:

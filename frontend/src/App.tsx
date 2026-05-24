@@ -8,13 +8,17 @@ import {
   CheckCircle,
   Clock,
   Crown,
+  Copy,
+  Download,
   Heart,
+  ImageDown,
   Info,
   Landmark,
   ListOrdered,
   LogOut,
   RefreshCw,
   Search,
+  Share2,
   Store,
   Trash2,
   TrendingUp,
@@ -23,6 +27,13 @@ import {
   VolumeX,
   X
 } from 'lucide-react';
+import {
+  buildScreenshotFilename,
+  copyChatScreenshotToClipboard,
+  downloadChatScreenshot,
+  renderChatScreenshot,
+  shareChatScreenshot,
+} from './chatScreenshot';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
@@ -82,12 +93,35 @@ interface Item {
   showcase_price: number | null;
 }
 
+interface CaseClue {
+  id: string;
+  type: string;
+  title: string;
+  detail: string;
+  reliability: number;
+}
+
+interface CaseState {
+  phase: string;
+  points_max: number;
+  points_remaining: number;
+  clues: CaseClue[];
+  flags: {
+    knows_fake_risk: boolean;
+    knows_hidden_bonus: boolean;
+    customer_angered: boolean;
+    graceful_reject: boolean;
+  };
+  investigations_used: string[];
+}
+
 interface Customer {
   name: string;
   trait_cn: string;
   trait_desc: string;
   role: 'buyer' | 'seller';
   item: Item;
+  case_state?: CaseState;
   age: number;
   appearance: string;
   backstory: string;
@@ -201,6 +235,7 @@ interface GameState {
   staff: Record<string, boolean>;
   staff_info: Record<string, { name_cn: string; hire_cost: number; daily_salary: number; desc: string }>;
   appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; value_margin: number; xp: number }>;
+  case_investigation_actions?: Record<string, { name_cn: string; cost_points: number; patience_cost?: number; requires_staff?: string }>;
   repair_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; days_delta: number; success_bonus: number; xp: number }>;
   skills: Record<string, { level: number; xp: number }>;
   skill_info: Record<string, { name_cn: string; desc: string }>;
@@ -548,7 +583,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
   const [resetting, setResetting] = useState(false);
-  const [appraising, setAppraising] = useState(false);
+  const [investigating, setInvestigating] = useState(false);
   const [inventoryAppraisingId, setInventoryAppraisingId] = useState<string | null>(null);
   const [negotiatingMsg, setNegotiatingMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -922,20 +957,43 @@ export default function App() {
     }
   };
 
-  const appraiseActiveItem = async () => {
-    setAppraising(true);
+  const investigateCase = async (action: string) => {
+    setInvestigating(true);
+    setErrorMsg(null);
     try {
-      const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; verdict?: string; confidence?: number; appraised_value: number; appraised_value_low?: number; appraised_value_high?: number; notes?: string[] }; state: GameState }>('/api/appraise', { method: appraisalMethod });
+      const data = await apiPost<{
+        investigation_result: {
+          action_name?: string;
+          narration?: string;
+          clue?: CaseClue | null;
+          walk_out?: boolean;
+          cost_cash?: number;
+          points_remaining?: number;
+          appraise_result?: { cost: number; method_name?: string; verdict?: string; confidence?: number; appraised_value: number; appraised_value_low?: number; appraised_value_high?: number };
+        };
+        state: GameState;
+      }>('/api/case/investigate', { action, method: appraisalMethod });
       setState(data.state);
-      playSound('appraise');
-      const result = data.appraise_result;
-      const low = result.appraised_value_low ?? result.appraised_value;
-      const high = result.appraised_value_high ?? result.appraised_value;
-      setSuccessMsg(`${result.method_name || '鉴定'}完成：${result.verdict || '未见明显作伪'}，估值区间 $${low.toLocaleString()} - $${high.toLocaleString()}，可信度约 ${result.confidence ?? 0}%，花费 $${result.cost.toLocaleString()}。`);
+      playSound(action === 'appraise' ? 'appraise' : 'click');
+      const result = data.investigation_result;
+      let msg = result.narration || `${result.action_name || '调查'}完成。`;
+      if (result.appraise_result) {
+        const appraise = result.appraise_result;
+        const low = appraise.appraised_value_low ?? appraise.appraised_value;
+        const high = appraise.appraised_value_high ?? appraise.appraised_value;
+        msg = `${appraise.method_name || '鉴定'}：${appraise.verdict || '未见明显作伪'}，估值 $${low.toLocaleString()} - $${high.toLocaleString()}（约 ${appraise.confidence ?? 0}%），花费 $${appraise.cost.toLocaleString()}。`;
+      }
+      if (typeof result.points_remaining === 'number') {
+        msg += ` 剩余调查点 ${result.points_remaining}。`;
+      }
+      if (result.walk_out) {
+        playSound('reject');
+      }
+      setSuccessMsg(msg);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '鉴定失败。');
+      setErrorMsg(err instanceof Error ? err.message : '调查失败。');
     } finally {
-      setAppraising(false);
+      setInvestigating(false);
     }
   };
 
@@ -1213,15 +1271,17 @@ export default function App() {
               dayTransition={dayTransition}
               message={message}
               negotiatingMsg={negotiatingMsg}
-              appraising={appraising}
+              investigating={investigating}
               appraisalMethod={appraisalMethod}
               setMessage={setMessage}
               setAppraisalMethod={setAppraisalMethod}
               onNegotiate={negotiate}
-              onAppraise={appraiseActiveItem}
+              onInvestigate={investigateCase}
               chatEndRef={chatEndRef}
               onAction={runStateAction}
               onDismissCustomer={() => runStateAction('/api/dismiss_customer', undefined, 'result', '下一位顾客已上前。', 'click')}
+              onScreenshotError={setErrorMsg}
+              onScreenshotSuccess={setSuccessMsg}
             />
           )}
           {activeTab === 'inventory' && (
@@ -1560,7 +1620,20 @@ function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
   );
 }
 
-function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onAppraise, onDismissCustomer, onNegotiate, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; appraising: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onAppraise: () => Promise<void>; onDismissCustomer: () => Promise<void>; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+const CASE_ACTION_ORDER = ['chat', 'visual', 'appraise', 'provenance', 'records', 'expert'] as const;
+
+function caseClueTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    authenticity: '真伪',
+    value: '价值',
+    provenance: '来历',
+    risk: '风险',
+    condition: '品相'
+  };
+  return labels[type] || type;
+}
+
+function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
   useEffect(() => {
     if (customer?.session_closed) {
@@ -1699,6 +1772,18 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
   );
   const tradeMode = getTradeMode(customer);
   const sessionClosed = customer.session_closed;
+  const caseState = customer.case_state;
+  const casePointsLeft = caseState?.points_remaining ?? 0;
+  const caseUsed = caseState?.investigations_used ?? [];
+  const caseActions = state.case_investigation_actions || {};
+  const canCaseInvestigate = (action: string) => {
+    if (sessionClosed || loading || investigating) return false;
+    if (caseUsed.includes(action)) return false;
+    if (casePointsLeft < 1) return false;
+    const meta = caseActions[action];
+    if (meta?.requires_staff === 'appraiser' && !state.staff.appraiser) return false;
+    return true;
+  };
   return (
     <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
       <MobileNegotiationBrief customer={customer} />
@@ -1720,6 +1805,65 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
             <div className="text-[#C8A97E] text-[28px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
           </div>
         </div>
+      </div>
+      {!sessionClosed && caseState && (
+        <div className="mb-5 border-l-2 border-[#C8A97E] pl-4 pr-1 animate-slide-up">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 font-sans">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-[#C8A97E]" />
+              <span className="text-[#C8A97E] text-sm tracking-[0.2em]">案件簿</span>
+            </div>
+            <span className="text-xs text-[#616161]">
+              调查点 {casePointsLeft}/{caseState.points_max}
+              {caseState.flags.knows_fake_risk && <span className="text-[#FF9800] ml-2">已掌握真伪疑点</span>}
+              {caseState.flags.graceful_reject && <span className="text-[#4CAF50] ml-2">可无损拒收</span>}
+            </span>
+          </div>
+          {caseState.clues.length > 0 ? (
+            <ul className="space-y-0 mb-3">
+              {caseState.clues.map((clue) => (
+                <li key={clue.id} className="py-2.5 border-b border-[#2A2D34] last:border-b-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="text-[#C8A97E] text-sm font-semibold">{clue.title}</span>
+                    <span className="text-[#616161] text-xs">{caseClueTypeLabel(clue.type)} · 可信度 {Math.round(clue.reliability * 100)}%</span>
+                  </div>
+                  <p className="text-[#9E9E9E] text-xs leading-relaxed mt-1">{clue.detail}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[#616161] text-xs mb-3">尚未取得线索。先调查再谈判，能避免赝品与漏判。</p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {CASE_ACTION_ORDER.map((action) => {
+              const meta = caseActions[action];
+              if (!meta) return null;
+              const disabled = !canCaseInvestigate(action);
+              const used = caseUsed.includes(action);
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onInvestigate(action)}
+                  className={`btn-secondary !h-8 !px-2.5 !text-xs touch-manipulation ${used ? 'opacity-40' : ''}`}
+                  title={meta.requires_staff === 'appraiser' && !state.staff.appraiser ? '需雇佣鉴定师' : undefined}
+                >
+                  {investigating ? '…' : used ? `已${meta.name_cn}` : meta.name_cn}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-3 mb-3 shrink-0 font-sans">
+        <span className="text-xs text-[#616161] tracking-wide">柜台对话 · 可生成分享图</span>
+        <ChatScreenshotButton
+          state={state}
+          customer={customer}
+          onSuccess={onScreenshotSuccess}
+          onError={onScreenshotError}
+        />
       </div>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
         {customer.dialogue_history.map((turn, idx) => (
@@ -1753,7 +1897,16 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
                 {sessionClosed === 'deal' ? '交易已落定' : '顾客告辞离去'}
               </div>
               <p className="text-sm text-[#9E9E9E] leading-relaxed">{customer.deal_summary || (sessionClosed === 'deal' ? '这笔买卖已经办妥。' : '对方没有继续谈下去。')}</p>
-              <p className="text-xs text-[#616161] mt-2">请读完上面的对话，再送离顾客。</p>
+              <p className="text-xs text-[#616161] mt-2">请读完上面的对话，再送离顾客。觉得好笑？可先保存对话截图再送客。</p>
+            </div>
+            <div className="mb-3 flex justify-end">
+              <ChatScreenshotButton
+                state={state}
+                customer={customer}
+                onSuccess={onScreenshotSuccess}
+                onError={onScreenshotError}
+                prominent
+              />
             </div>
             <button onClick={onDismissCustomer} disabled={loading} className="btn-primary w-full">
               {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />请稍候…</> : '送离顾客，迎接下一位'}
@@ -1794,11 +1947,11 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
             </select>
             <button
               type="button"
-              onClick={onAppraise}
-              disabled={loading || appraising || customer.item.is_appraised_fake !== null}
+              onClick={() => onInvestigate('appraise')}
+              disabled={!canCaseInvestigate('appraise')}
               className="btn-secondary !h-10 !px-3 !text-sm shrink-0 touch-manipulation"
             >
-              {appraising ? '…' : customer.item.is_appraised_fake !== null ? '已鉴' : '鉴定'}
+              {investigating ? '…' : caseUsed.includes('appraise') ? '已鉴' : '鉴定'}
             </button>
             <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">成交</button>
             <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">拒绝</button>
@@ -1825,7 +1978,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
                 );
               })}
             </select>
-            <button type="button" onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary flex-1 !h-10">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
+            <button type="button" onClick={() => onInvestigate('appraise')} disabled={!canCaseInvestigate('appraise')} className="btn-secondary flex-1 !h-10">{investigating ? '调查中...' : caseUsed.includes('appraise') ? '已鉴定' : '鉴定'}</button>
             <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
             <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
           </div>
@@ -1840,6 +1993,162 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
         )}
       </div>
     </div>
+  );
+}
+
+function ChatScreenshotButton({
+  customer,
+  onError,
+  onSuccess,
+  prominent,
+  state,
+}: {
+  state: GameState;
+  customer: Customer;
+  onSuccess: (message: string) => void;
+  onError: (message: string) => void;
+  prominent?: boolean;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const filename = buildScreenshotFilename(customer.name, state.day);
+  const speechCount = customer.dialogue_history.filter((turn) => turn.role !== 'narrator').length;
+  const disabled = busy || speechCount < 1;
+  const canShare = typeof navigator !== 'undefined' && Boolean(navigator.share);
+  const canCopy = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.write) && typeof ClipboardItem !== 'undefined';
+
+  const closePreview = () => {
+    setPreviewUrl(null);
+    canvasRef.current = null;
+  };
+
+  const generate = async () => {
+    if (speechCount < 1) {
+      onError('还没有可保存的对话，先和顾客聊几句吧。');
+      return;
+    }
+    setBusy(true);
+    try {
+      const tradeMode = getTradeMode(customer);
+      const canvas = await renderChatScreenshot({
+        shopName: state.shop_name,
+        gameDay: state.day,
+        customerName: customer.name,
+        customerTrait: customer.trait_cn,
+        tradeLabel: tradeMode.label,
+        itemName: customer.item.name,
+        itemRarityCn: customer.item.rarity_cn,
+        avatarUrl: customer.avatar_url,
+        dialogue: customer.dialogue_history,
+        dealSummary: customer.deal_summary,
+        sessionClosed: customer.session_closed,
+        playUrl: window.location.origin,
+      });
+      canvasRef.current = canvas;
+      setPreviewUrl(canvas.toDataURL('image/png'));
+    } catch {
+      onError('生成截图失败，请稍后再试。');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!canvasRef.current) return;
+    downloadChatScreenshot(canvasRef.current, filename);
+    onSuccess('对话截图已保存，可发到群聊或社交平台。');
+    closePreview();
+  };
+
+  const handleCopy = async () => {
+    if (!canvasRef.current) return;
+    const ok = await copyChatScreenshotToClipboard(canvasRef.current);
+    if (ok) {
+      onSuccess('截图已复制到剪贴板，可直接粘贴发送。');
+      closePreview();
+    } else {
+      onError('当前浏览器不支持复制图片，请使用「保存图片」。');
+    }
+  };
+
+  const handleShare = async () => {
+    if (!canvasRef.current) return;
+    const result = await shareChatScreenshot(
+      canvasRef.current,
+      `当铺代理人 · ${customer.name} 的搞笑对话`,
+      `${state.shop_name} 第 ${state.day} 天 · ${customer.item.name}`
+    );
+    if (result === 'shared') {
+      onSuccess('已通过系统分享面板发出。');
+      closePreview();
+    } else if (result === 'unsupported') {
+      handleDownload();
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => void generate()}
+        className={
+          prominent
+            ? 'btn-primary !h-10 !px-4 !text-sm touch-manipulation'
+            : 'btn-secondary !h-8 !px-3 !text-xs touch-manipulation inline-flex items-center gap-1.5'
+        }
+        title={speechCount < 1 ? '先进行对话' : '生成可分享的对话长图'}
+      >
+        {busy ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ImageDown className="w-4 h-4" />}
+        {busy ? '生成中…' : prominent ? '保存搞笑对话图' : '保存对话图'}
+      </button>
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-[rgba(0,0,0,0.72)] backdrop-blur-sm p-0 md:p-6"
+          role="dialog"
+          aria-modal
+          aria-label="对话截图预览"
+          onClick={closePreview}
+        >
+          <div
+            className="w-full md:max-w-lg max-h-[92vh] flex flex-col bg-[#14171C] border-t md:border border-[#2A2D34] md:rounded-sm shadow-2xl animate-slide-up"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[#2A2D34] font-sans shrink-0">
+              <h3 className="text-[#C8A97E] font-semibold text-sm">对话截图预览</h3>
+              <button type="button" onClick={closePreview} className="btn-icon !w-8 !h-8" aria-label="关闭">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto custom-scrollbar p-4 flex-1 min-h-0">
+              <img src={previewUrl} alt="当铺对话截图" className="w-full h-auto border border-[#2A2D34]" />
+              <p className="text-xs text-[#616161] mt-3 font-sans leading-relaxed">
+                长图含当铺名、顾客与完整对话，底部带有游戏标识，方便传播。手机可长按图片保存，或使用下方按钮。
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-4 border-t border-[#2A2D34] font-sans shrink-0">
+              <button type="button" onClick={handleDownload} className="btn-primary !h-10 col-span-2 md:col-span-1">
+                <Download className="w-4 h-4 mr-1.5" />
+                保存图片
+              </button>
+              {canCopy && (
+                <button type="button" onClick={() => void handleCopy()} className="btn-secondary !h-10">
+                  <Copy className="w-4 h-4 mr-1.5" />
+                  复制
+                </button>
+              )}
+              {canShare && (
+                <button type="button" onClick={() => void handleShare()} className="btn-secondary !h-10">
+                  <Share2 className="w-4 h-4 mr-1.5" />
+                  分享
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2735,7 +3044,7 @@ function InfoSidebar({ state }: { state: GameState }) {
           {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
         </div>
         <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">物证</h3>
-        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} />{appraisalRange(customer.item) && <Stat label="鉴定区间" value={appraisalRange(customer.item) || ''} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={`${appraisalVerdict(customer.item)}${customer.item.appraisal_confidence !== null ? ` / ${customer.item.appraisal_confidence}%` : ''}`} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
+        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} />{appraisalRange(customer.item) && <Stat label="鉴定区间" value={appraisalRange(customer.item) || ''} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={`${appraisalVerdict(customer.item)}${customer.item.appraisal_confidence !== null ? ` / ${customer.item.appraisal_confidence}%` : ''}`} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.case_state && customer.case_state.clues.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.case_state.clues.map((clue) => <p key={clue.id} className="text-[#9E9E9E] text-xs leading-relaxed"><span className="text-[#C8A97E]">{clue.title}：</span>{clue.detail}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
       </>}
     </>
   );
@@ -2768,10 +3077,9 @@ function ItemText({ extra, item }: { item: Item; extra?: string }) {
         <span>鉴定：{appraisal}</span>
         {appraisalRange(item) && <span>鉴定区间：{appraisalRange(item)}</span>}
       </div>
-      {(item.special_effects?.length > 0 || item.authentication_tips?.length > 0) && (
+      {item.special_effects?.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9E9E9E] mt-2">
           {item.special_effects?.slice(0, 2).map((effect, index) => <span key={`effect-${index}`}>亮点：{effect}</span>)}
-          {item.authentication_tips?.slice(0, 2).map((tip, index) => <span key={`tip-${index}`}>鉴别：{tip}</span>)}
         </div>
       )}
     </div>

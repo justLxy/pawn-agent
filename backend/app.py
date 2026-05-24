@@ -289,6 +289,11 @@ class AppraiseRequest(BaseModel):
     method: Optional[str] = "standard"
 
 
+class CaseInvestigateRequest(BaseModel):
+    action: str
+    method: Optional[str] = "standard"
+
+
 class FacilityRequest(BaseModel):
     facility: str
 
@@ -428,6 +433,7 @@ def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, 
     if not customer:
         return ai_response
     skill_relief = 0.015 * state.skills["negotiation"]["level"] + 0.01 * state.skills["charm"]["level"]
+    skill_relief += customer.case_negotiation_relief()
     effective_offer = player_offer
     if effective_offer is None and intent == "accept":
         effective_offer = customer.current_offer
@@ -826,6 +832,17 @@ async def dismiss_customer(player: Dict[str, Any] = Depends(current_player)):
 async def appraise_item(req: Optional[AppraiseRequest] = None, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
     return state_response(player, state, "appraise_result", await state.async_appraise_active_item(ai_client, (req.method if req else "standard") or "standard"))
+
+
+@app.post("/api/case/investigate")
+async def investigate_case(req: CaseInvestigateRequest, player: Dict[str, Any] = Depends(current_player)):
+    state = await get_engine(player)
+    return state_response(
+        player,
+        state,
+        "investigation_result",
+        await state.async_investigate_case(ai_client, req.action, req.method or "standard"),
+    )
 
 
 class AppraiseInventoryRequest(BaseModel):
