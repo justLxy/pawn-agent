@@ -87,15 +87,6 @@ LOCAL_ITEM_OBJECTS = {
     ],
 }
 
-LOCAL_ITEM_TWISTS = [
-    "（附赠一张讲不清的故事纸条）",
-    "（据说夜里会自己挪动位置）",
-    "（上一任主人不肯说来源）",
-    "（包装上还留着旧货标签）",
-    "（鉴定师看了直皱眉）",
-    "（同行说是坑，也可能是漏）",
-]
-
 LOCAL_ITEM_STORY_HOOKS = [
     "据说几经转手，每一任主人都只留很短时间。",
     "上一任藏家只留下一句：别在晚上打开。",
@@ -1659,7 +1650,7 @@ class GameStateManager:
         avoid_names = avoid_names or set()
         objects = LOCAL_ITEM_OBJECTS.get(category) or LOCAL_ITEM_OBJECTS["Antiquities"]
         for _ in range(12):
-            name = f"{random.choice(LOCAL_ITEM_ADJECTIVES)}{random.choice(LOCAL_ITEM_ERAS)}{random.choice(objects)}{random.choice(LOCAL_ITEM_TWISTS)}"
+            name = f"{random.choice(LOCAL_ITEM_ADJECTIVES)}{random.choice(LOCAL_ITEM_ERAS)}{random.choice(objects)}"
             if name not in avoid_names:
                 break
         else:
