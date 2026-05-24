@@ -59,7 +59,15 @@ ai_client = AIClient()
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled API error on %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "服务器内部错误，请稍后再试。"})
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin and ("*" in allowed_origins or origin in allowed_origins):
+        headers = {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return JSONResponse(status_code=500, content={"detail": "服务器内部错误，请稍后再试。"}, headers=headers)
 
 
 class AuthRequest(BaseModel):

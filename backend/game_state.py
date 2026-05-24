@@ -1501,7 +1501,7 @@ class GameStateManager:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
         self.cash -= cost
-        self.daily_summary["upgrades"] += cost
+        self.daily_summary["upgrades"] = int(self.daily_summary.get("upgrades", 0)) + cost
         accuracy = min(0.92, max(0.25, 0.45 + skill_level * 0.035 + facility_level * 0.04 + (0.12 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
         detects_fake = item.is_fake and random.random() < accuracy
         item.is_appraised_fake = detects_fake if item.is_fake else False
@@ -1583,7 +1583,7 @@ class GameStateManager:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
         self.cash -= cost
-        self.daily_summary["upgrades"] += cost
+        self.daily_summary["upgrades"] = int(self.daily_summary.get("upgrades", 0)) + cost
         accuracy = min(0.92, max(0.25, 0.45 + skill_level * 0.035 + facility_level * 0.04 + (0.12 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
         detects_fake = item.is_fake and random.random() < accuracy
         item.is_appraised_fake = detects_fake if item.is_fake else False
@@ -1603,11 +1603,14 @@ class GameStateManager:
         ]
         item.appraisal_notes = ai_notes if ai_notes else fallback_notes
 
-        self.add_skill_xp("appraisal", method_info["xp"])
-        self._record_transaction("appraisal_fee", item, -cost)
+        self.add_skill_xp("appraisal", int(method_info["xp"]))
+        self.transaction_log.append({"day": self.day, "type": "appraisal_fee", "item": item.name, "amount": -cost})
+        self._record_item_encounter(item, "inventory_appraisal")
         self._check_achievements("appraise", {"method": method, "detected_fake": detects_fake})
         return {
+            "success": True,
             "cost": cost,
+            "method": method,
             "method_name": method_info["name_cn"],
             "is_fake": item.is_appraised_fake,
             "verdict": item.appraisal_verdict,
