@@ -7,7 +7,7 @@ PRODUCTS: Dict[str, Dict[str, Any]] = {
         "price_fen": 500,
         "price_label": "¥5",
         "days": 30,
-        "description": "金色店招、排行榜赞助铭牌、称号「赞助掌柜」，有效期 30 天。",
+        "description": "顶栏流光店招动效、排行榜赞助铭牌、称号「赞助掌柜」，有效期 30 天。",
     },
     "plaque_permanent": {
         "id": "plaque_permanent",

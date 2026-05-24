@@ -30,11 +30,11 @@ export function formatMonthlyExpiry(ts: number | null | undefined): string {
 
 export function ShopNameLine({ name, cosmetics, className = '' }: { name: string; cosmetics?: CosmeticNameSource | null; className?: string }) {
   const emblem = cosmetics?.shop_emblem_label || emblemLabel(cosmetics?.shop_emblem);
-  const sponsorClass = cosmetics?.is_sponsor ? 'shop-sign--sponsor' : '';
+  const sponsorClass = cosmetics?.is_sponsor ? 'shop-sign--sponsor' : 'text-[#E0E0E0]';
   return (
     <span className={`inline-flex items-center gap-1.5 min-w-0 ${className}`}>
       {emblem ? <span className="shop-emblem shrink-0" title="当铺匾额">{emblem}</span> : null}
-      <span className={`truncate ${sponsorClass}`}>{name}</span>
+      <span className={`truncate font-bold ${sponsorClass}`}>{name}</span>
       {cosmetics?.is_sponsor ? <span className="sponsor-plate shrink-0">赞助</span> : null}
     </span>
   );

@@ -32,6 +32,7 @@ export interface ShopOrder {
   fulfilled_at?: number | null;
   pay_remark?: string;
   instructions?: string;
+  reused?: boolean;
   username?: string;
   shop_name?: string;
 }
@@ -69,7 +70,7 @@ const FALLBACK_PRODUCTS: ShopProduct[] = [
     name: '掌柜月卡',
     price_fen: 500,
     price_label: '¥5',
-    description: '金色店招、排行榜赞助铭牌、称号「赞助掌柜」，30 天。',
+    description: '顶栏流光店招动效、排行榜赞助铭牌、称号「赞助掌柜」，30 天。',
   },
   {
     id: 'plaque_permanent',
@@ -112,14 +113,32 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
     refresh().catch((err) => onError(err instanceof Error ? err.message : '加载掌柜铺子失败。'));
   }, [refresh, onError]);
 
+  const openOrderFor = (productId: string) =>
+    orders.find((o) => o.product_id === productId && (o.status === 'pending' || o.status === 'submitted'));
+
+  const resumeOrder = (order: ShopOrder) => {
+    setActiveOrder(order);
+    setPayerNote(order.payer_note || '');
+  };
+
   const startOrder = async (productId: string) => {
+    const existing = openOrderFor(productId);
+    if (existing) {
+      resumeOrder(existing);
+      onSuccess('已打开未完成订单，请按原订单号付款，勿重复下单。');
+      return;
+    }
+    if (productId === 'plaque_permanent' && cosmetics.has_plaque) {
+      onError('你已拥有当铺匾额。');
+      return;
+    }
     setLoading(true);
     try {
       const order = await apiPost<ShopOrder>('/api/shop/create_order', { product_id: productId });
       setActiveOrder(order);
       setPayerNote('');
       await refresh();
-      onSuccess('订单已创建，请扫码付款并备注订单号。');
+      onSuccess(order.reused ? '已恢复未完成订单，请勿重复付款。' : '订单已创建，请扫码付款并备注订单号。');
     } catch (err) {
       onError(err instanceof Error ? err.message : '创建订单失败。');
     } finally {
@@ -201,7 +220,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
         <p>
           说实话，我一个人在做前后端和 AI 接入。玩家越多，豆包 API 的账单就越难看；云主机到期日也总在提醒我续费。
           有时半夜看消费短信，会比看当铺账本还心慌。你的每一笔 ¥5 / ¥10，不是「氪金变强」，只是<strong className="text-[#E0E0E0] font-normal">赞助展示</strong>：
-          金色店招、匾额、橱窗文案——让我在排行榜上还能体面地说一声：「多谢捧场，店还在。」
+          流光店招、匾额、橱窗文案——让我在排行榜上还能体面地说一声：「多谢捧场，店还在。」
         </p>
         <p className="mt-2 text-xs text-[#616161]">
           付款后请备注订单号；掌柜核实微信到账后人工发放（通常几小时内）。若久未到账，可在游戏内留言或联系掌柜。
@@ -222,9 +241,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
                     {sponsor.shop_emblem_label}
                   </span>
                 ) : null}
-                <span className={sponsor.is_sponsor ? 'shop-sign--sponsor font-semibold' : 'text-[#E0E0E0]'}>
-                  {sponsor.shop_name}
-                </span>
+                <span className="text-[#E0E0E0] font-semibold">{sponsor.shop_name}</span>
                 {sponsor.is_sponsor ? <span className="sponsor-plate ml-1.5">月卡</span> : null}
                 {!sponsor.is_sponsor && sponsor.has_plaque ? (
                   <span className="text-[10px] text-[#616161] ml-1.5">匾额</span>
@@ -284,17 +301,31 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
       </div>
 
       <section className="space-y-0">
-        {displayProducts.map((product) => (
-          <div key={product.id} className="py-4 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-[#E0E0E0] font-sans">{product.name}</h3>
-              <p className="text-sm text-[#9E9E9E] mt-1 font-sans">{product.description}</p>
+        {displayProducts.map((product) => {
+          const open = openOrderFor(product.id);
+          const ownedPlaque = product.id === 'plaque_permanent' && cosmetics.has_plaque;
+          return (
+            <div key={product.id} className="py-4 border-b border-[#2A2D34] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-[#E0E0E0] font-sans">{product.name}</h3>
+                <p className="text-sm text-[#9E9E9E] mt-1 font-sans">{product.description}</p>
+                {open ? (
+                  <p className="text-xs text-[#C8A97E] mt-2 font-sans">
+                    进行中订单 <code>{open.order_no}</code> · {ORDER_STATUS[open.status]}
+                  </p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                disabled={loading || ownedPlaque}
+                onClick={() => startOrder(product.id)}
+                className="btn-primary !h-10 shrink-0 disabled:opacity-50"
+              >
+                {ownedPlaque ? '已拥有' : open ? '继续付款' : `${product.price_label} · 支持一下`}
+              </button>
             </div>
-            <button type="button" disabled={loading} onClick={() => startOrder(product.id)} className="btn-primary !h-10 shrink-0">
-              {product.price_label} · 支持一下
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       {activeOrder && (

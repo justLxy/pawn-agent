@@ -1296,7 +1296,7 @@ export default function App() {
         <div className="flex items-center gap-3 min-w-0">
           <Store className="w-6 h-6 text-[#C8A97E] shrink-0" />
           <div className="min-w-0">
-            <h1 className="text-[16px] md:text-[20px] font-bold tracking-widest truncate font-sans">
+            <h1 className="text-[16px] md:text-[20px] font-bold tracking-widest truncate font-sans text-[#E0E0E0]">
               <ShopNameLine name={state.shop_name || player.shop_name} cosmetics={player} />
             </h1>
             <div className="hidden md:block text-[11px] text-[#616161] font-sans">

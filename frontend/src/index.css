@@ -376,11 +376,28 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
 }
 
 .shop-sign--sponsor {
-  background: linear-gradient(135deg, #C8A97E 0%, #D4B88A 50%, #E8D4B0 100%);
+  background: linear-gradient(
+    90deg,
+    #c8a97e 0%,
+    #fff4d6 22%,
+    #ffd89b 45%,
+    #fff8e7 55%,
+    #ffd89b 78%,
+    #c8a97e 100%
+  );
+  background-size: 220% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  text-shadow: 0 2px 12px rgba(200, 169, 126, 0.35);
+  letter-spacing: 0.1em;
+  animation: sponsorShimmer 3.5s linear infinite;
+  filter: drop-shadow(0 0 8px rgba(255, 216, 155, 0.45));
+}
+
+@keyframes sponsorShimmer {
+  to {
+    background-position: 220% center;
+  }
 }
 
 .shop-emblem {

@@ -32,14 +32,54 @@ def get_catalog() -> List[Dict[str, Any]]:
     ]
 
 
+def _build_create_order_response(row: Any, reused: bool = False) -> Dict[str, Any]:
+    product = PRODUCTS.get(row["product_id"], {})
+    payload = _order_payload(row)
+    order_no = row["order_no"]
+    price_label = product.get("price_label", "")
+    hint = "（已恢复未完成订单，请勿重复付款。）" if reused else ""
+    payload.update(
+        {
+            "pay_remark": order_no,
+            "reused": reused,
+            "instructions": f"微信付款时请备注订单号：{order_no}，金额 {price_label}。{hint}付款后点击「我已付款」。",
+        }
+    )
+    return payload
+
+
 def create_manual_order(player_id: int, product_id: str) -> Dict[str, Any]:
     product = PRODUCTS.get(product_id)
     if not product:
         raise HTTPException(status_code=400, detail="未知商品。")
-    order_id = secrets.token_urlsafe(12)
-    order_no = _generate_order_no(player_id)
     now = _now()
     with transaction() as conn:
+        player = conn.execute("SELECT monthly_expires_at, shop_emblem FROM players WHERE id = ?", (player_id,)).fetchone()
+        if not player:
+            raise HTTPException(status_code=404, detail="玩家不存在。")
+        if product_id == "plaque_permanent" and player["shop_emblem"]:
+            raise HTTPException(status_code=400, detail="你已拥有当铺匾额，无需重复购买。")
+
+        open_rows = conn.execute(
+            """
+            SELECT * FROM shop_orders
+            WHERE player_id = ? AND product_id = ? AND status IN ('pending', 'submitted')
+            ORDER BY created_at DESC
+            """,
+            (player_id, product_id),
+        ).fetchall()
+        if open_rows:
+            primary = open_rows[0]
+            for duplicate in open_rows[1:]:
+                if duplicate["status"] == "pending":
+                    conn.execute(
+                        "UPDATE shop_orders SET status = 'cancelled' WHERE id = ?",
+                        (duplicate["id"],),
+                    )
+            return _build_create_order_response(primary, reused=True)
+
+        order_id = secrets.token_urlsafe(12)
+        order_no = _generate_order_no(player_id)
         conn.execute(
             """
             INSERT INTO shop_orders (id, player_id, product_id, amount_fen, order_no, status, created_at)
@@ -47,18 +87,8 @@ def create_manual_order(player_id: int, product_id: str) -> Dict[str, Any]:
             """,
             (order_id, player_id, product_id, product["price_fen"], order_no, now),
         )
-    return {
-        "order_id": order_id,
-        "order_no": order_no,
-        "product_id": product_id,
-        "product_name": product["name"],
-        "amount_fen": product["price_fen"],
-        "price_label": product["price_label"],
-        "status": "pending",
-        "pay_remark": order_no,
-        "created_at": now,
-        "instructions": f"微信付款时请备注订单号：{order_no}，金额 {product['price_label']}。付款后点击「我已付款」。",
-    }
+        row = conn.execute("SELECT * FROM shop_orders WHERE id = ?", (order_id,)).fetchone()
+    return _build_create_order_response(row, reused=False)
 
 
 def submit_payment(player_id: int, order_id: str, payer_note: Optional[str] = None) -> Dict[str, Any]:
@@ -87,12 +117,27 @@ def submit_payment(player_id: int, order_id: str, payer_note: Optional[str] = No
     return _order_payload(row)
 
 
+def _cancel_duplicate_pending_orders(conn: Any, player_id: int) -> None:
+    for product_id in PRODUCTS:
+        rows = conn.execute(
+            """
+            SELECT id FROM shop_orders
+            WHERE player_id = ? AND product_id = ? AND status = 'pending'
+            ORDER BY created_at DESC
+            """,
+            (player_id, product_id),
+        ).fetchall()
+        for row in rows[1:]:
+            conn.execute("UPDATE shop_orders SET status = 'cancelled' WHERE id = ?", (row["id"],))
+
+
 def list_player_orders(player_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-    with get_connection() as conn:
+    with transaction() as conn:
+        _cancel_duplicate_pending_orders(conn, player_id)
         rows = conn.execute(
             """
             SELECT * FROM shop_orders
-            WHERE player_id = ?
+            WHERE player_id = ? AND status != 'cancelled'
             ORDER BY created_at DESC
             LIMIT ?
             """,

@@ -38,6 +38,12 @@ class ShopFulfillTest(unittest.TestCase):
         self.assertTrue(result["cosmetics"]["is_sponsor"])
         self.assertIsNotNone(result["cosmetics"]["monthly_expires_at"])
 
+    def test_create_order_reuses_open_pending(self) -> None:
+        first = create_manual_order(self.player_id, "monthly_card")
+        second = create_manual_order(self.player_id, "monthly_card")
+        self.assertEqual(first["order_id"], second["order_id"])
+        self.assertTrue(second.get("reused"))
+
     def test_sponsor_wall_lists_fulfilled_player(self) -> None:
         order = create_manual_order(self.player_id, "monthly_card")
         fulfill_order(order_id=order["order_id"])
