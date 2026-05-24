@@ -274,6 +274,7 @@ interface Listing {
 
 interface LeaderboardEntry {
   player_id: number;
+  username: string;
   shop_name: string;
   online: boolean;
   badge: string | null;
@@ -1324,7 +1325,7 @@ function AuthScreen(props: {
         ))}
       </div>
       <form onSubmit={onSubmit} className="space-y-4">
-        <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
+        <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名（支持中文）" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
         <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="密码" type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />
         {authMode === 'register' && <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="当铺名称" value={authForm.shop_name} onChange={(event) => setAuthForm({ ...authForm, shop_name: event.target.value })} />}
         <button disabled={loading} className="btn-primary w-full">{authMode === 'login' ? '进入当铺' : '创建云端当铺'}</button>
@@ -2128,7 +2129,7 @@ function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh,
                 >
                   {entry.badge ? `${entry.badge} · ` : ''}{entry.shop_name}
                 </button>
-                <span className="mt-1 block text-[11px] text-[#616161] truncate">点击浏览橱窗展览</span>
+                <span className="mt-1 block text-[11px] text-[#616161] truncate">{entry.username}</span>
               </div>
               <span className="font-sans tabular-nums">${leaderboardScore(entry, boardType).toLocaleString()}</span>
               <span className="text-sm text-[#9E9E9E]">声誉 {entry.reputation}</span>
@@ -2148,7 +2149,7 @@ function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh,
       {data?.my_rank && (
         <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex flex-wrap justify-between gap-3 text-[#C8A97E] font-sans">
           <span>我的排名 #{data.my_rank.rank}</span>
-          <span>{data.my_rank.shop_name}</span>
+          <span>{data.my_rank.shop_name}<span className="block text-xs text-[#9E9E9E] font-normal">{data.my_rank.username}</span></span>
           <span>{scoreLabel} {leaderboardScore(data.my_rank, boardType).toLocaleString()}</span>
         </div>
       )}

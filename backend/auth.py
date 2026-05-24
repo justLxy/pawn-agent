@@ -35,11 +35,23 @@ def _public_player(row: Any) -> Dict[str, Any]:
     }
 
 
+def _normalize_username(username: str) -> str:
+    return username.strip()
+
+
+def _validate_username(username: str) -> None:
+    if len(username) < 2:
+        raise HTTPException(status_code=400, detail="用户名至少需要 2 个字符。")
+    if len(username) > 20:
+        raise HTTPException(status_code=400, detail="用户名不能超过 20 个字符。")
+    if any(ch.isspace() for ch in username):
+        raise HTTPException(status_code=400, detail="用户名不能包含空格。")
+
+
 def register_player(username: str, password: str, shop_name: str) -> Dict[str, Any]:
-    username = username.strip().lower()
+    username = _normalize_username(username)
     shop_name = shop_name.strip()
-    if len(username) < 3:
-        raise HTTPException(status_code=400, detail="用户名至少需要 3 个字符。")
+    _validate_username(username)
     if len(password) < 4:
         raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")
     if not shop_name:
@@ -64,7 +76,7 @@ def register_player(username: str, password: str, shop_name: str) -> Dict[str, A
 
 
 def login_player(username: str, password: str) -> Dict[str, Any]:
-    username = username.strip().lower()
+    username = _normalize_username(username)
     now = int(time.time())
     token = secrets.token_urlsafe(32)
     with get_connection() as conn:

@@ -985,7 +985,7 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.shop_name, p.online, p.ranking_badge, gs.state_json
+            SELECT p.id, p.username, p.shop_name, p.online, p.ranking_badge, gs.state_json
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """
         ).fetchall()
@@ -996,6 +996,7 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
         ranking.append(
             {
                 "player_id": row["id"],
+                "username": row["username"],
                 "shop_name": state.shop_name or row["shop_name"],
                 "online": bool(row["online"]),
                 "badge": row["ranking_badge"],
