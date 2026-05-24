@@ -71,13 +71,127 @@ def import_state(player_id: int, state_dict: Dict[str, Any], shop_name: Optional
     return state
 
 
+def _resolve_trade_item_id(conn: Any, listing_id: Optional[str]) -> Optional[str]:
+    if not listing_id:
+        return None
+    if listing_id.startswith("showcase:"):
+        return listing_id.split(":", 1)[1]
+    row = conn.execute("SELECT item_id FROM market_listings WHERE id = ?", (listing_id,)).fetchone()
+    return str(row["item_id"]) if row else None
+
+
+def _collect_recoverable_item_ids(conn: Any, buyer_id: int, old_state: GameStateManager) -> set[str]:
+    item_ids = {item.id for item in old_state.inventory}
+    rows = conn.execute(
+        "SELECT item_id FROM market_listings WHERE seller_id = ? AND status = 'active'",
+        (buyer_id,),
+    ).fetchall()
+    item_ids.update(str(row["item_id"]) for row in rows)
+    return item_ids
+
+
+def _item_snapshot_for_rollback(
+    conn: Any,
+    trade: Any,
+    item_id: str,
+    buyer_id: int,
+    old_state: GameStateManager,
+) -> Optional[Item]:
+    listing_id = trade["listing_id"] or ""
+    if listing_id.startswith("showcase:"):
+        item = old_state.get_item(item_id)
+        if item:
+            return item
+        row = conn.execute(
+            "SELECT item_json FROM market_listings WHERE seller_id = ? AND item_id = ? AND status = 'active'",
+            (buyer_id, item_id),
+        ).fetchone()
+        if row:
+            return Item.from_dict(json.loads(row["item_json"]))
+        return None
+
+    row = conn.execute("SELECT item_json FROM market_listings WHERE id = ?", (listing_id,)).fetchone()
+    if not row:
+        return None
+    return Item.from_dict(json.loads(row["item_json"]))
+
+
+def _restore_item_for_seller(item: Item) -> Item:
+    restored = Item.from_dict(item.to_dict())
+    restored.status = "stored"
+    restored.display_slot = None
+    restored.showcase_price = None
+    return restored
+
+
+def _rollback_buyer_trades(conn: Any, buyer_id: int, old_state: GameStateManager) -> int:
+    trades = conn.execute(
+        "SELECT * FROM trade_logs WHERE buyer_id = ? ORDER BY created_at DESC",
+        (buyer_id,),
+    ).fetchall()
+    if not trades:
+        return 0
+
+    recoverable = _collect_recoverable_item_ids(conn, buyer_id, old_state)
+    sellers: Dict[int, GameStateManager] = {}
+    processed_items: set[str] = set()
+    rolled_back = 0
+    now = int(time.time())
+
+    for trade in trades:
+        item_id = _resolve_trade_item_id(conn, trade["listing_id"])
+        if not item_id or item_id not in recoverable or item_id in processed_items:
+            continue
+
+        item = _item_snapshot_for_rollback(conn, trade, item_id, buyer_id, old_state)
+        if not item:
+            continue
+
+        seller_id = int(trade["seller_id"])
+        if seller_id not in sellers:
+            row = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (seller_id,)).fetchone()
+            if not row:
+                continue
+            sellers[seller_id] = GameStateManager.from_dict(json.loads(row["state_json"]))
+
+        seller = sellers[seller_id]
+        seller.cash -= int(trade["price"]) - int(trade["tax"])
+        seller.inventory.append(_restore_item_for_seller(item))
+
+        active_listing = conn.execute(
+            "SELECT id FROM market_listings WHERE seller_id = ? AND item_id = ? AND status = 'active'",
+            (buyer_id, item_id),
+        ).fetchone()
+        if active_listing:
+            _cancel_listing_offers(conn, active_listing["id"], now)
+            conn.execute(
+                "UPDATE market_listings SET status = 'cancelled', updated_at = ? WHERE id = ?",
+                (now, active_listing["id"]),
+            )
+
+        processed_items.add(item_id)
+        recoverable.discard(item_id)
+        rolled_back += 1
+
+    for seller_id, seller in sellers.items():
+        conn.execute(
+            "UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?",
+            (json.dumps(seller.to_dict(), ensure_ascii=False), now, seller_id),
+        )
+        conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (seller.reputation, seller_id))
+
+    return rolled_back
+
+
 def reset_player_data(player_id: int, shop_name: str, state: Optional[GameStateManager] = None) -> GameStateManager:
     state = state or GameStateManager()
     state.shop_name = shop_name
     if not state.active_customer and not state.daily_customer_queue:
         state.initialize_day_fast()
+    old_state = load_state(player_id)
     now = int(time.time())
     with transaction() as conn:
+        _rollback_buyer_trades(conn, player_id, old_state)
         conn.execute("DELETE FROM market_offers WHERE buyer_id = ? OR seller_id = ?", (player_id, player_id))
         conn.execute("DELETE FROM market_listings WHERE seller_id = ?", (player_id,))
         conn.execute("DELETE FROM showcase_likes WHERE owner_id = ? OR liker_id = ?", (player_id, player_id))
