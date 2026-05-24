@@ -509,7 +509,7 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         raise HTTPException(status_code=400, detail=f"现金不足，你当前最多只能出 ${state.cash}。")
 
     customer.dialogue_history.append({"role": "player", "content": req.message.strip()})
-    if intent in ["offer", "accept", "reject"]:
+    if intent in ["accept", "reject"]:
         effective_offer = player_offer if player_offer is not None else customer.current_offer
         rule_response = ai_client._calculate_algorithmic_fallback(
             role=customer.role,
@@ -619,7 +619,7 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 
         yield line({"type": "start"})
         streamed_dialogue = ""
-        if bool(ai_response["accepted"]) or bool(ai_response["walk_out"]) or intent in ["offer", "accept", "reject"]:
+        if bool(ai_response["accepted"]) or bool(ai_response["walk_out"]):
             streamed_dialogue = normalize_negotiation_dialogue(
                 customer,
                 str(ai_response.get("dialogue") or ""),
