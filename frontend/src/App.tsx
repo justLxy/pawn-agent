@@ -47,7 +47,11 @@ interface Item {
   actual_value: number;
   market_value: number;
   appraised_value: number | null;
+  appraised_value_low: number | null;
+  appraised_value_high: number | null;
   is_appraised_fake: boolean | null;
+  appraisal_confidence: number | null;
+  appraisal_verdict: string | null;
   appraisal_notes: string[];
   purchase_price: number | null;
   selling_price: number | null;
@@ -99,7 +103,7 @@ interface GameState {
   transaction_log: TransactionEntry[];
   staff: Record<string, boolean>;
   staff_info: Record<string, { name_cn: string; hire_cost: number; daily_salary: number; desc: string }>;
-  appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; xp: number }>;
+  appraisal_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; accuracy_bonus: number; value_margin: number; xp: number }>;
   repair_methods: Record<string, { name_cn: string; desc: string; cost_multiplier: number; days_delta: number; success_bonus: number; xp: number }>;
   skills: Record<string, { level: number; xp: number }>;
   skill_info: Record<string, { name_cn: string; desc: string }>;
@@ -215,19 +219,19 @@ const CATEGORY_MAP: Record<string, string> = {
 /** 与 backend/game_state.py appraise_active_item 保持一致 */
 function computeAppraisalPreview(
   marketValue: number,
-  method: { cost_multiplier: number; accuracy_bonus: number },
+  method: { cost_multiplier: number; accuracy_bonus: number; value_margin?: number },
   appraisalSkillLevel: number,
   appraisalRoomLevel: number,
   hasAppraiser: boolean
 ) {
-  const baseCost = Math.max(120, Math.round(marketValue * 0.06));
+  const baseCost = Math.max(160, Math.floor(marketValue * 0.08));
   const discount = 0.08 * (appraisalRoomLevel - 1) + (hasAppraiser ? 0.35 : 0);
-  const cost = Math.max(80, Math.round(baseCost * method.cost_multiplier * (1 - Math.min(0.65, discount))));
+  const cost = Math.max(120, Math.floor(baseCost * method.cost_multiplier * (1 - Math.min(0.45, discount))));
   const fakeDetectionRate = Math.min(
-    0.98,
-    Math.max(0.35, 0.65 + appraisalSkillLevel * 0.035 + appraisalRoomLevel * 0.04 + (hasAppraiser ? 0.15 : 0) + method.accuracy_bonus)
+    0.92,
+    Math.max(0.25, 0.45 + appraisalSkillLevel * 0.035 + appraisalRoomLevel * 0.04 + (hasAppraiser ? 0.12 : 0) + method.accuracy_bonus)
   );
-  const valueErrorMargin = Math.max(0.03, 0.24 - appraisalSkillLevel * 0.015 - appraisalRoomLevel * 0.02 - Math.max(0, method.accuracy_bonus));
+  const valueErrorMargin = Math.max(0.06, (method.value_margin ?? 0.30) - (appraisalSkillLevel - 1) * 0.015 - (appraisalRoomLevel - 1) * 0.02 - (hasAppraiser ? 0.04 : 0));
   return { cost, fakeDetectionRate, valueErrorMargin };
 }
 
@@ -237,6 +241,19 @@ function formatAppraisalPercent(rate: number): string {
 
 function categoryLabel(category: string): string {
   return CATEGORY_MAP[category] || category;
+}
+
+function appraisalVerdict(item: Item): string {
+  if (item.is_appraised_fake === null) return '未知';
+  return item.appraisal_verdict || (item.is_appraised_fake ? '发现明显作伪' : '未见明显作伪');
+}
+
+function appraisalRange(item: Item): string | null {
+  if (item.appraised_value_low !== null && item.appraised_value_high !== null) {
+    return `$${item.appraised_value_low.toLocaleString()} - $${item.appraised_value_high.toLocaleString()}`;
+  }
+  if (item.appraised_value !== null) return `$${item.appraised_value.toLocaleString()}`;
+  return null;
 }
 
 function extractOffer(text: string): number | null {
@@ -622,11 +639,13 @@ export default function App() {
   const appraiseActiveItem = async () => {
     setAppraising(true);
     try {
-      const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; is_fake: boolean; appraised_value: number; notes?: string[] }; state: GameState }>('/api/appraise', { method: appraisalMethod });
+      const data = await apiPost<{ appraise_result: { cost: number; method_name?: string; verdict?: string; confidence?: number; appraised_value: number; appraised_value_low?: number; appraised_value_high?: number; notes?: string[] }; state: GameState }>('/api/appraise', { method: appraisalMethod });
       setState(data.state);
       playSound('appraise');
       const result = data.appraise_result;
-      setSuccessMsg(`${result.method_name || '鉴定'}完成：${result.is_fake ? '赝品' : '正品'}，估值 $${result.appraised_value.toLocaleString()}，花费 $${result.cost.toLocaleString()}。`);
+      const low = result.appraised_value_low ?? result.appraised_value;
+      const high = result.appraised_value_high ?? result.appraised_value;
+      setSuccessMsg(`${result.method_name || '鉴定'}完成：${result.verdict || '未见明显作伪'}，估值区间 $${low.toLocaleString()} - $${high.toLocaleString()}，可信度约 ${result.confidence ?? 0}%，花费 $${result.cost.toLocaleString()}。`);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '鉴定失败。');
     } finally {
@@ -1446,7 +1465,7 @@ function InfoSidebar({ state }: { state: GameState }) {
           {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
         </div>
         <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">物证</h3>
-        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} /><Stat label="市场估值" value={`$${customer.item.market_value.toLocaleString()}`} />{customer.item.appraised_value !== null && <Stat label="鉴定估值" value={`$${customer.item.appraised_value.toLocaleString()}`} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={customer.item.is_appraised_fake ? '赝品' : '正品'} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
+        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} /><Stat label="市场估值" value={`$${customer.item.market_value.toLocaleString()}`} />{appraisalRange(customer.item) && <Stat label="鉴定区间" value={appraisalRange(customer.item) || ''} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={`${appraisalVerdict(customer.item)}${customer.item.appraisal_confidence !== null ? ` / ${customer.item.appraisal_confidence}%` : ''}`} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
       </>}
     </>
   );
@@ -1455,7 +1474,7 @@ function InfoSidebar({ state }: { state: GameState }) {
 function ItemText({ extra, item }: { item: Item; extra?: string }) {
   const condition = CONDITION_MAP[item.condition] || item.condition;
   const status = STATUS_MAP[item.status] || item.status;
-  const appraisal = item.is_appraised_fake === null ? '未知' : item.is_appraised_fake ? '赝品' : '正品';
+  const appraisal = appraisalVerdict(item);
 
   return (
     <div className="flex-1 min-w-0">
@@ -1477,6 +1496,7 @@ function ItemText({ extra, item }: { item: Item; extra?: string }) {
         <span>年代：{item.era}</span>
         <span>市场估值：${item.market_value.toLocaleString()}</span>
         <span>鉴定：{appraisal}</span>
+        {appraisalRange(item) && <span>鉴定区间：{appraisalRange(item)}</span>}
       </div>
       {(item.special_effects?.length > 0 || item.authentication_tips?.length > 0) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#9E9E9E] mt-2">

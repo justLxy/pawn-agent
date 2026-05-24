@@ -99,9 +99,9 @@ CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
 
 APPRAISAL_METHODS = {
-    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.65, "accuracy_bonus": -0.10, "xp": 20, "desc": "速度快、费用最低，适合低价值物品；对高仿赝品不够稳。"},
-    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.15, "accuracy_bonus": 0.0, "xp": 35, "desc": "检查材质、工艺和市场记录，适合大多数交易。"},
-    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 2.45, "accuracy_bonus": 0.14, "xp": 60, "desc": "显微痕迹、来源链和多项检测一起做，贵但最可靠。"},
+    "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.8, "accuracy_bonus": -0.20, "value_margin": 0.48, "xp": 20, "desc": "速度快、费用较低，只能给出粗略区间；对高仿赝品不够稳。"},
+    "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.45, "accuracy_bonus": -0.02, "value_margin": 0.30, "xp": 35, "desc": "检查材质、工艺和市场记录，适合大多数交易，但仍保留误差。"},
+    "forensic": {"name_cn": "深度鉴定", "cost_multiplier": 3.2, "accuracy_bonus": 0.16, "value_margin": 0.16, "xp": 60, "desc": "显微痕迹、来源链和多项检测一起做，费用高但风险最低。"},
 }
 
 REPAIR_METHODS = {
@@ -169,7 +169,11 @@ class Item:
         self.repair_difficulty = clamp(int(repair_difficulty), 1, 5)
 
         self.appraised_value: Optional[int] = None
+        self.appraised_value_low: Optional[int] = None
+        self.appraised_value_high: Optional[int] = None
         self.is_appraised_fake: Optional[bool] = None
+        self.appraisal_confidence: Optional[int] = None
+        self.appraisal_verdict: Optional[str] = None
         self.appraisal_notes: List[str] = []
         self.purchase_price: Optional[int] = None
         self.selling_price: Optional[int] = None
@@ -191,7 +195,11 @@ class Item:
             "actual_value": self.actual_value,
             "market_value": self.market_value,
             "appraised_value": self.appraised_value,
+            "appraised_value_low": self.appraised_value_low,
+            "appraised_value_high": self.appraised_value_high,
             "is_appraised_fake": self.is_appraised_fake,
+            "appraisal_confidence": self.appraisal_confidence,
+            "appraisal_verdict": self.appraisal_verdict,
             "appraisal_notes": self.appraisal_notes,
             "purchase_price": self.purchase_price,
             "selling_price": self.selling_price,
@@ -238,7 +246,11 @@ class Item:
             authentication_tips=list(data.get("authentication_tips", [])),
         )
         item.appraised_value = data.get("appraised_value")
+        item.appraised_value_low = data.get("appraised_value_low")
+        item.appraised_value_high = data.get("appraised_value_high")
         item.is_appraised_fake = data.get("is_appraised_fake")
+        item.appraisal_confidence = data.get("appraisal_confidence")
+        item.appraisal_verdict = data.get("appraisal_verdict")
         item.appraisal_notes = list(data.get("appraisal_notes", []))
         item.purchase_price = data.get("purchase_price")
         item.selling_price = data.get("selling_price")
@@ -713,36 +725,68 @@ class GameStateManager:
         item = self.active_customer.item
         facility_level = self.facilities["appraisal_room"]
         skill_level = self.skills["appraisal"]["level"]
-        base_cost = max(120, int(item.market_value * 0.06))
+        base_cost = max(160, int(item.market_value * 0.08))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
-        cost = max(80, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.65, discount))))
+        cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.45, discount))))
         if self.cash < cost:
             return {"error": f"鉴定资金不足，需要 ${cost}。"}
 
         self.cash -= cost
         self.daily_summary["upgrades"] += cost
-        accuracy = min(0.98, max(0.35, 0.65 + skill_level * 0.035 + facility_level * 0.04 + (0.15 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
+        accuracy = min(0.92, max(0.25, 0.45 + skill_level * 0.035 + facility_level * 0.04 + (0.12 if self.staff["appraiser"] else 0) + method_info["accuracy_bonus"]))
         detects_fake = item.is_fake and random.random() < accuracy
         item.is_appraised_fake = detects_fake if item.is_fake else False
-        error_margin = max(0.03, 0.24 - skill_level * 0.015 - facility_level * 0.02 - max(0, method_info["accuracy_bonus"]))
-        item.appraised_value = max(10, int(item.actual_value * random.uniform(1 - error_margin, 1 + error_margin)))
+        error_margin = max(0.06, float(method_info["value_margin"]) - (skill_level - 1) * 0.015 - (facility_level - 1) * 0.02 - (0.04 if self.staff["appraiser"] else 0))
+        estimate_noise = random.uniform(-error_margin * 0.75, error_margin * 0.75)
+        item.appraised_value = max(10, int(item.actual_value * (1 + estimate_noise)))
+        item.appraised_value_low = max(10, int(item.appraised_value * (1 - error_margin)))
+        item.appraised_value_high = max(item.appraised_value_low + 1, int(item.appraised_value * (1 + error_margin)))
+        item.appraisal_confidence = int(accuracy * 100)
+        item.appraisal_verdict = "发现明显作伪" if detects_fake else "未见明显作伪"
         fallback_notes = [
             f"鉴定方法：{method_info['name_cn']}。{method_info['desc']}",
             f"观察成色：{item.condition}，修复难度 {item.repair_difficulty}/5。",
             f"市场趋势系数：{self.market_trends.get(item.category, 1.0):.2f}。",
             f"年代线索：{item.era}；损坏记录：{item.damage_report}",
-            "鉴定结论仍受技能和设备影响。" if item.is_fake and not detects_fake else "关键鉴定点已记录。",
+            f"估值区间约 ${item.appraised_value_low} - ${item.appraised_value_high}，结论可信度约 {item.appraisal_confidence}%。",
+            "未发现作伪不等于保真，仍可能存在高仿或来源风险。" if not detects_fake else "关键作伪疑点已记录，建议谨慎压价或拒绝。",
         ]
         item.appraisal_notes = ai_notes or fallback_notes
         self.add_skill_xp("appraisal", int(method_info["xp"]))
-        return {"success": True, "cost": cost, "method": method, "method_name": method_info["name_cn"], "is_fake": item.is_appraised_fake, "appraised_value": item.appraised_value, "notes": item.appraisal_notes}
+        return {
+            "success": True,
+            "cost": cost,
+            "method": method,
+            "method_name": method_info["name_cn"],
+            "is_fake": item.is_appraised_fake,
+            "verdict": item.appraisal_verdict,
+            "confidence": item.appraisal_confidence,
+            "appraised_value": item.appraised_value,
+            "appraised_value_low": item.appraised_value_low,
+            "appraised_value_high": item.appraised_value_high,
+            "notes": item.appraisal_notes,
+        }
 
     async def async_appraise_active_item(self, ai_client, method: str = "standard") -> Dict[str, Any]:
         result = self.appraise_active_item(method)
         if "error" in result or not self.active_customer:
             return result
         item = self.active_customer.item
-        ai_notes = await ai_client.generate_appraisal_notes(item.to_dict(), method, bool(result["is_fake"]), int(result["appraised_value"]))
+        appraisal_item = item.to_dict()
+        appraisal_item.pop("actual_value", None)
+        appraisal_item.pop("is_fake", None)
+        appraisal_item.pop("appraised_value", None)
+        appraisal_item.pop("appraised_value_low", None)
+        appraisal_item.pop("appraised_value_high", None)
+        appraisal_item.pop("is_appraised_fake", None)
+        ai_notes = await ai_client.generate_appraisal_notes(
+            appraisal_item,
+            method,
+            str(result.get("verdict") or "未见明显作伪"),
+            int(result.get("confidence") or 0),
+            int(result.get("appraised_value_low") or result.get("appraised_value") or 0),
+            int(result.get("appraised_value_high") or result.get("appraised_value") or 0),
+        )
         if ai_notes:
             item.appraisal_notes = ai_notes
             result["notes"] = ai_notes

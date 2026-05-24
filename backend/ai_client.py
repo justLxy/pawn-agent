@@ -176,14 +176,15 @@ class AIClient:
             logger.warning("AI event generation failed: %s", exc)
             return {}
 
-    async def generate_appraisal_notes(self, item: Dict[str, Any], method: str, is_fake_result: bool, appraised_value: int) -> List[str]:
+    async def generate_appraisal_notes(self, item: Dict[str, Any], method: str, verdict: str, confidence: int, value_low: int, value_high: int) -> List[str]:
         if not self.available():
             return []
-        system_prompt = """你是当铺鉴定师。根据物品资料和玩家选择的鉴定方法，输出 JSON：{"notes":["鉴定步骤或发现"]}，3到5条，文字短而有画面感。"""
+        system_prompt = """你是当铺鉴定师。根据公开物品资料和玩家选择的鉴定方法，输出 JSON：{"notes":["鉴定步骤或发现"]}，3到5条，文字短而有画面感。
+只能围绕给定结论、可信度和估值区间描述，不要断言绝对真伪，也不要输出单点真实价值。"""
         try:
             result = await self._chat_json(
                 system_prompt,
-                json.dumps({"item": item, "method": method, "is_fake_result": is_fake_result, "appraised_value": appraised_value}, ensure_ascii=False),
+                json.dumps({"item": item, "method": method, "verdict": verdict, "confidence": confidence, "value_range": [value_low, value_high]}, ensure_ascii=False),
                 timeout=10.0,
             )
             notes = result.get("notes", [])
