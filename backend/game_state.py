@@ -924,10 +924,7 @@ class GameStateManager:
         tasks = [self.generate_random_customer_async(ai_client) for _ in range(self.total_customers_today)]
         self.daily_customer_queue.extend(await asyncio.gather(*tasks))
         self._inject_relationship_customers()
-        self._rebalance_buyer_targets()
-        self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
-        self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
-        self._record_daily_customer_codex()
+        self._open_day_customer_queue()
 
     async def async_initialize_day_with_fallback(self, ai_client, timeout: float = AI_DAY_GENERATION_TIMEOUT) -> Dict[str, Any]:
         import asyncio
@@ -948,6 +945,38 @@ class GameStateManager:
         """Initialize a playable day immediately with local templates."""
         self.daily_customer_queue = [self.generate_random_customer() for _ in range(self.total_customers_today)]
         self._inject_relationship_customers()
+        self._open_day_customer_queue()
+
+    def initialize_day_from_prewarmed(self, customers: List[Any]) -> Dict[str, Any]:
+        """Open the day with a customer roster generated earlier in the background."""
+        prepared_customers: List[Customer] = []
+        for customer in customers or []:
+            if isinstance(customer, Customer):
+                prepared_customers.append(customer)
+            elif isinstance(customer, dict):
+                prepared_customers.append(Customer.from_dict(customer))
+
+        if not prepared_customers:
+            self.initialize_day_fast()
+            return {"success": False, "fallback": True, "reason": "empty_prewarm"}
+
+        if len(prepared_customers) < self.total_customers_today:
+            missing = self.total_customers_today - len(prepared_customers)
+            prepared_customers.extend(self.generate_random_customer() for _ in range(missing))
+        elif len(prepared_customers) > self.total_customers_today:
+            prepared_customers = prepared_customers[:self.total_customers_today]
+
+        for customer in prepared_customers:
+            customer.session_closed = None
+            customer.deal_summary = None
+            customer.ensure_opening_greeting()
+
+        self.daily_customer_queue = prepared_customers
+        self._open_day_customer_queue()
+        return {"success": True, "fallback": False, "count": len(prepared_customers)}
+
+    def _open_day_customer_queue(self):
+        """Finalize a prepared customer queue and make the first customer active."""
         self._rebalance_buyer_targets()
         self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
@@ -1289,17 +1318,20 @@ class GameStateManager:
         if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
             self.active_customer = self._generate_local_seller_customer(old_name, old_trait)
 
-    async def async_advance_to_next_day(self, ai_client):
+    async def async_advance_to_next_day(self, ai_client, prewarmed_customers: Optional[List[Any]] = None):
         if self.pending_event:
             return {"error": "还有未处理的随机事件，请先做出选择。"}
         self.day += 1
         self.initialize_day()
-        result = await self.async_initialize_day_with_fallback(ai_client)
-        if not result.get("fallback"):
-            return {"success": True, "message": "新的一天开始了。"}
-        if result.get("reason") == "ai_unavailable":
+        if prewarmed_customers:
+            result = self.initialize_day_from_prewarmed(prewarmed_customers)
+            if not result.get("fallback"):
+                return {"success": True, "message": "新的一天开始了。后台预生成的顾客已经在门口等候。", "prewarmed": True}
+
+        self.initialize_day_fast()
+        if not bool(getattr(ai_client, "available", lambda: False)()):
             return {"success": True, "message": "新的一天开始了。未检测到 AI 配置，已用本地顾客开门。", "fallback": True}
-        return {"success": True, "message": "新的一天开始了。AI 预生成较慢，已先用本地顾客开门。", "fallback": True}
+        return {"success": True, "message": "新的一天开始了。后台预生成尚未完成，已先用本地顾客开门。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:

@@ -1,7 +1,8 @@
+import asyncio
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,6 +55,98 @@ app.add_middleware(
 )
 
 ai_client = AIClient()
+day_prewarm_cache: Dict[int, Dict[str, Any]] = {}
+day_prewarm_tasks: Dict[int, asyncio.Task] = {}
+day_prewarm_task_metadata: Dict[int, Dict[str, int]] = {}
+day_prewarm_generations: Dict[int, int] = {}
+
+
+async def generate_next_day_prewarm(player_id: int, source_day: int, generation: int, state_snapshot: Dict[str, Any]) -> None:
+    try:
+        preview_state = GameStateManager.from_dict(state_snapshot)
+        if int(preview_state.day) != source_day:
+            return
+        preview_state.day += 1
+        preview_state.initialize_day()
+        result = await preview_state.async_initialize_day_with_fallback(ai_client)
+        if result.get("fallback"):
+            logger.info("Skipped fallback day prewarm for player %s day %s: %s", player_id, source_day + 1, result.get("reason"))
+            return
+
+        customers = ([preview_state.active_customer] if preview_state.active_customer else []) + list(preview_state.daily_customer_queue)
+        if not customers or day_prewarm_generations.get(player_id) != generation:
+            return
+        day_prewarm_cache[player_id] = {
+            "source_day": source_day,
+            "target_day": source_day + 1,
+            "customers": customers,
+        }
+        logger.info("Prewarmed %s AI customers for player %s day %s", len(customers), player_id, source_day + 1)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("Next day prewarm failed for player %s: %s", player_id, exc)
+
+
+def finish_prewarm_task(player_id: int, task: asyncio.Task) -> None:
+    if day_prewarm_tasks.get(player_id) is task:
+        day_prewarm_tasks.pop(player_id, None)
+        day_prewarm_task_metadata.pop(player_id, None)
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error:
+        logger.warning("Next day prewarm task failed for player %s: %s", player_id, error)
+
+
+def schedule_next_day_prewarm(player: Dict[str, Any], state: GameStateManager) -> None:
+    if not bool(getattr(ai_client, "available", lambda: False)()):
+        return
+    if state.pending_event:
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    player_id = int(player["id"])
+    source_day = int(state.day)
+    target_day = source_day + 1
+    cached = day_prewarm_cache.get(player_id)
+    if cached and cached.get("source_day") == source_day and cached.get("target_day") == target_day:
+        return
+
+    running_task = day_prewarm_tasks.get(player_id)
+    if running_task and not running_task.done():
+        metadata = day_prewarm_task_metadata.get(player_id, {})
+        if metadata.get("source_day") == source_day:
+            return
+        running_task.cancel()
+
+    generation = day_prewarm_generations.get(player_id, 0) + 1
+    day_prewarm_generations[player_id] = generation
+    state_snapshot = state.to_dict()
+    task = asyncio.create_task(generate_next_day_prewarm(player_id, source_day, generation, state_snapshot))
+    day_prewarm_tasks[player_id] = task
+    day_prewarm_task_metadata[player_id] = {"source_day": source_day, "target_day": target_day}
+    task.add_done_callback(lambda completed_task, pid=player_id: finish_prewarm_task(pid, completed_task))
+
+
+def consume_next_day_prewarm(player_id: int, source_day: int) -> List[Any]:
+    target_day = source_day + 1
+    cached = day_prewarm_cache.pop(player_id, None)
+    day_prewarm_generations[player_id] = day_prewarm_generations.get(player_id, 0) + 1
+
+    running_task = day_prewarm_tasks.pop(player_id, None)
+    day_prewarm_task_metadata.pop(player_id, None)
+    if running_task and not running_task.done():
+        running_task.cancel()
+
+    if not cached:
+        return []
+    if cached.get("source_day") != source_day or cached.get("target_day") != target_day:
+        return []
+    return list(cached.get("customers") or [])
 
 
 @app.exception_handler(Exception)
@@ -145,6 +238,7 @@ async def get_engine(player: Dict[str, Any]) -> GameStateManager:
 def commit_state(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
     state.shop_name = state.shop_name or player["shop_name"]
     save_state(player["id"], state)
+    schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
 
@@ -279,13 +373,15 @@ async def register(req: AuthRequest):
     state.shop_name = auth["player"]["shop_name"]
     await state.async_initialize_day_with_fallback(ai_client)
     save_state(auth["player"]["id"], state)
+    schedule_next_day_prewarm(auth["player"], state)
     return auth
 
 
 @app.post("/api/auth/login")
 async def login(req: AuthRequest):
     auth = login_player(req.username, req.password)
-    await ensure_player_state(auth["player"], ai_client)
+    state = await ensure_player_state(auth["player"], ai_client)
+    schedule_next_day_prewarm(auth["player"], state)
     return auth
 
 
@@ -309,12 +405,14 @@ def me(player: Dict[str, Any] = Depends(current_player)):
 @app.get("/api/state")
 async def get_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
 
 @app.get("/api/cloud/state")
 async def cloud_state(player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
+    schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
 
@@ -342,6 +440,7 @@ async def restart_game(player: Dict[str, Any] = Depends(current_player)):
     state.shop_name = player["shop_name"]
     await state.async_initialize_day_with_fallback(ai_client)
     state = reset_player_data(player["id"], player["shop_name"], state)
+    schedule_next_day_prewarm(player, state)
     return state.to_dict()
 
 
@@ -625,10 +724,19 @@ async def next_day(player: Dict[str, Any] = Depends(current_player)):
         raise HTTPException(status_code=400, detail="请先点击营业结算结束今天的营业！")
     if state.pending_event:
         raise HTTPException(status_code=400, detail="还有未处理的随机事件，请先做出选择。")
-    result = await state.async_advance_to_next_day(ai_client)
+    prewarmed_customers = consume_next_day_prewarm(int(player["id"]), int(state.day))
+    result = await state.async_advance_to_next_day(ai_client, prewarmed_customers)
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    return {"result": {"success": True, "message": result.get("message", "新的一天开始了。")}, "state": commit_state(player, state)}
+    return {
+        "result": {
+            "success": True,
+            "message": result.get("message", "新的一天开始了。"),
+            "prewarmed": bool(result.get("prewarmed", False)),
+            "fallback": bool(result.get("fallback", False)),
+        },
+        "state": commit_state(player, state),
+    }
 
 
 @app.get("/api/leaderboard")
