@@ -45,6 +45,73 @@ ITEM_TEMPLATES = {
     ],
 }
 
+ITEM_CATEGORY_CN = {
+    "Pop Culture": "流行文化收藏",
+    "Art": "艺术品",
+    "Jewelry": "珠宝钟表",
+    "Antiquities": "古董文玩",
+    "Historical": "历史遗物",
+}
+
+LOCAL_ITEM_ADJECTIVES = [
+    "来历不明的", "沾着雨水的", "据说是诅咒的", "实验室流出的", "街坊传说的", "带着霉味的",
+    "被猫抓过的", "写着未知符号的", "少了一角的", "会发出怪声的", "包浆可疑的", "附赠纸条的",
+    "从旧货摊淘来的", "据说会做梦的", "被水泡过的", "带着铁锈味的", "来历讲不清的", "像赝品又像真货的",
+]
+
+LOCAL_ITEM_ERAS = [
+    "清末民初", "民国时期", "冷战时期", "20世纪70年代", "20世纪90年代", "千禧年前后",
+    "某个说不清的年份", "上个租客留下的", "据说来自沉船", "某次拆迁现场",
+]
+
+LOCAL_ITEM_OBJECTS = {
+    "Pop Culture": [
+        "街机摇杆", "未拆封的录像带", "签名纸条", "旧演唱会门票", "塑料小人偶", "游戏卡带",
+        "漫画原稿残页", "老式 Walkman", "乐队演出海报", "限量徽章", "旧手机铃声芯片", "网吧会员卡",
+    ],
+    "Art": [
+        "泼彩小画", "木刻版画", "陶塑摆件", "铜制小像", "旧素描本", "玻璃马赛克",
+        "手织挂毯", "漆器小盒", "石质镇纸", "未署名水彩", "旧相框里的画", "微型浮雕",
+    ],
+    "Jewelry": [
+        "铜制怀表", "银质胸针", "旧袖扣", "珐琅吊坠", "珍珠发夹", "合金戒指",
+        "表链残件", "旧打火机", "袖珍指南针", "镶嵌石头的领带夹", "老式眼镜", "金属手链",
+    ],
+    "Antiquities": [
+        "旧瓷片", "铜制香炉", "竹制算筹", "木胎漆盒", "石制印章", "旧铜镜",
+        "陶制小罐", "纸质经卷残页", "铜制带钩", "旧木盒", "锡制酒壶", "骨制饰物",
+    ],
+    "Historical": [
+        "旧护照", "军用口粮罐", "打字机键帽", "旧电报", "金属铭牌", "旧地图残页",
+        "船票存根", "旧徽章", "皮革笔记本", "旧相机", "金属碎片", "旧信件",
+    ],
+}
+
+LOCAL_ITEM_TWISTS = [
+    "（附赠一张讲不清的故事纸条）",
+    "（据说夜里会自己挪动位置）",
+    "（上一任主人不肯说来源）",
+    "（包装上还留着旧货标签）",
+    "（鉴定师看了直皱眉）",
+    "（同行说是坑，也可能是漏）",
+]
+
+LOCAL_ITEM_STORY_HOOKS = [
+    "据说几经转手，每一任主人都只留很短时间。",
+    "上一任藏家只留下一句：别在晚上打开。",
+    "来历故事版本有三个，没有两个能对上。",
+    "街坊说这玩意儿进过当铺三次，每次都被退回来。",
+    "卖家坚称是家传，但包装纸上的日期对不上。",
+    "有人说是捡来的，有人说是抵债来的，真相难辨。",
+]
+
+LOCAL_ITEM_DESC_HOOKS = [
+    "表面看着普通，细看却处处透着古怪。",
+    "成色一般，但来历故事比货本身还精彩。",
+    "不像值钱货，却莫名让人想多看两眼。",
+    "细节处有些说不清的磨损，反而增加了神秘劲。",
+]
+
 CUSTOMER_NAMES = [
     "张伟", "王芳", "李杰", "刘洋", "陈静", "杨光", "赵军", "黄燕", "周超", "吴磊",
     "徐丽", "孙敏", "胡涛", "朱玲", "高飞", "林杰", "何平", "郭辉", "马莉", "罗刚",
@@ -84,6 +151,13 @@ FACILITY_INFO = {
 
 FACILITY_UPGRADE_EXPONENT = 1.78
 FACILITY_MAX_LEVEL = 8
+FACILITY_HIGH_TIER_START = 5
+FACILITY_HIGH_TIER_COST_MULTIPLIER = 2.15
+FACILITY_LEVEL_MIN_DAYS = {
+    6: 105,
+    7: 150,
+    8: 200,
+}
 SHOP_MAX_LEVEL = 8
 
 SHOP_UPGRADE_COSTS = {
@@ -91,9 +165,9 @@ SHOP_UPGRADE_COSTS = {
     3: {"cost": 38000, "min_day": 20, "desc": "豪华当铺：每日顾客流量大幅增加，吸引超高价值艺术品卖家。"},
     4: {"cost": 95000, "min_day": 38, "desc": "典当行财阀：解锁专属拍卖行信息，顾客上门质量提升。"},
     5: {"cost": 260000, "min_day": 65, "desc": "世纪大掌柜：极高声誉，解锁神级传说遗物。"},
-    6: {"cost": 520000, "min_day": 95, "desc": "古玩界巨擘：稀世珍品出现率提升，高端回头客增多。"},
-    7: {"cost": 980000, "min_day": 130, "desc": "拍卖行合伙人：解锁全球珍品渠道与顶级买家。"},
-    8: {"cost": 1800000, "min_day": 170, "desc": "当铺祖师：传奇遗物定向流入，声望登峰造极。"},
+    6: {"cost": 850000, "min_day": 110, "desc": "古玩界巨擘：稀世珍品出现率提升，高端回头客增多。"},
+    7: {"cost": 1650000, "min_day": 160, "desc": "拍卖行合伙人：解锁全球珍品渠道与顶级买家。"},
+    8: {"cost": 3200000, "min_day": 220, "desc": "当铺祖师：传奇遗物定向流入，声望登峰造极。"},
 }
 
 SKILL_MAX_LEVEL = 10
@@ -1346,10 +1420,16 @@ class GameStateManager:
             if not result.get("fallback"):
                 return {"success": True, "message": "新的一天开始了。后台预生成的顾客已经在门口等候。", "prewarmed": True}
 
+        if bool(getattr(ai_client, "available", lambda: False)()):
+            init_result = await self.async_initialize_day_with_fallback(ai_client)
+            if init_result.get("fallback"):
+                message = "新的一天开始了。AI 生成超时，已改用本地随机物品开门。"
+            else:
+                message = "新的一天开始了。全新顾客与物品已生成完毕。"
+            return {"success": True, "message": message, "fallback": init_result.get("fallback", True)}
+
         self.initialize_day_fast()
-        if not bool(getattr(ai_client, "available", lambda: False)()):
-            return {"success": True, "message": "新的一天开始了。未检测到 AI 配置，已用本地顾客开门。", "fallback": True}
-        return {"success": True, "message": "新的一天开始了。后台预生成尚未完成，已先用本地顾客开门。", "fallback": True}
+        return {"success": True, "message": "新的一天开始了。未检测到 AI 配置，已用本地随机物品开门。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:
@@ -1557,7 +1637,81 @@ class GameStateManager:
         }
         return random.choices(list(weights.keys()), weights=list(weights.values()), k=1)[0]
 
-    def _generate_item_from_template(self, template: Dict[str, Any], category: str, ai_item: Optional[Dict[str, Any]] = None) -> Item:
+    def _recent_item_names(self, limit: int = 24) -> List[str]:
+        names: List[str] = []
+        seen = set()
+        for entry in self.item_codex.values():
+            name = str(entry.get("name") or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+        for item in self.inventory + self.sold_items:
+            if item.name and item.name not in seen:
+                seen.add(item.name)
+                names.append(item.name)
+        for customer in ([self.active_customer] if self.active_customer else []) + list(self.daily_customer_queue):
+            if customer and customer.item.name and customer.item.name not in seen:
+                seen.add(customer.item.name)
+                names.append(customer.item.name)
+        return names[-limit:]
+
+    def _generate_procedural_item_identity(self, category: str, condition: str, avoid_names: Optional[set[str]] = None) -> Dict[str, str]:
+        avoid_names = avoid_names or set()
+        objects = LOCAL_ITEM_OBJECTS.get(category) or LOCAL_ITEM_OBJECTS["Antiquities"]
+        for _ in range(12):
+            name = f"{random.choice(LOCAL_ITEM_ADJECTIVES)}{random.choice(LOCAL_ITEM_ERAS)}{random.choice(objects)}{random.choice(LOCAL_ITEM_TWISTS)}"
+            if name not in avoid_names:
+                break
+        else:
+            name = f"{random.choice(LOCAL_ITEM_ADJECTIVES)}编号{random.randint(1000, 9999)}的{random.choice(objects)}"
+        desc = f"{condition} 成色，{random.choice(LOCAL_ITEM_DESC_HOOKS)}"
+        story = f"{desc} {random.choice(LOCAL_ITEM_STORY_HOOKS)}"
+        return {
+            "name": name,
+            "desc": desc,
+            "story": story,
+            "era": random.choice(LOCAL_ITEM_ERAS),
+            "damage_report": f"{condition} 成色，局部磨损与包浆需要进一步确认。",
+        }
+
+    def _resolve_item_identity(
+        self,
+        category: str,
+        condition: str,
+        ai_item: Optional[Dict[str, Any]] = None,
+        avoid_names: Optional[List[str]] = None,
+    ) -> Dict[str, str]:
+        ai_item = ai_item or {}
+        avoid_set = set(avoid_names or [])
+        name = str(ai_item.get("name") or "").strip()
+        if not name or name in avoid_set:
+            procedural = self._generate_procedural_item_identity(category, condition, avoid_set)
+            if not name:
+                return {
+                    "name": procedural["name"],
+                    "desc": str(ai_item.get("desc") or procedural["desc"]),
+                    "story": str(ai_item.get("story") or procedural["story"]),
+                    "era": str(ai_item.get("era") or procedural["era"]),
+                    "damage_report": str(ai_item.get("damage_report") or procedural["damage_report"]),
+                }
+            name = procedural["name"]
+        desc = str(ai_item.get("desc") or random.choice(LOCAL_ITEM_DESC_HOOKS))
+        story = str(ai_item.get("story") or f"{desc} {random.choice(LOCAL_ITEM_STORY_HOOKS)}")
+        return {
+            "name": name,
+            "desc": desc,
+            "story": story,
+            "era": str(ai_item.get("era") or random.choice(LOCAL_ITEM_ERAS)),
+            "damage_report": str(ai_item.get("damage_report") or f"{condition} 成色，局部磨损与包浆需要进一步确认。"),
+        }
+
+    def _generate_item_from_template(
+        self,
+        template: Dict[str, Any],
+        category: str,
+        ai_item: Optional[Dict[str, Any]] = None,
+        avoid_names: Optional[List[str]] = None,
+    ) -> Item:
         ai_item = ai_item or {}
         condition = random.choices(["Poor", "Good", "Mint"], weights=[35, 45, 20], k=1)[0]
         raw_value = template["mint_val"] if condition == "Mint" else template["good_val"] if condition == "Good" else template["poor_val"]
@@ -1567,25 +1721,26 @@ class GameStateManager:
         if is_fake:
             value = max(15, int(value * random.uniform(0.10, 0.22)))
         market_value = int(value * self.market_trends.get(category, 1.0))
+        template_names = {entry["name"] for entries in ITEM_TEMPLATES.values() for entry in entries}
+        merged_avoid = list(dict.fromkeys((avoid_names or []) + list(template_names)))
+        identity = self._resolve_item_identity(category, condition, ai_item, merged_avoid)
         hidden_attrs = ai_item.get("hidden_attrs") if isinstance(ai_item.get("hidden_attrs"), list) else random.sample(
             ["有隐蔽修补痕迹", "附带可疑来源传闻", "材质检测点较多", "可能存在名人关联", "同类市场近期波动明显"],
             k=random.randint(1, 2),
         )
-        desc = str(ai_item.get("desc") or template["desc"])
-        story = str(ai_item.get("story") or f"{desc} 据说几经转手，上一任藏家留下了含糊的来源说明。")
         return Item(
-            name=str(ai_item.get("name") or template["name"]),
+            name=identity["name"],
             category=category,
             condition=condition,
             is_fake=is_fake,
             actual_value=value,
             market_value=market_value,
-            description=desc,
+            description=identity["desc"],
             rarity=rarity,
-            story=story,
+            story=identity["story"],
             hidden_attrs=[str(value) for value in hidden_attrs],
-            era=str(ai_item.get("era") or random.choice(["民国时期", "20世纪末", "清末民初", "近现代", "年代仍待考证"])),
-            damage_report=str(ai_item.get("damage_report") or f"{condition} 成色，局部磨损与包浆需要进一步确认。"),
+            era=identity["era"],
+            damage_report=identity["damage_report"],
             special_effects=[str(value) for value in (ai_item.get("special_effects") if isinstance(ai_item.get("special_effects"), list) else ["适合展示吸引收藏客"])],
             authentication_tips=[str(value) for value in (ai_item.get("authentication_tips") if isinstance(ai_item.get("authentication_tips"), list) else ["观察材质老化", "核对款识与来源"])],
             repair_difficulty=random.randint(1, 5),
@@ -1606,10 +1761,30 @@ class GameStateManager:
             template = random.choice(ITEM_TEMPLATES[category])
             preview_condition = random.choice(["Poor", "Good", "Mint"])
             preview_rarity = self._choose_rarity()
-            ai_item = await ai_client.generate_deep_item(category, preview_rarity, preview_condition, template["good_val"])
-            if not ai_item:
-                ai_item = await ai_client.generate_item_details(category)
-            item = self._generate_item_from_template(template, category, ai_item)
+            avoid_names = self._recent_item_names()
+            template_names = [entry["name"] for entries in ITEM_TEMPLATES.values() for entry in entries]
+            avoid_for_ai = list(dict.fromkeys(avoid_names + template_names))
+            category_cn = ITEM_CATEGORY_CN.get(category, category)
+            ai_item = await ai_client.generate_deep_item(
+                category,
+                preview_rarity,
+                preview_condition,
+                template["good_val"],
+                avoid_names=avoid_for_ai,
+                category_cn=category_cn,
+            )
+            if not str(ai_item.get("name") or "").strip():
+                ai_item = await ai_client.generate_item_details(category, avoid_names=avoid_for_ai, category_cn=category_cn)
+            if not str(ai_item.get("name") or "").strip():
+                ai_item = await ai_client.generate_deep_item(
+                    category,
+                    preview_rarity,
+                    preview_condition,
+                    template["good_val"],
+                    avoid_names=avoid_for_ai,
+                    category_cn=category_cn,
+                )
+            item = self._generate_item_from_template(template, category, ai_item, avoid_names)
         else:
             displayed = [i for i in saleable_items if i.status == "displayed"]
             item = random.choice(displayed or saleable_items)
@@ -2112,17 +2287,42 @@ class GameStateManager:
         self._check_achievements("upgrade_shop")
         return {"success": True, "message": f"店铺升级成功！当前等级：Lv.{self.shop_level} ({SHOP_UPGRADE_COSTS[next_lvl]['desc']})"}
 
+    def _facility_upgrade_blockers(self, facility: str) -> Dict[str, Any]:
+        level = self.facilities[facility]
+        if level >= FACILITY_MAX_LEVEL:
+            return {"blocked": "max_level"}
+        next_level = level + 1
+        blockers: Dict[str, Any] = {"blocked": None, "next_level": next_level}
+        if next_level > self.shop_level:
+            blockers["blocked"] = "shop_level"
+            blockers["min_shop_level"] = next_level
+        min_day = FACILITY_LEVEL_MIN_DAYS.get(next_level)
+        if min_day and self.day < min_day:
+            blockers["blocked"] = blockers.get("blocked") or "min_day"
+            blockers["min_day"] = min_day
+        return blockers
+
     def facility_upgrade_cost(self, facility: str) -> Optional[int]:
         if facility not in FACILITY_INFO:
             return None
-        level = self.facilities[facility]
-        if level >= FACILITY_MAX_LEVEL:
+        if self._facility_upgrade_blockers(facility).get("blocked"):
             return None
-        return int(FACILITY_INFO[facility]["base_cost"] * (level ** FACILITY_UPGRADE_EXPONENT) * self.economy_index)
+        level = self.facilities[facility]
+        cost = int(FACILITY_INFO[facility]["base_cost"] * (level ** FACILITY_UPGRADE_EXPONENT) * self.economy_index)
+        if level >= FACILITY_HIGH_TIER_START:
+            cost = int(cost * FACILITY_HIGH_TIER_COST_MULTIPLIER)
+        return cost
 
     def upgrade_facility(self, facility: str) -> Dict[str, Any]:
         if facility not in FACILITY_INFO:
             return {"error": "未知设施类型。"}
+        blockers = self._facility_upgrade_blockers(facility)
+        if blockers.get("blocked") == "max_level":
+            return {"error": "该设施已达到最高等级。"}
+        if blockers.get("blocked") == "shop_level":
+            return {"error": f"需先将声望升至 Lv.{blockers['min_shop_level']}，才能升级该设施。"}
+        if blockers.get("blocked") == "min_day":
+            return {"error": f"还需经营到第 {blockers['min_day']} 天才能升级（当前第 {self.day} 天）。"}
         cost = self.facility_upgrade_cost(facility)
         if cost is None:
             return {"error": "该设施已达到最高等级。"}
@@ -2302,7 +2502,16 @@ class GameStateManager:
             text = f"{event.get('title', '')} {event.get('description', '')}"
             category = self._infer_category_from_text(text)
             value_hint = max(1200, int(3000 * self.economy_index))
-            ai_item = await ai_client.generate_deep_item(category, "common", "Good", value_hint)
+            category_cn = ITEM_CATEGORY_CN.get(category, category)
+            avoid_names = self._recent_item_names()
+            ai_item = await ai_client.generate_deep_item(
+                category,
+                "common",
+                "Good",
+                value_hint,
+                avoid_names=avoid_names,
+                category_cn=category_cn,
+            )
             if ai_item:
                 item_data = {**ai_item, "category": category}
             else:
@@ -2648,8 +2857,12 @@ class GameStateManager:
     def facility_info_for_state(self) -> Dict[str, Dict[str, Any]]:
         info = deepcopy(FACILITY_INFO)
         for key in info:
+            blockers = self._facility_upgrade_blockers(key)
             info[key]["level"] = self.facilities[key]
             info[key]["upgrade_cost"] = self.facility_upgrade_cost(key)
+            info[key]["upgrade_blocked"] = blockers.get("blocked")
+            info[key]["upgrade_min_day"] = blockers.get("min_day")
+            info[key]["upgrade_min_shop_level"] = blockers.get("min_shop_level")
         return info
 
     @classmethod

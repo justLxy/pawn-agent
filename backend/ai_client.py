@@ -151,7 +151,7 @@ class AIClient:
                     except Exception:
                         continue
 
-    async def _chat_json(self, system_prompt: str, user_message: str, timeout: float = 10.0) -> Dict[str, Any]:
+    async def _chat_json(self, system_prompt: str, user_message: str, timeout: float = 10.0, temperature: float = 0.7) -> Dict[str, Any]:
         if not self.available():
             raise RuntimeError("DOUBAO_API_KEY is not configured")
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -164,7 +164,7 @@ class AIClient:
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message},
                     ],
-                    "temperature": 0.7,
+                    "temperature": temperature,
                     "reasoning_effort": "low",
                     "response_format": {"type": "json_object"},
                 },
@@ -181,7 +181,14 @@ class AIClient:
             system_prompt = "你是一个起名专家。请随机生成一个中文姓名，或带有市井气息的当铺顾客称呼。只输出名字。"
         elif prompt_type == "item_details":
             category = context.get("category", "未知")
-            system_prompt = f"生成一件属于【{category}】的当铺交易物品。严格输出 JSON：{{\"name\":\"物品名称\",\"desc\":\"30字以内背景描述\"}}。"
+            category_cn = context.get("category_cn") or category
+            avoid_names = context.get("avoid_names") or []
+            avoid_block = ""
+            if avoid_names:
+                avoid_block = f"\n禁止与以下已有物品重名或极度相似：{'、'.join(str(name) for name in avoid_names[:16])}。"
+            system_prompt = f"""你是《当铺代理人》的物品生成器。生成一件属于【{category_cn}】分类的当铺交易物品。
+创作要求：物品必须独特、有想象力，可以是荒诞离奇、冷门古怪、令人捧腹或细思极恐的东西；不要总是球星卡、名画仿作、名表珠宝等常见套路；可以天马行空，但名称要具体、有画面感。{avoid_block}
+严格输出 JSON：{{"name":"物品名称","desc":"30字以内背景描述","story":"80字内历史故事","era":"年代/时期","damage_report":"损坏情况","hidden_attrs":["隐藏属性"],"special_effects":["经营影响或收藏亮点"],"authentication_tips":["真伪鉴别要点"]}}。"""
         else:
             return ""
         try:
@@ -208,8 +215,11 @@ class AIClient:
             logger.warning("Failed to generate random content (%s): %s", type(exc).__name__, exc)
         return ""
 
-    async def generate_item_details(self, category: str) -> Dict[str, str]:
-        raw = await self.generate_random_content("item_details", {"category": category})
+    async def generate_item_details(self, category: str, avoid_names: Optional[List[str]] = None, category_cn: Optional[str] = None) -> Dict[str, str]:
+        raw = await self.generate_random_content(
+            "item_details",
+            {"category": category, "category_cn": category_cn or category, "avoid_names": avoid_names or []},
+        )
         if not raw:
             return {}
         try:
@@ -232,13 +242,31 @@ class AIClient:
             logger.warning("Failed to parse AI item JSON: %s - %s", exc, raw)
             return {}
 
-    async def generate_deep_item(self, category: str, rarity: str, condition: str, value_hint: int) -> Dict[str, Any]:
+    async def generate_deep_item(
+        self,
+        category: str,
+        rarity: str,
+        condition: str,
+        value_hint: int,
+        avoid_names: Optional[List[str]] = None,
+        category_cn: Optional[str] = None,
+    ) -> Dict[str, Any]:
         if not self.available():
             return {}
-        system_prompt = f"""你是《当铺代理人》的物品生成器。生成一件当铺交易物品，分类 {category}，稀有度 {rarity}，成色 {condition}，价值约 {value_hint}。
+        avoid_names = avoid_names or []
+        avoid_block = ""
+        if avoid_names:
+            avoid_block = f"\n禁止与以下已有物品重名或极度相似：{'、'.join(str(name) for name in avoid_names[:16])}。"
+        category_label = category_cn or category
+        system_prompt = f"""你是《当铺代理人》的物品生成器。生成一件当铺交易物品，分类 {category_label}，稀有度 {rarity}，成色 {condition}，价值约 {value_hint}。
+创作要求：
+- 物品必须独特、有想象力，可以是荒诞离奇、冷门古怪、令人捧腹或细思极恐的东西
+- 不要总是球星卡、名画仿作、名表珠宝、乾隆瓷器等常见套路
+- 可以天马行空：例如「会录音的核桃」「据说是外星残骸的金属片」「写着未知语言的旧护照」「沾猫毛的真空管收音机」
+- 名称要具体、有画面感，30字以内{avoid_block}
 严格输出 JSON：{{"name":"物品名","desc":"30字内描述","story":"80字内历史故事","era":"年代/时期","damage_report":"损坏情况","hidden_attrs":["隐藏属性"],"special_effects":["经营影响或收藏亮点"],"authentication_tips":["真伪鉴别要点"]}}。"""
         try:
-            result = await self._chat_json(system_prompt, "生成物品。", timeout=15.0)
+            result = await self._chat_json(system_prompt, "生成一件从未出现过的独特物品。", timeout=15.0, temperature=0.95)
             return result if isinstance(result, dict) else {}
         except Exception as exc:
             logger.warning("AI deep item generation failed: %s", exc)

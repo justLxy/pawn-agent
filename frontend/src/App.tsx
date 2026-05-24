@@ -205,7 +205,7 @@ interface GameState {
   skills: Record<string, { level: number; xp: number }>;
   skill_info: Record<string, { name_cn: string; desc: string }>;
   facilities: Record<string, number>;
-  facility_info: Record<string, { name_cn: string; desc: string; level: number; upgrade_cost: number | null }>;
+  facility_info: Record<string, { name_cn: string; desc: string; level: number; upgrade_cost: number | null; upgrade_blocked?: 'max_level' | 'shop_level' | 'min_day' | null; upgrade_min_day?: number | null; upgrade_min_shop_level?: number | null }>;
   loan: { principal: number; interest_rate: number };
   tax: { next_due_day: number; rate: number; last_paid: number };
   market_trends: Record<string, number>;
@@ -2618,8 +2618,20 @@ function UpgradesTab({ onAction, state }: { state: GameState; onAction: (path: s
           <div>
             <h3 className="text-lg font-bold">{info.name_cn} Lv.{state.facilities[key]}</h3>
             <p className="text-[#9E9E9E] text-sm mt-1">{info.desc}</p>
+            {info.upgrade_min_shop_level && state.shop_level < info.upgrade_min_shop_level && (
+              <p className="text-[#FF9800] mt-1 text-xs">需声望 Lv.{info.upgrade_min_shop_level}（当前 Lv.{state.shop_level}）</p>
+            )}
+            {info.upgrade_min_day && state.day < info.upgrade_min_day && (
+              <p className="text-[#FF9800] mt-1 text-xs">需经营至第 {info.upgrade_min_day} 天（当前第 {state.day} 天）</p>
+            )}
           </div>
-          <button disabled={info.upgrade_cost === null} onClick={() => onAction('/api/upgrade_facility', { facility: key }, 'upgrade_result', '设施升级成功。', 'upgrade')} className="btn-secondary !h-9 w-full sm:w-auto shrink-0">{info.upgrade_cost ? `$${info.upgrade_cost.toLocaleString()}` : '满级'}</button>
+          {info.upgrade_blocked === 'max_level' ? (
+            <button disabled className="btn-secondary !h-9 w-full sm:w-auto shrink-0 opacity-50 cursor-not-allowed">满级</button>
+          ) : info.upgrade_cost ? (
+            <button onClick={() => onAction('/api/upgrade_facility', { facility: key }, 'upgrade_result', '设施升级成功。', 'upgrade')} className="btn-secondary !h-9 w-full sm:w-auto shrink-0">${info.upgrade_cost.toLocaleString()}</button>
+          ) : (
+            <button disabled className="btn-secondary !h-9 w-full sm:w-auto shrink-0 opacity-50 cursor-not-allowed">未解锁</button>
+          )}
         </div>
       ))}
     </ListPage>
