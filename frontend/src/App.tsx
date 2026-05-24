@@ -1246,13 +1246,13 @@ function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
   const config = mode === 'end_day'
     ? {
         title: '正在结算今日经营',
-        subtitle: 'AI 正在整理账本，并生成本日随机事件',
-        tips: ['核对今日交易流水…', '结算员工薪水与运营成本…', '更新库存持有与市场趋势…', 'AI 正在撰写今日经营轶事…', '检查是否有待处理的突发事件…']
+        subtitle: '账本合上，街灯渐暗，当铺进入打烊时分',
+        tips: ['核对今日交易流水…', '结算员工薪水与运营成本…', '清点库存持有与市场行情…', '整理今日坊间轶事与往来账目…', '留意是否还有未了之事…']
       }
     : {
         title: '正在开启新的一天',
-        subtitle: 'AI 正在生成新顾客与今日到访队列',
-        tips: ['推进日历，刷新经济指数…', '整理仓库与展示柜状态…', 'AI 正在构思新顾客背景…', '生成物品与谈判开场白…', '准备开门迎客…']
+        subtitle: '卷帘拉起，街声渐近，当铺准备开门迎客',
+        tips: ['翻开新一页经营日志…', '刷新经济指数与客流预期…', '整理仓库与展示柜…', '留意今日可能上门的顾客…', '擦拭柜台，等待第一声叩门…']
       };
   const [tipIndex, setTipIndex] = useState(0);
   useEffect(() => {
@@ -1653,7 +1653,7 @@ function LeaderboardTab({ boardType, data, openShowcase, refresh, setBoardType }
 
 function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
   const normalizeAmount = (entry: TransactionEntry) => {
-    const expenseTypes = new Set(['buy', 'market_buy', 'showcase_buy', 'appraisal_fee']);
+    const expenseTypes = new Set(['buy', 'market_buy', 'showcase_buy', 'appraisal_fee', 'event_buy']);
     if (expenseTypes.has(entry.type)) return -Math.abs(entry.amount);
     return entry.amount;
   };
@@ -1663,6 +1663,7 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
     sell: '顾客购买',
     direct_sell: '系统出售',
     appraisal_fee: '鉴定费用',
+    event_buy: '事件收购',
     market_buy: '市场购入',
     market_sell: '市场售出',
     showcase_buy: '橱窗购入',

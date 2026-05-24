@@ -170,7 +170,8 @@ class AIClient:
         system_prompt = f"""你是《当铺代理人》的随机事件导演。根据状态生成一个当铺经营随机事件，要求有具体人物、地点或物件线索，避免泛泛而谈。
 状态：当铺等级 {context.get("shop_level")}，现金 {context.get("cash")}，天数 {context.get("day")}，声誉 {context.get("reputation")}，经济指数 {context.get("economy_index", 1.0)}，经济压力 {context.get("economic_pressure", "stable")}，资金供给分数 {context.get("money_supply_score", 0)}。
 事件类型可包含抢劫、诈骗、名人来访、稀有物品出现、市场波动、法律纠纷、员工问题、修复事故、鉴定线索、银行授信、老客介绍、天气影响、街坊传闻。
-严格输出 JSON：{{"title":"事件标题","description":"80字内描述","type":"theft|scam|celebrity|rare_item|market|legal|staff|restoration|appraisal|finance|customer|weather","choices":[{{"id":"a","label":"选择文案","effect":"预期效果","cash_delta":整数,"reputation_delta":整数,"skill":"negotiation|appraisal|restoration|charm|commerce|null","skill_xp":整数}}]}}。必须给 2 个 choices。"""
+若事件涉及顾客上门典当/出售/抵押物品，必须提供 item 字段，且至少一个 choice 设置 acquire_item=true 表示玩家收进仓库；收购 choice 可设 purchase_ratio（0.3-1.0，表示相对市价的收购比例，如七成=0.7）。
+严格输出 JSON：{{"title":"事件标题","description":"80字内描述","type":"theft|scam|celebrity|rare_item|market|legal|staff|restoration|appraisal|finance|customer|weather","item":{{"name":"物品名","category":"Antiquities|Jewelry|Art|Pop Culture|Historical","desc":"30字内描述","story":"80字内背景","era":"年代"}},"choices":[{{"id":"a","label":"选择文案","effect":"预期效果","cash_delta":整数,"reputation_delta":整数,"skill":"negotiation|appraisal|restoration|charm|commerce|null","skill_xp":整数,"acquire_item":布尔,"purchase_ratio":0.7}}]}}。必须给 2 个 choices；不涉及收购物品时可省略 item 与 acquire_item。"""
         try:
             result = await self._chat_json(system_prompt, "生成事件。", timeout=14.0)
             return result if isinstance(result, dict) else {}

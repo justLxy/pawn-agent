@@ -1,4 +1,5 @@
 import random
+import re
 import time
 import uuid
 from copy import deepcopy
@@ -235,6 +236,25 @@ LOCAL_EVENT_TEMPLATES = [
         ],
     },
 ]
+
+
+EVENT_CATEGORY_ALIASES = {
+    "流行文化": "Pop Culture",
+    "艺术品": "Art",
+    "艺术": "Art",
+    "珠宝首饰": "Jewelry",
+    "珠宝": "Jewelry",
+    "首饰": "Jewelry",
+    "古董文物": "Antiquities",
+    "古董": "Antiquities",
+    "文物": "Antiquities",
+    "历史藏品": "Historical",
+    "历史": "Historical",
+}
+
+EVENT_ITEM_KEYWORDS = ("典当", "收购", "卖货", "出售", "怀表", "手表", "瓷器", "物件", "老货", "藏品", "走私", "抵押", "换钱", "收进")
+EVENT_ACQUIRE_HINTS = ("收购", "典当", "放款", "买下", "收进", "入库", "当场", "成交", "收下")
+EVENT_DECLINE_HINTS = ("谢绝", "拒绝", "观望", "暂不", "不理", "忽略", "离开")
 
 
 def _achievement_defs() -> Dict[str, Dict[str, Any]]:
@@ -1945,6 +1965,140 @@ class GameStateManager:
             self._check_achievements("repair")
         return events
 
+    def _resolve_event_category(self, category: str) -> str:
+        normalized = str(category or "").strip()
+        if normalized in ITEM_TEMPLATES:
+            return normalized
+        return EVENT_CATEGORY_ALIASES.get(normalized, "Antiquities")
+
+    def _infer_category_from_text(self, text: str) -> str:
+        content = str(text or "")
+        if any(keyword in content for keyword in ("怀表", "手表", "戒指", "项链", "珍珠", "翡翠", "金")):
+            return "Jewelry"
+        if any(keyword in content for keyword in ("画", "油画", "书法", "水墨")):
+            return "Art"
+        if any(keyword in content for keyword in ("卡", "球衣", "手办", "游戏", "签名")):
+            return "Pop Culture"
+        if any(keyword in content for keyword in ("沉船", "二战", "登月", "佩剑", "银币")):
+            return "Historical"
+        return "Antiquities"
+
+    def _fallback_event_item_name(self, text: str) -> str:
+        content = str(text or "")
+        if "怀表" in content:
+            return "祖传铜怀表"
+        if "瓷" in content:
+            return "旧货圈转来的瓷件"
+        if "表" in content:
+            return "旧式机械表"
+        return "事件转来旧货"
+
+    def _choice_implies_acquire(self, label: str, effect: str) -> bool:
+        text = f"{label}{effect}"
+        if any(keyword in text for keyword in EVENT_DECLINE_HINTS):
+            return False
+        return any(keyword in text for keyword in EVENT_ACQUIRE_HINTS)
+
+    def _infer_purchase_ratio(self, label: str) -> float:
+        match = re.search(r"([五六七八九十0-9]+)成", label)
+        if match:
+            token = match.group(1)
+            mapping = {"五": 0.5, "六": 0.6, "七": 0.7, "八": 0.8, "九": 0.9, "十": 1.0}
+            if token in mapping:
+                return mapping[token]
+            if token.isdigit():
+                return clamp(int(token) / 10, 0.3, 1.0)
+        if "七成" in label:
+            return 0.7
+        if "八成" in label:
+            return 0.8
+        return 0.7
+
+    def _event_involves_item(self, event: Dict[str, Any]) -> bool:
+        text = f"{event.get('title', '')}{event.get('description', '')}"
+        if isinstance(event.get("item"), dict) and event["item"].get("name"):
+            return True
+        if any(keyword in text for keyword in EVENT_ITEM_KEYWORDS):
+            return True
+        return any(
+            choice.get("acquire_item") or self._choice_implies_acquire(str(choice.get("label", "")), str(choice.get("effect", "")))
+            for choice in event.get("choices", [])
+            if isinstance(choice, dict)
+        )
+
+    def _create_item_from_event_payload(self, event: Dict[str, Any], item_data: Optional[Dict[str, Any]] = None) -> Item:
+        payload = item_data if isinstance(item_data, dict) else {}
+        if not payload and isinstance(event.get("item"), dict):
+            payload = event["item"]
+        text = f"{event.get('title', '')} {event.get('description', '')} {payload.get('name', '')}"
+        category = self._resolve_event_category(str(payload.get("category") or self._infer_category_from_text(text)))
+        template = random.choice(ITEM_TEMPLATES[category])
+        ai_item = {
+            "name": str(payload.get("name") or self._fallback_event_item_name(text)),
+            "desc": str(payload.get("desc") or payload.get("description") or event.get("description") or template["desc"]),
+            "story": str(payload.get("story") or event.get("description") or f"{template['desc']} 这件货经由随机事件进入当铺。"),
+            "era": str(payload.get("era") or "年代仍待考证"),
+            "damage_report": str(payload.get("damage_report") or "事件转来旧货，细节仍需进一步确认。"),
+            "hidden_attrs": payload.get("hidden_attrs") if isinstance(payload.get("hidden_attrs"), list) else None,
+            "special_effects": payload.get("special_effects") if isinstance(payload.get("special_effects"), list) else None,
+            "authentication_tips": payload.get("authentication_tips") if isinstance(payload.get("authentication_tips"), list) else None,
+        }
+        return self._generate_item_from_template(template, category, ai_item)
+
+    def _purchase_inventory_item(self, item: Item, price: int) -> None:
+        price = max(1, int(price))
+        self.cash -= price
+        item.purchase_price = price
+        item.acquired_at = int(time.time())
+        item.acquired_day = self.day
+        item.last_value_update_day = self.day
+        item.base_value_at_purchase = item.market_value
+        item.holding_cost_paid = 0
+        item.value_history = [{"day": self.day, "market_value": item.market_value, "delta": 0, "holding_cost": 0}]
+        item.value_trend_note = "今天刚入库，尚未产生持有成本。"
+        item.status = "stored"
+        self.inventory.append(item)
+        self.daily_summary["revenue"] = int(self.daily_summary.get("revenue", 0)) - price
+        self.transaction_log.append({"day": self.day, "type": "event_buy", "item": item.name, "amount": -price})
+        self._record_item_encounter(item, "event_acquired")
+        self.add_skill_xp("negotiation", 20)
+        self.successful_trades += 1
+
+    async def _enrich_ai_event_item(self, ai_client, event: Dict[str, Any]) -> Dict[str, Any]:
+        if not self._event_involves_item(event):
+            return event
+
+        for choice in event.get("choices", []):
+            if not isinstance(choice, dict):
+                continue
+            if choice.get("acquire_item"):
+                choice["purchase_ratio"] = float(choice.get("purchase_ratio") or self._infer_purchase_ratio(str(choice.get("label", ""))))
+                continue
+            if self._choice_implies_acquire(str(choice.get("label", "")), str(choice.get("effect", ""))):
+                choice["acquire_item"] = True
+                choice["purchase_ratio"] = self._infer_purchase_ratio(str(choice.get("label", "")))
+
+        item_data = event.get("item") if isinstance(event.get("item"), dict) else {}
+        if not item_data.get("name"):
+            text = f"{event.get('title', '')} {event.get('description', '')}"
+            category = self._infer_category_from_text(text)
+            value_hint = max(1200, int(3000 * self.economy_index))
+            ai_item = await ai_client.generate_deep_item(category, "common", "Good", value_hint)
+            if ai_item:
+                item_data = {**ai_item, "category": category}
+            else:
+                item_data = {
+                    "name": self._fallback_event_item_name(text),
+                    "category": category,
+                    "desc": str(event.get("description") or ""),
+                    "story": str(event.get("description") or ""),
+                }
+            event["item"] = item_data
+
+        item = self._create_item_from_event_payload(event, item_data)
+        event["item_snapshot"] = item.to_dict()
+        return event
+
     def _generate_pending_event(self) -> Optional[Dict[str, Any]]:
         quiet_days = int(self.achievement_stats.get("quiet_event_days", 0))
         if quiet_days < EVENT_GUARANTEE_AFTER_QUIET_DAYS and random.random() > EVENT_BASE_CHANCE:
@@ -1964,20 +2118,25 @@ class GameStateManager:
         for index, choice in enumerate(event["choices"][:2]):
             if not isinstance(choice, dict):
                 continue
-            choices.append(
-                {
-                    "id": str(choice.get("id") or f"choice_{index + 1}"),
-                    "label": str(choice.get("label") or "谨慎处理"),
-                    "effect": str(choice.get("effect") or "结果取决于当铺当前状态。"),
-                    "cash_delta": int(choice.get("cash_delta") or 0),
-                    "reputation_delta": int(choice.get("reputation_delta") or 0),
-                    "skill": choice.get("skill") if choice.get("skill") in SKILL_INFO else None,
-                    "skill_xp": int(choice.get("skill_xp") or 0),
-                }
-            )
+            label = str(choice.get("label") or "谨慎处理")
+            effect = str(choice.get("effect") or "结果取决于当铺当前状态。")
+            acquire_item = bool(choice.get("acquire_item")) or self._choice_implies_acquire(label, effect)
+            normalized_choice = {
+                "id": str(choice.get("id") or f"choice_{index + 1}"),
+                "label": label,
+                "effect": effect,
+                "cash_delta": int(choice.get("cash_delta") or 0),
+                "reputation_delta": int(choice.get("reputation_delta") or 0),
+                "skill": choice.get("skill") if choice.get("skill") in SKILL_INFO else None,
+                "skill_xp": int(choice.get("skill_xp") or 0),
+            }
+            if acquire_item:
+                normalized_choice["acquire_item"] = True
+                normalized_choice["purchase_ratio"] = float(choice.get("purchase_ratio") or self._infer_purchase_ratio(label))
+            choices.append(normalized_choice)
         if len(choices) < 2:
             return None
-        return {
+        normalized: Dict[str, Any] = {
             "id": str(uuid.uuid4())[:8],
             "title": str(event.get("title") or "突发事件"),
             "description": str(event.get("description") or "当铺里发生了一件需要你判断的事。"),
@@ -1985,6 +2144,16 @@ class GameStateManager:
             "ai_generated": True,
             "choices": choices,
         }
+        item = event.get("item")
+        if isinstance(item, dict) and item.get("name"):
+            normalized["item"] = {
+                "name": str(item.get("name")),
+                "category": str(item.get("category") or self._infer_category_from_text(f"{normalized['title']} {normalized['description']}")),
+                "desc": str(item.get("desc") or item.get("description") or normalized["description"]),
+                "story": str(item.get("story") or normalized["description"]),
+                "era": str(item.get("era") or "年代仍待考证"),
+            }
+        return normalized
 
     async def async_end_day(self, ai_client) -> Dict[str, Any]:
         summary = self.end_day()
@@ -2005,6 +2174,7 @@ class GameStateManager:
                 )
             )
             if ai_event:
+                ai_event = await self._enrich_ai_event_item(ai_client, ai_event)
                 self.pending_event = ai_event
                 if self.daily_summary["events"] and self.daily_summary["events"][-1].startswith("待处理事件："):
                     self.daily_summary["events"][-1] = f"待处理事件：{ai_event['title']}。"
@@ -2035,18 +2205,34 @@ class GameStateManager:
         cash_delta = self._apply_event_mitigation(cash_delta, outcome.get("mitigate_by") if isinstance(outcome.get("mitigate_by"), dict) else None)
         reputation_delta = int(outcome.get("reputation_delta") or 0)
 
-        self.cash += cash_delta
-        self.reputation += reputation_delta
-        if cash_delta > 0:
-            self.daily_summary["revenue"] = int(self.daily_summary.get("revenue", 0)) + cash_delta
+        if choice.get("acquire_item"):
+            snapshot = event.get("item_snapshot") if isinstance(event.get("item_snapshot"), dict) else None
+            item = Item.from_dict(snapshot) if snapshot else self._create_item_from_event_payload(event)
+            item.id = str(uuid.uuid4())[:8]
+            ratio = clamp(float(choice.get("purchase_ratio") or 0.7), 0.3, 1.0)
+            price = max(1, int(item.market_value * ratio))
+            explicit_cost = int(outcome.get("cash_delta") or choice.get("cash_delta") or 0)
+            if explicit_cost < 0:
+                price = abs(explicit_cost)
+            if self.cash < price:
+                message = f"{choice.get('label')}：{choice.get('effect')}，但资金不足（需 ${price}），未能收进【{item.name}】。"
+            else:
+                self._purchase_inventory_item(item, price)
+                message = f"{choice.get('label')}：{choice.get('effect')}，收入【{item.name}】，支付 ${price}"
+            cash_delta = 0
+        else:
+            self.cash += cash_delta
+            if cash_delta > 0:
+                self.daily_summary["revenue"] = int(self.daily_summary.get("revenue", 0)) + cash_delta
+            message = f"{choice.get('label')}：{choice.get('effect')}"
+            if cash_delta:
+                message += f"，现金{'+' if cash_delta > 0 else ''}${cash_delta}"
 
         skill = outcome.get("skill")
         if skill in SKILL_INFO:
             self.add_skill_xp(skill, int(outcome.get("skill_xp") or 0))
 
-        message = f"{choice.get('label')}：{choice.get('effect')}"
-        if cash_delta:
-            message += f"，现金{'+' if cash_delta > 0 else ''}${cash_delta}"
+        self.reputation += reputation_delta
         if reputation_delta:
             message += f"，声誉{'+' if reputation_delta > 0 else ''}{reputation_delta}"
 
