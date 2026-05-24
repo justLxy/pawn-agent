@@ -190,6 +190,54 @@ TEMPLATE_OPENING_MARKERS = (
     "是我心里的数，你看看",
 )
 
+# 用于校验顾客文案是否与交易角色一致（买家 vs 卖家）
+SELLER_BACKSTORY_MARKERS = ("卖", "典当", "抵押", "出手", "换钱", "急用钱", "缺钱", "抵债", "当掉", "带来", "想卖", "卖掉")
+BUYER_BACKSTORY_MARKERS = ("买", "收购", "搜罗", "看中", "想购", "询价", "选购")
+SELLER_DIALOGUE_MARKERS = ("典当", "我当", "卖给你", "拿来卖", "想卖", "收不收", "能不能收", "出手", "抵押", "你给个价收", "你收不收")
+BUYER_DIALOGUE_MARKERS = ("想买", "逛店", "从你这儿买", "从你这买", "你卖不卖", "你打算开多少", "你开个价")
+
+
+def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
+
+
+def normalize_customer_backstory(role: str, name: str, item_name: str, category: str, raw: Optional[str] = None) -> str:
+    text = (raw or "").strip()
+    if role == "buyer":
+        if text and not _contains_any(text, SELLER_BACKSTORY_MARKERS):
+            return finalize_sentence(text)
+        return finalize_sentence(f"{name} 看中店里的【{item_name}】，专程上门询价购买。")
+    if text and not _contains_any(text, BUYER_BACKSTORY_MARKERS):
+        return finalize_sentence(text)
+    return finalize_sentence(f"{name} 说这件 {item_name} 是家里旧物，急需换成现金。")
+
+
+def customer_dialogue_conflicts_role(text: str, role: str) -> bool:
+    content = (text or "").strip()
+    if not content:
+        return False
+    if role == "buyer":
+        return _contains_any(content, SELLER_DIALOGUE_MARKERS)
+    return _contains_any(content, BUYER_DIALOGUE_MARKERS)
+
+
+def negotiation_item_fields(role: str, item: "Item") -> Dict[str, str]:
+    cond = condition_cn(item.condition)
+    desc = (item.description or "").strip()
+    if role == "buyer":
+        era = (item.era or "年代不详").strip()
+        story = f"【店内库存】{item.name}，{cond}成色，{era}。此物现由当铺陈列待售，顾客今日上门询价选购。"
+        if desc:
+            story += f" 概况：{desc[:100]}"
+        return {
+            "item_desc": desc or f"{cond}成色的{item.category}货品",
+            "item_story": story,
+        }
+    return {
+        "item_desc": desc,
+        "item_story": (item.story or "").strip(),
+    }
+
 
 def condition_cn(condition: str) -> str:
     return CONDITION_CN.get(condition, condition)
@@ -660,7 +708,13 @@ class Customer:
         self.referred_by = referred_by
         self.age = age or random.randint(22, 72)
         self.appearance = appearance or random.choice(["穿着旧呢大衣", "拎着磨旧皮箱", "戴着金边眼镜", "神色匆忙", "衣着体面"])
-        self.backstory = backstory or self._default_backstory()
+        self.backstory = normalize_customer_backstory(
+            self.role,
+            self.name,
+            self.item.name,
+            self.item.category,
+            backstory or self._default_backstory(),
+        )
         self.fraud_intent = bool(fraud_intent if fraud_intent is not None else (item.is_fake and self.trait in ["fraud", "hardball"]))
         self.transaction_prefs = transaction_prefs or self._default_transaction_prefs()
         self.persuasion_points = persuasion_points or self._default_persuasion_points()
@@ -723,6 +777,12 @@ class Customer:
             self.dialogue_history.append({"role": "customer", "content": self.build_opening_greeting()})
 
     def negotiation_context(self) -> Dict[str, Any]:
+        item_fields = negotiation_item_fields(self.role, self.item)
+        trade_mode_cn = (
+            "向顾客出售：顾客要买你店里的货，你是掌柜（卖方），顾客是买方"
+            if self.role == "buyer"
+            else "向顾客收购：顾客带货来卖，你是掌柜（买方），顾客是卖方"
+        )
         return {
             "name": self.name,
             "age": self.age,
@@ -731,6 +791,8 @@ class Customer:
             "trait_desc": CUSTOMER_TRAITS[self.trait]["desc"],
             "trait_cn": CUSTOMER_TRAITS[self.trait]["name_cn"],
             "role": self.role,
+            "role_cn": "买家" if self.role == "buyer" else "卖家",
+            "trade_mode_cn": trade_mode_cn,
             "transaction_prefs": self.transaction_prefs,
             "persuasion_points": self.persuasion_points,
             "fraud_intent": self.fraud_intent,
@@ -747,8 +809,8 @@ class Customer:
             "item_category": self.item.category,
             "item_condition": self.item.condition,
             "item_condition_cn": condition_cn(self.item.condition),
-            "item_desc": self.item.description,
-            "item_story": self.item.story,
+            "item_desc": item_fields["item_desc"],
+            "item_story": item_fields["item_story"],
             "current_offer": self.current_offer,
         }
 
@@ -878,7 +940,13 @@ class Customer:
         self.current_offer = calculated_offer
         self.initial_offer = calculated_offer
         if self.role == "buyer":
-            self.backstory = f"{self.name} 转而对店里的 {item.name} 产生兴趣，想听听你的报价。"
+            self.backstory = normalize_customer_backstory(
+                "buyer",
+                self.name,
+                item.name,
+                item.category,
+                f"{self.name} 转而对店里的 {item.name} 产生兴趣，想听听你的报价。",
+            )
         if not self._player_has_spoken():
             self.refresh_pre_negotiation_dialogue()
         elif note:
@@ -955,6 +1023,18 @@ class Customer:
         )
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
+        customer.backstory = normalize_customer_backstory(
+            customer.role,
+            customer.name,
+            customer.item.name,
+            customer.item.category,
+            customer.backstory,
+        )
+        if customer.dialogue_history and customer_dialogue_conflicts_role(
+            str(customer.dialogue_history[0].get("content") or ""),
+            customer.role,
+        ):
+            customer.dialogue_history = []
         if not customer.dialogue_history:
             customer.ensure_opening_greeting()
         return customer
@@ -1076,7 +1156,7 @@ class GameStateManager:
                 greeting = ""
             if greeting.strip():
                 break
-        if greeting.strip():
+        if greeting.strip() and not customer_dialogue_conflicts_role(greeting, customer.role):
             customer.dialogue_history = [{"role": "customer", "content": greeting.strip()[:480]}]
             return True
         if not customer.dialogue_history:
@@ -1980,7 +2060,13 @@ class GameStateManager:
             marketer_active=self.staff["marketer"],
             age=profile.get("age"),
             appearance=profile.get("appearance"),
-            backstory=profile.get("backstory"),
+            backstory=normalize_customer_backstory(
+                role,
+                str(profile.get("name") or name),
+                item.name,
+                item.category,
+                profile.get("backstory"),
+            ),
             fraud_intent=profile.get("fraud_intent"),
             transaction_prefs=[str(value) for value in profile.get("transaction_prefs", [])] if isinstance(profile.get("transaction_prefs"), list) else None,
             persuasion_points=[str(value) for value in profile.get("persuasion_points", [])] if isinstance(profile.get("persuasion_points"), list) else None,

@@ -407,12 +407,14 @@ def terminal_negotiation_dialogue(customer: Any, accepted: bool, walk_out: bool,
 
 
 def normalize_negotiation_dialogue(customer: Any, dialogue: str, accepted: bool, walk_out: bool, new_offer: int) -> str:
+    from game_state import customer_dialogue_conflicts_role
+
     text = (dialogue or "").strip()
     deal_markers = ["成交", "定了", "归你", "包起来", "我认了"]
     refusal_markers = ["太低", "太高", "不够", "做不了", "没法", "不能", "不卖", "不买", "再添", "加一点", "去别家", "算了"]
     if accepted or walk_out:
         return terminal_negotiation_dialogue(customer, accepted, walk_out, new_offer)
-    if not text:
+    if not text or customer_dialogue_conflicts_role(text, customer.role):
         return terminal_negotiation_dialogue(customer, False, False, new_offer)
     if any(marker in text for marker in deal_markers):
         return terminal_negotiation_dialogue(customer, False, False, new_offer)

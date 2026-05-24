@@ -36,7 +36,22 @@ class AIClient:
         prefs = "、".join(str(value) for value in (ctx.get("transaction_prefs") or [])[:3])
         points = "、".join(str(value) for value in (ctx.get("persuasion_points") or [])[:3])
         fraud_line = "你有隐瞒真伪或缺陷的意图，说话会闪躲、回避细节，但外表尽量镇定。" if ctx.get("fraud_intent") else ""
-        return f"""姓名：{ctx.get("name")}
+        role = ctx.get("role", "seller")
+        trade_mode = ctx.get("trade_mode_cn") or (
+            "向顾客出售：顾客要买你店里的货，你是掌柜（卖方），顾客是买方"
+            if role == "buyer"
+            else "向顾客收购：顾客带货来卖，你是掌柜（买方），顾客是卖方"
+        )
+        role_cn = ctx.get("role_cn") or ("买家" if role == "buyer" else "卖家")
+        role_rules = (
+            "【硬性】你是买方，物品在掌柜柜台/库存里，由你出价购买。禁止写典当、带来出售、「你收不收」、急着换钱出手等卖方口吻。"
+            if role == "buyer"
+            else "【硬性】你是卖方，物品在你手里带来当铺。禁止写逛店收购、想买、问掌柜「你卖不卖」等买方口吻。"
+        )
+        return f"""交易模式：{trade_mode}
+你的角色：{role_cn}（第一人称台词中的「我」指顾客本人）
+{role_rules}
+姓名：{ctx.get("name")}
 年龄：{ctx.get("age")} 岁，{ctx.get("appearance")}
 性格：{ctx.get("trait_desc")}（{ctx.get("trait_cn", "")}）
 来当铺原因：{ctx.get("backstory")}
@@ -47,7 +62,7 @@ class AIClient:
 上次交易：{ctx.get("last_deal_summary") or "无"}
 物品：【{ctx.get("item_name")}】（{ctx.get("item_category")}，{ctx.get("item_condition")}）
 物品描述：{ctx.get("item_desc") or "暂无"}
-物品来历：{ctx.get("item_story") or "暂无"}"""
+物品背景：{ctx.get("item_story") or "暂无"}"""
 
     @staticmethod
     def _intent_guide(intent: str) -> str:
@@ -63,22 +78,31 @@ class AIClient:
     async def generate_customer_greeting(self, customer_context: Dict[str, Any]) -> str:
         if not self.available():
             return ""
-        role_cn = "买家，想从掌柜手里买走这件货" if customer_context.get("role") == "buyer" else "卖家，带着货来出手"
+        role = customer_context.get("role", "seller")
+        role_cn = "买家，想从掌柜手里买走店里这件货" if role == "buyer" else "卖家，带着货来出手"
         item_desc = str(customer_context.get("item_desc") or "").strip()
         item_story = str(customer_context.get("item_story") or "").strip()
         item_blurb = item_story or item_desc or "一件来历不明的旧物"
         condition_cn = str(customer_context.get("item_condition_cn") or customer_context.get("item_condition") or "良好")
+        trade_mode = customer_context.get("trade_mode_cn") or role_cn
+        role_guard = (
+            "你是买方：物品在掌柜店里，你询价或出价购买；绝不要写典当、抵押、带来卖、急着出手换钱。"
+            if role == "buyer"
+            else "你是卖方：货在你手里，你来询价或要价出售；绝不要写逛店想买、问掌柜卖不卖。"
+        )
         system_prompt = f"""你是文字经营游戏《当铺代理人》中的当铺顾客，刚走进铺面。
 {self._format_persona_block(customer_context)}
+交易模式：{trade_mode}
 角色：{role_cn}
+{role_guard}
 交易物品：【{customer_context.get("item_name")}】，成色：{condition_cn}
 物品概况：{item_blurb[:120]}
-当前报价/要价：${customer_context.get("current_offer", 0)}
+当前{"出价" if role == "buyer" else "要价"}：${customer_context.get("current_offer", 0)}
 
 写一段第一人称开场白，120-160字。要求：
 1. 有进门动作、环境感（风铃、柜台、光线等任选）
 2. 自然带出外貌气质与来意，并融入物品概况（成色用中文：较差/良好/极佳，禁止写 Poor/Good/Mint）
-3. 点出【{customer_context.get("item_name")}】并给出初步报价或询价，报价句式每次都要不同
+3. 点出【{customer_context.get("item_name")}】并给出初步{"出价" if role == "buyer" else "要价"}或向掌柜询价，句式每次都要不同
 4. 语气必须符合性格，不要像系统说明；禁止套用「急切人说话直」「能不能谈，你给个话」等固定套话
 5. 全文使用中文，只输出台词正文，不要 JSON，不要过多括号舞台说明"""
         try:
@@ -529,10 +553,10 @@ class AIClient:
         customer_context = customer_context or {}
 
         if self.available():
-            persona = self._format_persona_block({**customer_context, **customer_memory})
+            merged_ctx = {**customer_context, **customer_memory, "role": role}
+            persona = self._format_persona_block(merged_ctx)
             system_prompt = f"""你是文字经营游戏《当铺代理人》中的 AI 顾客。
 {persona}
-角色：{"买家，要从玩家店里买东西" if role == "buyer" else "卖家，要把东西卖给玩家"}
 赝品状态（仅你知，勿直接说破）：{is_fake}
 你的心理底线/上限价：{limit_price}
 当前报价：{current_offer}
@@ -590,7 +614,7 @@ class AIClient:
         economy_context = economy_context or {}
         customer_memory = customer_memory or {}
         customer_context = customer_context or {}
-        persona = self._format_persona_block({**customer_context, **customer_memory})
+        persona = self._format_persona_block({**customer_context, **customer_memory, "role": role})
         if accepted:
             outcome = "成交"
         elif walk_out:
@@ -605,7 +629,6 @@ class AIClient:
             outcome += f"，耐心回升 {patience_change}"
         system_prompt = f"""你是文字经营游戏《当铺代理人》中的顾客 {customer_name}。
 {persona}
-角色：{"买家，要从玩家店里买东西" if role == "buyer" else "卖家，要把东西卖给玩家"}
 经济环境：{economy_context.get("economic_pressure", "stable")}，指数 {economy_context.get("economy_index", 1.0)}
 服务端已裁决经济结果：{outcome}
 对话要求：{self._intent_guide(intent)}
