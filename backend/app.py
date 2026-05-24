@@ -154,6 +154,17 @@ def state_response(player: Dict[str, Any], state: GameStateManager, result_key: 
     return {result_key: result, "state": commit_state(player, state)}
 
 
+def format_offer_change_narration(role: str, previous_offer: int, new_offer: int) -> str:
+    price_term = "要价" if role == "seller" else "出价"
+    if new_offer > previous_offer:
+        direction = "抬至"
+    elif new_offer < previous_offer:
+        direction = "降至"
+    else:
+        direction = "维持于"
+    return f"对方将{price_term}{direction} ${new_offer:,}。"
+
+
 def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, Any], player_offer: Optional[int], intent: str) -> Dict[str, Any]:
     customer = state.active_customer
     if not customer:
@@ -218,7 +229,7 @@ def apply_negotiation_outcome(
     if not accepted and not walk_out and new_offer != previous_offer:
         customer.dialogue_history.append({
             "role": "narrator",
-            "content": f"{'对方将报价抬至' if customer.role == 'seller' else '对方将出价调至'} ${new_offer:,}。",
+            "content": format_offer_change_narration(customer.role, previous_offer, new_offer),
         })
     if patience_change < 0:
         customer.dialogue_history.append({
