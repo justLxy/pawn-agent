@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from database import get_connection, transaction
 from player_cosmetics import cosmetics_from_row
-from shop_catalog import MONTHLY_SECONDS, PRODUCTS, TAGLINE_MAX_LEN, VALID_EMBLEMS
+from shop_catalog import MONTHLY_SECONDS, PRODUCTS, SPONSOR_TITLE, TAGLINE_MAX_LEN, VALID_EMBLEMS
 
 
 def _now() -> int:
@@ -247,3 +247,42 @@ def list_admin_pending_orders(limit: int = 50) -> List[Dict[str, Any]]:
         payload["shop_name"] = row["shop_name"]
         results.append(payload)
     return results
+
+
+def list_public_sponsors(limit: int = 200) -> List[Dict[str, Any]]:
+    """赞助榜：当前月卡/匾额持有者，以及曾有过已发放订单的玩家。"""
+    now = _now()
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.shop_name, p.username, p.monthly_expires_at, p.shop_emblem
+            FROM players p
+            WHERE p.monthly_expires_at > ?
+               OR p.shop_emblem IS NOT NULL
+               OR EXISTS (
+                    SELECT 1 FROM shop_orders o
+                    WHERE o.player_id = p.id AND o.status = 'fulfilled'
+               )
+            ORDER BY
+              CASE WHEN p.monthly_expires_at > ? THEN 0 ELSE 1 END,
+              CASE WHEN p.shop_emblem IS NOT NULL THEN 0 ELSE 1 END,
+              p.shop_name COLLATE NOCASE
+            LIMIT ?
+            """,
+            (now, now, limit),
+        ).fetchall()
+    sponsors: List[Dict[str, Any]] = []
+    for row in rows:
+        cosmetics = cosmetics_from_row(row, now)
+        sponsors.append(
+            {
+                "player_id": row["id"],
+                "shop_name": row["shop_name"],
+                "username": row["username"],
+                "is_sponsor": cosmetics["is_sponsor"],
+                "has_plaque": cosmetics["has_plaque"],
+                "shop_emblem_label": cosmetics["shop_emblem_label"],
+                "sponsor_title": SPONSOR_TITLE if cosmetics["is_sponsor"] else None,
+            }
+        )
+    return sponsors

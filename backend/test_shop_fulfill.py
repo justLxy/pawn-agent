@@ -5,7 +5,7 @@ import unittest
 
 import database
 from database import get_connection, init_db
-from shop_service import create_manual_order, fulfill_order, submit_payment, update_profile_cosmetics
+from shop_service import create_manual_order, fulfill_order, list_public_sponsors, submit_payment, update_profile_cosmetics
 
 
 class ShopFulfillTest(unittest.TestCase):
@@ -37,6 +37,12 @@ class ShopFulfillTest(unittest.TestCase):
         self.assertEqual(result["order"]["status"], "fulfilled")
         self.assertTrue(result["cosmetics"]["is_sponsor"])
         self.assertIsNotNone(result["cosmetics"]["monthly_expires_at"])
+
+    def test_sponsor_wall_lists_fulfilled_player(self) -> None:
+        order = create_manual_order(self.player_id, "monthly_card")
+        fulfill_order(order_id=order["order_id"])
+        sponsors = list_public_sponsors()
+        self.assertTrue(any(item["player_id"] == self.player_id for item in sponsors))
 
     def test_plaque_and_profile(self) -> None:
         order = create_manual_order(self.player_id, "plaque_permanent")

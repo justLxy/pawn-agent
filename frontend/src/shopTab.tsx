@@ -36,6 +36,16 @@ export interface ShopOrder {
   shop_name?: string;
 }
 
+export interface ShopSponsor {
+  player_id: number;
+  shop_name: string;
+  username: string;
+  is_sponsor: boolean;
+  has_plaque: boolean;
+  shop_emblem_label?: string | null;
+  sponsor_title?: string | null;
+}
+
 interface ShopTabProps {
   player: ShopPlayer;
   apiGet: <T>(path: string) => Promise<T>;
@@ -74,6 +84,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
   const [products, setProducts] = useState<ShopProduct[]>(FALLBACK_PRODUCTS);
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [adminQueue, setAdminQueue] = useState<ShopOrder[]>([]);
+  const [sponsors, setSponsors] = useState<ShopSponsor[]>([]);
   const [activeOrder, setActiveOrder] = useState<ShopOrder | null>(null);
   const [payerNote, setPayerNote] = useState('');
   const [loading, setLoading] = useState(false);
@@ -87,6 +98,7 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
         if (catalog.products?.length) setProducts(catalog.products);
       }),
       apiGet<{ orders: ShopOrder[] }>('/api/shop/orders').then((orderList) => setOrders(orderList.orders)),
+      apiGet<{ sponsors: ShopSponsor[] }>('/api/shop/sponsors').then((data) => setSponsors(data.sponsors || [])),
     ];
     if (isAdmin) {
       tasks.push(
@@ -195,6 +207,33 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
           付款后请备注订单号；掌柜核实微信到账后人工发放（通常几小时内）。若久未到账，可在游戏内留言或联系掌柜。
         </p>
       </div>
+
+      <section className="border-b border-[#2A2D34] pb-5">
+        <h3 className="text-[#C8A97E] font-bold text-sm font-sans mb-1">赞助榜</h3>
+        <p className="text-xs text-[#616161] font-sans mb-3">感谢每一位愿意帮当铺续命的掌柜（按当铺名排列）。</p>
+        {sponsors.length === 0 ? (
+          <p className="text-sm text-[#616161] font-sans italic">还没有人上榜，你会是第一个吗？</p>
+        ) : (
+          <ul className="sponsor-wall font-sans text-sm">
+            {sponsors.map((sponsor) => (
+              <li key={sponsor.player_id} className="sponsor-wall-item">
+                {sponsor.shop_emblem_label ? (
+                  <span className="shop-emblem !min-w-[1.1rem] !h-[1.1rem] !text-[10px] mr-1" title="匾额">
+                    {sponsor.shop_emblem_label}
+                  </span>
+                ) : null}
+                <span className={sponsor.is_sponsor ? 'shop-sign--sponsor font-semibold' : 'text-[#E0E0E0]'}>
+                  {sponsor.shop_name}
+                </span>
+                {sponsor.is_sponsor ? <span className="sponsor-plate ml-1.5">月卡</span> : null}
+                {!sponsor.is_sponsor && sponsor.has_plaque ? (
+                  <span className="text-[10px] text-[#616161] ml-1.5">匾额</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {isAdmin && (
         <section className="border border-[#C8A97E]/40 bg-[rgba(200,169,126,0.06)] px-4 py-4">

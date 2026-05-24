@@ -422,3 +422,23 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   padding: 0.75rem 0 0.75rem 1rem;
   background: rgba(255, 255, 255, 0.02);
 }
+
+.sponsor-wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sponsor-wall-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid transparent;
+}
+
+.sponsor-wall-item:hover {
+  border-bottom-color: rgba(200, 169, 126, 0.35);
+}

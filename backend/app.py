@@ -23,6 +23,7 @@ from shop_service import (
     get_catalog,
     list_admin_pending_orders,
     list_player_orders,
+    list_public_sponsors,
     require_shop_admin,
     require_shop_admin_or_secret,
     submit_payment,
@@ -692,6 +693,11 @@ class ProfileCosmeticsRequest(BaseModel):
 @app.get("/api/shop/catalog")
 def shop_catalog():
     return {"products": get_catalog()}
+
+
+@app.get("/api/shop/sponsors")
+def shop_sponsors():
+    return {"sponsors": list_public_sponsors()}
 
 
 @app.get("/api/shop/orders")
