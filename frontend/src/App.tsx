@@ -1745,7 +1745,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
         )}
         <div ref={chatEndRef} />
       </div>
-      <div className="border-t border-[#2A2D34] pt-4">
+      <div className="border-t border-[#2A2D34] pt-3 shrink-0">
         {sessionClosed ? (
           <div className="animate-slide-up">
             <div className={`mb-4 px-4 py-4 border-l-2 ${sessionClosed === 'deal' ? 'border-[#4CAF50] bg-[rgba(76,175,80,0.08)]' : 'border-[#FF9800] bg-[rgba(255,152,0,0.08)]'}`}>
@@ -1761,34 +1761,47 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
           </div>
         ) : (
           <>
-        <div className="md:hidden">
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">试探价</button>
-            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">当前价</button>
-            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-11 !px-2 !text-sm touch-manipulation">强势报价</button>
+        <div className="md:hidden space-y-2">
+          <div className="grid grid-cols-3 gap-1.5">
+            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">试探价</button>
+            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">当前价</button>
+            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">强势报价</button>
           </div>
-          <form onSubmit={onNegotiate} className="flex flex-col gap-3">
-            <input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1 min-h-[48px]" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." />
-            <button type="submit" disabled={loading} className="btn-primary w-full min-h-[48px] touch-manipulation">谈判</button>
+          <form onSubmit={onNegotiate} className="flex gap-1.5">
+            <input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              className="input-field flex-1 min-w-0 !h-10 !py-2"
+              style={{ paddingLeft: 12 }}
+              placeholder="用自然语言谈判..."
+            />
+            <button type="submit" disabled={loading} className="btn-primary !h-10 !px-4 shrink-0 touch-manipulation">谈判</button>
           </form>
-          <div className="mt-5 space-y-4">
-            <div className="flex flex-col gap-3 pb-4 border-b border-[#2A2D34]">
-              <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-12 !px-3 w-full touch-manipulation">
-                {Object.entries(state.appraisal_methods).map(([key, info]) => {
-                  const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
-                  return (
-                    <option key={key} value={key}>
-                      {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
-                    </option>
-                  );
-                })}
-              </select>
-              <button type="button" onClick={onAppraise} disabled={loading || appraising || customer.item.is_appraised_fake !== null} className="btn-secondary w-full !h-12 touch-manipulation">{appraising ? '鉴定中...' : customer.item.is_appraised_fake !== null ? '已鉴定' : '鉴定'}</button>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-12 touch-manipulation">成交</button>
-              <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-12 touch-manipulation">拒绝</button>
-            </div>
+          <div className="flex gap-1.5 items-stretch">
+            <select
+              value={appraisalMethod}
+              onChange={(event) => setAppraisalMethod(event.target.value)}
+              className="input-field !h-10 !px-2 !text-xs w-[5.5rem] shrink-0 touch-manipulation"
+            >
+              {Object.entries(state.appraisal_methods).map(([key, info]) => {
+                const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+                return (
+                  <option key={key} value={key}>
+                    {info.name_cn.replace(/鉴定$/, '')} {formatAppraisalPercent(preview.fakeDetectionRate)}
+                  </option>
+                );
+              })}
+            </select>
+            <button
+              type="button"
+              onClick={onAppraise}
+              disabled={loading || appraising || customer.item.is_appraised_fake !== null}
+              className="btn-secondary !h-10 !px-3 !text-sm shrink-0 touch-manipulation"
+            >
+              {appraising ? '…' : customer.item.is_appraised_fake !== null ? '已鉴' : '鉴定'}
+            </button>
+            <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">成交</button>
+            <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">拒绝</button>
           </div>
         </div>
         <div className="hidden md:block">
@@ -1817,7 +1830,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
             <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
           </div>
         </div>
-        <p className="mt-4 md:mt-2 text-xs text-[#616161] font-sans leading-relaxed">
+        <p className="mt-2 text-[10px] md:text-xs text-[#616161] font-sans leading-snug line-clamp-2 md:line-clamp-none md:leading-relaxed">
           {selectedAppraisal.name_cn}：预计 ${appraisalPreview.cost.toLocaleString()}；
           赝品识破率 {formatAppraisalPercent(appraisalPreview.fakeDetectionRate)}（若为赝品时判定为假）；
           估值误差 ±{formatAppraisalPercent(appraisalPreview.valueErrorMargin)}。
