@@ -1501,7 +1501,12 @@ class GameStateManager:
         customer.relationship_level = record["relationship_level"]
         customer.last_deal_summary = record.get("last_deal_summary")
         self._record_customer_encounter(customer, outcome)
-        if outcome in ["reject", "walk_out"] and random.random() < 0.10:
+        if outcome == "reject":
+            self.reputation -= 1
+            self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
+            if self.daily_summary:
+                self.daily_summary["events"].append(f"你拒绝了 {customer.name} 的交易，声誉 -1。")
+        elif outcome == "walk_out" and random.random() < 0.10:
             self.reputation -= 1
             self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
             if self.daily_summary:
@@ -2123,7 +2128,7 @@ class GameStateManager:
         customer.deal_summary = "你婉拒了这笔交易，对方离开了当铺。"
         self._record_customer_outcome(customer, "reject")
         self._check_achievements("reject")
-        return {"success": True, "message": "已拒绝交易。"}
+        return {"success": True, "message": "已拒绝交易，声誉 -1。"}
 
     def appraise_inventory_item(self, item_id: str, method: str = "standard", ai_notes: Optional[List[str]] = None) -> Dict[str, Any]:
         item = self.get_item(item_id)
@@ -2401,7 +2406,7 @@ class GameStateManager:
         customer.deal_summary = "你婉拒了这笔交易，对方离开了当铺。"
         self._record_customer_outcome(customer, "reject")
         self._check_achievements("reject")
-        return {"success": True, "message": "已拒绝交易。"}
+        return {"success": True, "message": "已拒绝交易，声誉 -1。"}
 
     def dismiss_customer(self) -> Dict[str, Any]:
         if not self.active_customer:
