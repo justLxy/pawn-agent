@@ -1448,44 +1448,46 @@ function MobileNegotiationBrief({ customer }: { customer: Customer }) {
   const condition = CONDITION_MAP[item.condition] || item.condition;
   const appraisal = item.is_appraised_fake !== null ? appraisalVerdict(item) : null;
   const range = appraisalRange(item);
+  const compactFacts = [
+    `${customer.name} · ${customer.trait_cn} · 耐心 ${customer.patience}${customer.is_returning ? ` · ${customer.relationship_cn}` : ''}`,
+    `稀有 ${item.rarity_cn}`,
+    `成色 ${condition}`,
+    `年代 ${item.era}`,
+    `市价约 $${item.market_value.toLocaleString()}`,
+    customer.transaction_prefs?.[0] ? `偏好 ${customer.transaction_prefs[0]}` : null,
+    customer.persuasion_points?.[0] ? `突破口 ${customer.persuasion_points[0]}` : null,
+    item.authentication_tips?.[0] ? `鉴别 ${item.authentication_tips[0]}` : null,
+    range ? `鉴定区间 ${range}` : null,
+    appraisal ? `鉴定结论 ${appraisal}${item.appraisal_confidence !== null ? ` / ${item.appraisal_confidence}%` : ''}` : null,
+  ].filter(Boolean) as string[];
   return (
-    <div className="md:hidden sticky top-0 z-20 -mx-4 mb-4 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] shadow-[0_8px_24px_rgba(0,0,0,0.35)]">
-      <div className="px-3 py-3 border-b border-[#2A2D34]/80 flex items-start justify-between gap-3">
+    <div className="md:hidden sticky top-0 z-20 -mx-4 mb-3 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] shadow-[0_8px_20px_rgba(0,0,0,0.32)]">
+      <div className="px-3 py-2 border-b border-[#2A2D34]/70 flex items-center justify-between gap-2.5">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2 mb-1">
-            <span className="text-[#C8A97E] text-xs font-bold tracking-[0.2em]">{tradeMode.label}</span>
-            <span className="text-[10px] text-[#616161] border border-[#2A2D34] px-1.5 py-0.5">{tradeMode.itemSource}</span>
+          <div className="flex items-center gap-1.5 mb-0.5 min-w-0">
+            <span className="text-[#C8A97E] text-[10px] font-bold tracking-[0.14em] shrink-0">{tradeMode.label}</span>
+            <span className="text-[9px] text-[#616161] border border-[#2A2D34] px-1 py-0.5 whitespace-nowrap shrink-0">{tradeMode.itemSource}</span>
           </div>
-          <h3 className="text-[15px] font-bold text-[#E0E0E0] leading-snug">{item.name}</h3>
+          <h3 className="text-[13px] font-bold text-[#E0E0E0] leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</h3>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-[10px] text-[#616161]">{tradeMode.priceLabel}</div>
-          <div className="text-[#C8A97E] text-lg font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
+        <div className="text-right shrink-0 pl-2">
+          <div className="text-[9px] text-[#616161] whitespace-nowrap">{tradeMode.priceLabel}</div>
+          <div className="text-[#C8A97E] text-[18px] font-bold leading-none whitespace-nowrap">${customer.current_offer.toLocaleString()}</div>
         </div>
       </div>
-      <div className="px-3 py-2.5 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] font-sans border-b border-[#2A2D34]/60">
-        <span className={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'}>稀有 · {item.rarity_cn}</span>
-        <span className="text-[#C8A97E]">成色 · {condition}</span>
-        <span className="text-[#9E9E9E]">年代 · {item.era}</span>
-        <span className="text-[#9E9E9E]">市价约 ${item.market_value.toLocaleString()}</span>
-      </div>
-      <div className="px-3 py-2.5 space-y-1.5 text-[11px] font-sans text-[#9E9E9E]">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          <span>{customer.name}</span>
-          <span>{customer.trait_cn}</span>
-          <span>耐心 {customer.patience}</span>
-          {customer.is_returning && <span className="text-[#C8A97E]">{customer.relationship_cn}</span>}
+      <div className="px-3 py-1.5 overflow-x-auto custom-scrollbar">
+        <div className="flex min-w-max items-center gap-1.5 text-[10px] font-sans text-[#9E9E9E]">
+          {compactFacts.map((fact, index) => (
+            <span key={`${fact}-${index}`} className="px-1.5 py-0.5 border border-[#2A2D34]/80 bg-[rgba(255,255,255,0.02)] whitespace-nowrap leading-tight">
+              {fact}
+            </span>
+          ))}
+          {customer.last_deal_summary && (
+            <span className="px-1.5 py-0.5 border border-[#2A2D34]/70 text-[#616161] bg-[rgba(255,255,255,0.015)] whitespace-nowrap leading-tight">
+              上次往来 {customer.last_deal_summary}
+            </span>
+          )}
         </div>
-        {range && <p>鉴定区间 <span className="text-[#E0E0E0]">{range}</span></p>}
-        {appraisal && (
-          <p>
-            鉴定结论 <span className="text-[#E0E0E0]">{appraisal}{item.appraisal_confidence !== null ? ` / ${item.appraisal_confidence}%` : ''}</span>
-          </p>
-        )}
-        {customer.last_deal_summary && <p className="text-[#616161]">上次往来：{customer.last_deal_summary}</p>}
-        {customer.transaction_prefs?.[0] && <p>偏好：{customer.transaction_prefs[0]}</p>}
-        {customer.persuasion_points?.[0] && <p className="text-[#C8A97E]/90">突破口：{customer.persuasion_points[0]}</p>}
-        {item.authentication_tips?.[0] && <p>鉴别：{item.authentication_tips[0]}</p>}
       </div>
     </div>
   );
