@@ -1056,7 +1056,21 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
   }
   const quickOffer = (ratio: number) => {
     const price = Math.max(1, Math.round(customer.current_offer * ratio));
-    setMessage(customer.role === 'seller' ? `我出 ${price} 元，现金马上给你。` : `这件货 ${price} 元给你，附带来源说明。`);
+    const formattedPrice = price.toLocaleString();
+    const sellerLines = [
+      `我出 ${formattedPrice} 元，现金马上给你。`,
+      `${formattedPrice} 元，我现在就能付款，省去你继续跑价的麻烦。`,
+      `按我看这件货的风险，我最多先报 ${formattedPrice} 元。`,
+      `${formattedPrice} 元成交的话，我这边立刻收下。`,
+    ];
+    const buyerLines = [
+      `这件货 ${formattedPrice} 元给你，附带来源说明。`,
+      `${formattedPrice} 元，你今天带走，我把保养要点也交代清楚。`,
+      `这件藏品我开 ${formattedPrice} 元，价格里包含店里的把关成本。`,
+      `${formattedPrice} 元可以谈，但这件货的品相和来历都值这个价。`,
+    ];
+    const lines = customer.role === 'seller' ? sellerLines : buyerLines;
+    setMessage(lines[Math.floor(Math.random() * lines.length)]);
   };
   const selectedAppraisal = state.appraisal_methods[appraisalMethod] || state.appraisal_methods.standard;
   const appraisalSkillLevel = state.skills.appraisal?.level ?? 1;
@@ -1110,7 +1124,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
         <div ref={chatEndRef} />
       </div>
       <div className="border-t border-[#2A2D34] pt-4">
-        <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.85)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(1.12)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
+        <div className="flex gap-2 mb-3"><button onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button><button onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button><button onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button></div>
         <form onSubmit={onNegotiate} className="flex gap-3"><input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." /><button disabled={loading} className="btn-primary">谈判</button></form>
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[180px]">
