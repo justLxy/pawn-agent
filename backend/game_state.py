@@ -1127,6 +1127,8 @@ class GameStateManager:
     def _retarget_buyer(self, customer: Customer, unavailable_item_id: Optional[str] = None, target_counts: Optional[Dict[str, int]] = None, announce: bool = True) -> bool:
         if customer.role != "buyer":
             return True
+        if customer.session_closed:
+            return False
         exclude_ids = {unavailable_item_id} if unavailable_item_id else set()
         item = self._choose_saleable_item(exclude_ids, target_counts)
         if not item:
@@ -1179,6 +1181,8 @@ class GameStateManager:
 
     def ensure_active_customer_target(self):
         if not self.active_customer or self.active_customer.role != "buyer":
+            return
+        if self.active_customer.session_closed:
             return
         if self._is_saleable_item(self.active_customer.item.id):
             return
