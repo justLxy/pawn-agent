@@ -103,6 +103,7 @@ interface Customer {
   referred_by: string | null;
   patience: number;
   current_offer: number;
+  initial_offer: number;
   dialogue_history: Array<{ role: 'player' | 'customer' | 'narrator'; content: string }>;
   session_closed?: 'deal' | 'walk_out' | null;
   deal_summary?: string | null;
@@ -1336,7 +1337,10 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
     );
   }
   const quickOffer = (ratio: number) => {
-    const price = Math.max(1, Math.round(customer.current_offer * ratio));
+    const anchorOffer = customer.initial_offer ?? customer.current_offer;
+    // 试探价锚定首次报价，避免顾客让步后反复点击越来越低
+    const baseOffer = ratio === 0.5 ? anchorOffer : customer.current_offer;
+    const price = Math.max(1, Math.round(baseOffer * ratio));
     const formattedPrice = price.toLocaleString();
     const hook = customer.persuasion_points[Math.floor(Math.random() * customer.persuasion_points.length)] || '咱们实在点谈';
     const sellerLines = [
