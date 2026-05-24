@@ -426,7 +426,6 @@ def get_market_listings(
     order = {
         "price_asc": "ml.price ASC",
         "price_desc": "ml.price DESC",
-        "value_gap": "(ml.reference_price - ml.price) DESC",
     }.get(sort, "ml.created_at DESC")
     with get_connection() as conn:
         rows = conn.execute(

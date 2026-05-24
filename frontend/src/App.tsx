@@ -356,10 +356,6 @@ function formatSignedPercent(rate: number): string {
   return `${percent > 0 ? '+' : ''}${percent.toFixed(2)}%`;
 }
 
-function formatMoneyDelta(value: number): string {
-  return `${value >= 0 ? '+' : '-'}$${Math.abs(Math.round(value)).toLocaleString()}`;
-}
-
 function categoryLabel(category: string): string {
   return CATEGORY_MAP[category] || category;
 }
@@ -882,7 +878,7 @@ export default function App() {
   };
 
   const listToMarket = async (item: Item) => {
-    const price = listingPrice[item.id] || item.market_value;
+    const price = listingPrice[item.id] || item.appraised_value_low || item.purchase_price || 0;
     await runStateAction('/api/market/list', { item_id: item.id, price }, 'market_result', '已挂售。', 'cash');
     await loadMarket().catch(() => {});
   };
@@ -894,7 +890,7 @@ export default function App() {
   };
 
   const setShowcaseItemPrice = async (item: Item) => {
-    const price = showcasePrice[item.id] ?? item.showcase_price ?? item.market_value;
+    const price = showcasePrice[item.id] ?? item.showcase_price ?? item.appraised_value_low ?? item.purchase_price ?? 0;
     await runStateAction('/api/showcase/price', { item_id: item.id, price }, 'showcase_result', '橱窗售价已更新。', 'cash');
   };
 
@@ -1333,21 +1329,35 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
     const method = state.repair_methods[repairMethod[item.id] || 'standard'] || state.repair_methods.standard;
     const nextCondition = item.condition === 'Poor' ? 'Good' : item.condition === 'Good' ? 'Mint' : item.condition;
     const multiplier = item.condition === 'Poor' ? 1.35 : item.condition === 'Good' ? 1.55 : 1;
-    const nextValue = Math.round(item.market_value * multiplier);
     const baseCost = Math.max(60, Math.round(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (state.economy_index || 1) * (1 - 0.05 * (state.facilities.restoration_workshop - 1) - 0.03 * (state.skills.restoration.level - 1))));
     const staffCost = state.staff.restorer ? Math.round(baseCost * 0.75) : baseCost;
     const cost = Math.max(30, Math.round(staffCost * method.cost_multiplier));
     const days = Math.max(1, item.repair_difficulty - Math.floor(state.facilities.restoration_workshop / 2) + method.days_delta);
-    return { cost, days, method, nextCondition, nextValue };
+    return { cost, days, method, nextCondition, multiplier };
   };
   const systemSellPreview = (item: Item) => {
     const commerce = state.skills.commerce?.level ?? 1;
     const showcaseBonus = item.status === 'displayed' ? 0.04 * state.facilities.showcase : 0;
     const rarityBonus = { common: 0, rare: 0.06, epic: 0.12, legendary: 0.2 }[item.rarity as 'common' | 'rare' | 'epic' | 'legendary'] ?? 0;
     const fixedBonus = commerce * 0.025 + showcaseBonus + rarityBonus;
+    const minPercent = 0.72 + fixedBonus;
+    const maxPercent = 0.92 + fixedBonus;
+    
+    let minVal = null;
+    let maxVal = null;
+    if (item.appraised_value_low !== null && item.appraised_value_high !== null) {
+      minVal = Math.max(10, Math.floor(item.appraised_value_low * minPercent));
+      maxVal = Math.max(10, Math.floor(item.appraised_value_high * maxPercent));
+    } else if (item.appraised_value !== null) {
+      minVal = Math.max(10, Math.floor(item.appraised_value * minPercent));
+      maxVal = Math.max(10, Math.floor(item.appraised_value * maxPercent));
+    }
+
     return {
-      min: Math.max(10, Math.floor(item.market_value * (0.72 + fixedBonus))),
-      max: Math.max(10, Math.floor(item.market_value * (0.92 + fixedBonus))),
+      minPercent: Math.round(minPercent * 100),
+      maxPercent: Math.round(maxPercent * 100),
+      minVal,
+      maxVal,
       commerce,
       showcaseBonus,
       rarityBonus,
@@ -1359,21 +1369,28 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
         <div key={item.id} className="py-5 border-b border-[#2A2D34] flex flex-col xl:flex-row xl:items-center gap-4">
           <ItemText item={item} />
           <div className="w-full xl:w-[460px] flex flex-wrap gap-2 justify-start xl:justify-end mt-2 xl:mt-0">
-            <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={listingPrice[item.id] ?? item.market_value} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || item.market_value })} />
+            <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} placeholder="挂售价" value={listingPrice[item.id] ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setListingPrice({ ...listingPrice, [item.id]: parseInt(event.target.value) || 0 })} />
             <button onClick={() => onList(item)} disabled={!['stored', 'displayed'].includes(item.status)} className="btn-secondary !h-9 !px-4">挂售</button>
             {item.status === 'displayed' ? <button onClick={() => onAction('/api/undisplay', { item_id: item.id }, 'display_result', '已下架。')} className="btn-secondary !h-9 !px-4">下架</button> : <button onClick={() => onAction('/api/display', { item_id: item.id }, 'display_result', '已展示。')} disabled={item.status !== 'stored'} className="btn-secondary !h-9 !px-4">展示</button>}
-            {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} value={showcasePrice[item.id] ?? item.showcase_price ?? item.market_value} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || item.market_value })} />}
+            {item.status === 'displayed' && <input type="number" className="input-field !h-9 w-[130px]" style={{ paddingLeft: 12 }} placeholder="橱窗价" value={showcasePrice[item.id] ?? item.showcase_price ?? item.appraised_value_low ?? item.purchase_price ?? ''} onChange={(event) => setShowcasePrice({ ...showcasePrice, [item.id]: parseInt(event.target.value) || 0 })} />}
             {item.status === 'displayed' && <button onClick={() => onSetShowcasePrice(item)} className="btn-secondary !h-9 !px-4">橱窗价</button>}
             {item.status === 'displayed' && item.showcase_price && <button onClick={() => onClearShowcasePrice(item)} className="btn-secondary !h-9 !px-4">取消价</button>}
             <select value={repairMethod[item.id] || 'standard'} onChange={(event) => setRepairMethod({ ...repairMethod, [item.id]: event.target.value })} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="input-field !h-9 !px-3 w-[120px]"><option value="conservative">保守修复</option><option value="standard">标准修复</option><option value="premium">高阶修复</option></select>
             <button onClick={() => onAction('/api/repair', { item_id: item.id, method: repairMethod[item.id] || 'standard' }, 'repair_result', '已送修。', 'upgrade')} disabled={item.condition === 'Mint' || item.status === 'repairing'} className="btn-secondary !h-9 !px-4">修复</button>
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
-            {item.status !== 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">系统出售预计：${systemSellPreview(item).min.toLocaleString()} - ${systemSellPreview(item).max.toLocaleString()}（市场估值 × 随机渠道 72%-92%，商业 Lv.{systemSellPreview(item).commerce}{systemSellPreview(item).showcaseBonus > 0 ? '，展示加成' : ''}{systemSellPreview(item).rarityBonus > 0 ? '，稀有度加成' : ''}）</div>}
-            {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，市场估值约 ${repairPreview(item).nextValue.toLocaleString()}，费用约 ${repairPreview(item).cost.toLocaleString()} / {repairPreview(item).days} 天</div>}
+            {item.status !== 'repairing' && (() => {
+              const preview = systemSellPreview(item);
+              const rangeText = preview.minVal !== null ? `$${preview.minVal.toLocaleString()} - $${preview.maxVal?.toLocaleString()}` : '未知（需鉴定）';
+              return (
+                <div className="basis-full text-right text-xs text-[#C8A97E]">
+                  系统出售预计：{rangeText}（真实价值的 {preview.minPercent}%-{preview.maxPercent}%，商业 Lv.{preview.commerce}{preview.showcaseBonus > 0 ? '，展示加成' : ''}{preview.rarityBonus > 0 ? '，稀有度加成' : ''}）
+                </div>
+              );
+            })()}
+            {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，真实价值提升约 {Math.round((repairPreview(item).multiplier - 1) * 100)}%，费用约 ${repairPreview(item).cost.toLocaleString()} / {repairPreview(item).days} 天</div>}
             <div className="basis-full text-right text-xs text-[#616161]">
               持有 {Math.max(0, state.day - (item.acquired_day || state.day))} 天；
               成本 ${Number(item.purchase_price || item.base_value_at_purchase || 0).toLocaleString()}；
-              未实现盈亏 {formatMoneyDelta(item.market_value - Number(item.purchase_price || item.base_value_at_purchase || item.market_value))}；
               累计持有成本 ${Number(item.holding_cost_paid || 0).toLocaleString()}
             </div>
             {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {item.repair_days_remaining} 天，营业结算后推进进度。</div>}
@@ -1397,7 +1414,7 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
           <div className="flex flex-wrap sm:flex-nowrap gap-2 flex-1 mt-1 lg:mt-0">
             <div className="relative w-full sm:flex-1"><Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#616161]" /><input value={marketSearch} onChange={(event) => setMarketSearch(event.target.value)} className="input-field w-full" placeholder="搜索物品..." /></div>
             <div className="flex gap-2 w-full sm:w-auto">
-              <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field flex-1 sm:flex-none !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option><option value="value_gap">价值差</option></select>
+              <select value={marketSort} onChange={(event) => setMarketSort(event.target.value)} className="input-field flex-1 sm:flex-none !px-3"><option value="newest">最新</option><option value="price_asc">低价</option><option value="price_desc">高价</option></select>
               <button onClick={() => refresh()} className="btn-secondary !px-4 flex-1 sm:flex-none">刷新</button>
             </div>
           </div>
@@ -1408,7 +1425,7 @@ function MarketTab(props: { listings: Listing[]; myListings: Listing[]; trades: 
           <ItemText item={listing.item} extra={listing.seller_online ? '卖家在线' : '卖家离线'} />
           <div className="w-full xl:w-[300px] flex items-center justify-between xl:justify-end gap-5 mt-2 xl:mt-0">
             <button onClick={() => openShowcase(listing.seller_id)} className="text-[#9E9E9E] hover:text-[#C8A97E] text-sm text-left xl:text-right">{listing.seller_shop}<span className="block text-xs text-[#616161]">进店看橱窗</span></button>
-            <div className="flex-1 text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div><div className="text-xs text-[#616161]">参考 ${listing.reference_price.toLocaleString()}</div></div>
+            <div className="flex-1 text-right"><div className="text-[#C8A97E] text-lg font-bold">${listing.price.toLocaleString()}</div>{appraisalRange(listing.item) ? <div className="text-xs text-[#616161]">鉴定区间 {appraisalRange(listing.item)}</div> : <div className="text-xs text-[#616161]">未知（需鉴定）</div>}</div>
             {marketView === 'browse' ? <button onClick={() => buy(listing.id)} className="btn-primary !h-9 !px-4 shrink-0">购买</button> : <button onClick={() => onMarketAction('/api/market/unlist', { listing_id: listing.id }, 'market_result', '已下架。').then(refresh)} className="btn-secondary !h-9 !px-4 shrink-0">下架</button>}
           </div>
         </div>
@@ -1583,7 +1600,7 @@ function AchievementsTab({ achievements, unlocks }: { achievements: Achievement[
 function CodexTab({ customers, items }: { customers: Record<string, CustomerCodexEntry>; items: Record<string, ItemCodexEntry> }) {
   const [view, setView] = useState<'customers' | 'items'>('customers');
   const customerList = Object.values(customers).sort((a, b) => b.last_seen_day - a.last_seen_day || b.times_seen - a.times_seen);
-  const itemList = Object.values(items).sort((a, b) => b.last_seen_day - a.last_seen_day || b.market_value - a.market_value);
+  const itemList = Object.values(items).sort((a, b) => b.last_seen_day - a.last_seen_day || (b.purchase_price || 0) - (a.purchase_price || 0));
   const sourceText = (sources: string[] = []) => sources.slice(-3).map((source) => {
     if (source.startsWith('customer:')) return `顾客携带：${source.replace('customer:', '')}`;
     return {
@@ -1656,7 +1673,6 @@ function CodexTab({ customers, items }: { customers: Record<string, CustomerCode
                   <span>年代：{item.era}</span>
                   <span>成色：{CONDITION_MAP[item.condition] || item.condition}</span>
                   <span>状态：{STATUS_MAP[item.status] || item.status}</span>
-                  <span>估值：${item.market_value.toLocaleString()}</span>
                   <span>记录：{item.times_seen} 次</span>
                   {item.owned && <span className="text-[#C8A97E]">当前持有</span>}
                   {item.sold && <span>已售出</span>}
@@ -1699,7 +1715,7 @@ function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ow
             <div className="w-full xl:w-[260px] flex items-center justify-between xl:justify-end gap-5 mt-2 xl:mt-0">
               <div className="text-left xl:text-right">
                 <div className="text-[#C8A97E] text-lg font-bold">{item.showcase_price ? `$${item.showcase_price.toLocaleString()}` : '非卖品'}</div>
-                <div className="text-xs text-[#616161]">市场 ${item.market_value.toLocaleString()}</div>
+                {appraisalRange(item) && <div className="text-xs text-[#616161]">鉴定区间 {appraisalRange(item)}</div>}
               </div>
               {!showcase.owner.is_self && item.showcase_price && <button onClick={() => buy(showcase.owner.id, item.id)} className="btn-primary !h-9 !px-4 shrink-0">购买</button>}
             </div>
@@ -1813,7 +1829,7 @@ function InfoSidebar({ state }: { state: GameState }) {
           {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
         </div>
         <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">物证</h3>
-        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} /><Stat label="市场估值" value={`$${customer.item.market_value.toLocaleString()}`} />{appraisalRange(customer.item) && <Stat label="鉴定区间" value={appraisalRange(customer.item) || ''} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={`${appraisalVerdict(customer.item)}${customer.item.appraisal_confidence !== null ? ` / ${customer.item.appraisal_confidence}%` : ''}`} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
+        <div className="space-y-3 text-sm"><div className="font-bold">{customer.item.name}</div><Stat label="年代" value={customer.item.era} /><Stat label="稀有度" value={customer.item.rarity_cn} /><Stat label="成色" value={CONDITION_MAP[customer.item.condition] || customer.item.condition} />{appraisalRange(customer.item) && <Stat label="鉴定区间" value={appraisalRange(customer.item) || ''} />}{customer.item.is_appraised_fake !== null && <Stat label="鉴定结论" value={`${appraisalVerdict(customer.item)}${customer.item.appraisal_confidence !== null ? ` / ${customer.item.appraisal_confidence}%` : ''}`} />}<p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.item.story}</p><p className="text-[#9E9E9E] text-xs leading-relaxed">损坏：{customer.item.damage_report}</p>{customer.item.authentication_tips?.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.authentication_tips.map((tip, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">鉴别：{tip}</p>)}</div>}{customer.item.appraisal_notes.length > 0 && <div className="pt-3 border-t border-[#2A2D34] space-y-2">{customer.item.appraisal_notes.map((note, index) => <p key={index} className="text-[#9E9E9E] text-xs leading-relaxed">• {note}</p>)}</div>}</div>
       </>}
     </>
   );
@@ -1842,7 +1858,6 @@ function ItemText({ extra, item }: { item: Item; extra?: string }) {
       <div className="ui-text flex flex-wrap gap-x-5 gap-y-1 text-xs text-[#616161] mt-2">
         <span>类别：{categoryLabel(item.category)}</span>
         <span>年代：{item.era}</span>
-        <span>市场估值：${item.market_value.toLocaleString()}</span>
         {item.value_trend_note && <span>趋势：{item.value_trend_note}</span>}
         <span>鉴定：{appraisal}</span>
         {appraisalRange(item) && <span>鉴定区间：{appraisalRange(item)}</span>}
