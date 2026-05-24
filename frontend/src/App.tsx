@@ -1569,7 +1569,24 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, dayTransition, load
           <div className="border-y border-[#2A2D34] py-5 mb-6">
             <h2 className="text-[#C8A97E] text-xl font-bold mb-2">{state.pending_event.title}</h2>
             <p className="text-[#E0E0E0] mb-4">{state.pending_event.description}</p>
-            <div className="space-y-2">{state.pending_event.choices.map((choice) => <button key={choice.id} onClick={() => onAction('/api/event/choice', { choice_id: choice.id }, 'event_result', '事件已处理。')} className="w-full text-left py-3 border-b border-[#2A2D34] hover:text-[#C8A97E]">{choice.label}<span className="block text-xs text-[#616161]">{choice.effect}</span></button>)}</div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-3 tracking-wide">请做出选择（点击选项生效）</p>
+            <div className="space-y-3">
+              {state.pending_event.choices.map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => onAction('/api/event/choice', { choice_id: choice.id }, 'event_result', '事件已处理。', 'click')}
+                  className="event-choice touch-manipulation"
+                >
+                  <span className="event-choice__body">
+                    <span className="event-choice__label">{choice.label}</span>
+                    <span className="event-choice__effect">{choice.effect}</span>
+                  </span>
+                  <ArrowRight className="event-choice__icon" aria-hidden />
+                </button>
+              ))}
+            </div>
           </div>
         )}
         <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={loading || !!state.pending_event} className="btn-primary w-full md:w-auto">

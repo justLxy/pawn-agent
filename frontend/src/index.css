@@ -200,6 +200,75 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   background: rgba(200, 169, 126, 0.05);
 }
 
+/* Event choice (day-end pending event) */
+.event-choice {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  text-align: left;
+  padding: 16px 20px;
+  min-height: 56px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.event-choice:hover:not(:disabled) {
+  background: rgba(200, 169, 126, 0.08);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(200, 169, 126, 0.15);
+}
+.event-choice:hover:not(:disabled) .event-choice__label {
+  color: var(--accent);
+}
+.event-choice:hover:not(:disabled) .event-choice__icon {
+  color: var(--accent);
+  transform: translateX(2px);
+}
+.event-choice:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.event-choice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.event-choice__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.event-choice__label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: color 0.2s ease;
+}
+.event-choice__effect {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-weak);
+}
+.event-choice__icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--text-sec);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .event-choice:hover:not(:disabled) {
+    transform: none;
+  }
+}
+
 /* Input */
 .input-field {
   background: rgba(255, 255, 255, 0.05);
