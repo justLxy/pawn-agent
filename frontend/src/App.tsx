@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Award,
   Briefcase,
   CheckCircle,
   Clock,
@@ -23,7 +24,7 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
-type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history';
+type ActiveTab = 'lobby' | 'inventory' | 'management' | 'staff' | 'upgrades' | 'leaderboard' | 'market' | 'showcase' | 'history' | 'achievements';
 type ItemStatus = 'stored' | 'repairing' | 'displayed' | 'sold' | 'listed';
 type BoardType = 'assets' | 'reputation' | 'profit' | 'collection';
 type MarketView = 'browse' | 'mine' | 'trades';
@@ -69,6 +70,13 @@ interface Item {
   repair_days_remaining: number;
   repair_success_bonus: number;
   display_slot: number | null;
+  acquired_at: number;
+  acquired_day: number;
+  last_value_update_day: number;
+  base_value_at_purchase: number;
+  value_history: Array<{ day: number; market_value: number; delta: number; holding_cost: number }>;
+  holding_cost_paid: number;
+  value_trend_note: string;
   showcase_price: number | null;
 }
 
@@ -84,9 +92,38 @@ interface Customer {
   avatar_url: string;
   transaction_prefs: string[];
   persuasion_points: string[];
+  customer_id: string;
+  is_returning: boolean;
+  visit_count: number;
+  relationship_level: string;
+  relationship_cn: string;
+  last_deal_summary: string | null;
+  satisfaction: number;
+  referred_by: string | null;
   patience: number;
   current_offer: number;
   dialogue_history: Array<{ role: 'player' | 'customer'; content: string }>;
+}
+
+interface Achievement {
+  id: string;
+  category: string;
+  name: string;
+  desc: string;
+  target: number;
+  progress: number;
+  reward: Record<string, unknown>;
+  hidden: boolean;
+  unlocked: boolean;
+  unlocked_day: number | null;
+}
+
+interface AchievementUnlock {
+  id: string;
+  name: string;
+  category: string;
+  day: number;
+  reward: Record<string, unknown>;
 }
 
 interface GameState {
@@ -112,6 +149,18 @@ interface GameState {
   loan: { principal: number; interest_rate: number };
   tax: { next_due_day: number; rate: number; last_paid: number };
   market_trends: Record<string, number>;
+  economy_index: number;
+  inflation_rate: number;
+  money_supply_score: number;
+  economic_pressure: string;
+  economy_history: Array<{ day: number; economy_index: number; inflation_rate: number; pressure: string; money_supply_score: number }>;
+  achievements: Achievement[];
+  achievement_unlocks: AchievementUnlock[];
+  achievement_stats: Record<string, number>;
+  customer_registry: Record<string, { name: string; visit_count: number; satisfaction: number; relationship_level: string; last_deal_summary?: string }>;
+  successful_trades: number;
+  positive_reviews: number;
+  daily_customer_queue: Customer[];
   pending_event: null | { id: string; title: string; description: string; choices: Array<{ id: string; label: string; effect: string }> };
   active_customer: Customer | null;
   customers_served_today: number;
@@ -124,6 +173,10 @@ interface GameState {
     operating_cost: number;
     loan_interest: number;
     tax: number;
+    holding_cost: number;
+    economy_index: number;
+    inflation_rate: number;
+    economy_pressure?: string;
     events: string[];
     starting_cash: number;
     ending_cash: number;
@@ -222,9 +275,10 @@ function computeAppraisalPreview(
   method: { cost_multiplier: number; accuracy_bonus: number; value_margin?: number },
   appraisalSkillLevel: number,
   appraisalRoomLevel: number,
-  hasAppraiser: boolean
+  hasAppraiser: boolean,
+  economyIndex = 1
 ) {
-  const baseCost = Math.max(160, Math.floor(marketValue * 0.08));
+  const baseCost = Math.max(160, Math.floor(marketValue * 0.08 * economyIndex));
   const discount = 0.08 * (appraisalRoomLevel - 1) + (hasAppraiser ? 0.35 : 0);
   const cost = Math.max(120, Math.floor(baseCost * method.cost_multiplier * (1 - Math.min(0.45, discount))));
   const fakeDetectionRate = Math.min(
@@ -237,6 +291,15 @@ function computeAppraisalPreview(
 
 function formatAppraisalPercent(rate: number): string {
   return `${Math.round(rate * 100)}%`;
+}
+
+function formatSignedPercent(rate: number): string {
+  const percent = rate * 100;
+  return `${percent > 0 ? '+' : ''}${percent.toFixed(2)}%`;
+}
+
+function formatMoneyDelta(value: number): string {
+  return `${value >= 0 ? '+' : '-'}$${Math.abs(Math.round(value)).toLocaleString()}`;
 }
 
 function categoryLabel(category: string): string {
@@ -343,6 +406,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const lastAchievementRef = useRef<string | null>(null);
   const musicContextRef = useRef<AudioContext | null>(null);
   const musicNodesRef = useRef<{ oscillators: OscillatorNode[]; intervals: number[]; gain: GainNode } | null>(null);
 
@@ -510,6 +574,21 @@ export default function App() {
     }, 4200);
     return () => clearTimeout(timer);
   }, [successMsg, errorMsg]);
+
+  useEffect(() => {
+    const latest = state?.achievement_unlocks?.[state.achievement_unlocks.length - 1];
+    if (!latest) return;
+    const key = `${latest.id}-${latest.day}`;
+    if (lastAchievementRef.current === null) {
+      lastAchievementRef.current = key;
+      return;
+    }
+    if (lastAchievementRef.current !== key) {
+      lastAchievementRef.current = key;
+      setSuccessMsg(`成就解锁：${latest.name}`);
+      playSound('upgrade');
+    }
+  }, [state?.achievement_unlocks]);
 
   const loadLeaderboard = async () => {
     const data = await apiGet<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null }>(`/api/leaderboard?type=${boardType}`);
@@ -815,6 +894,7 @@ export default function App() {
           <span>第 {state.day} 天</span>
           <span>现金 ${state.cash.toLocaleString()}</span>
           <span>声誉 {state.reputation}</span>
+          <span>经济 {(state.economy_index || 1).toFixed(2)}x</span>
           <span>客流 {Math.min(state.customers_served_today + (activeCustomer ? 1 : 0), state.total_customers_today)}/{state.total_customers_today}</span>
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
@@ -833,6 +913,7 @@ export default function App() {
           <NavButton tab="inventory" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Briefcase className="w-5 h-5" />} label="仓库藏品" />
           <NavButton tab="market" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Landmark className="w-5 h-5" />} label="玩家市场" />
           <NavButton tab="leaderboard" activeTab={activeTab} setActiveTab={setActiveTab} icon={<ListOrdered className="w-5 h-5" />} label="全服排行" />
+          <NavButton tab="achievements" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Award className="w-5 h-5" />} label="经营成就" />
           <NavButton tab="history" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Clock className="w-5 h-5" />} label="交易记录" />
           <NavButton tab="management" activeTab={activeTab} setActiveTab={setActiveTab} icon={<TrendingUp className="w-5 h-5" />} label="经营财务" />
           <NavButton tab="staff" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Users className="w-5 h-5" />} label="员工管理" />
@@ -893,6 +974,9 @@ export default function App() {
           )}
           {activeTab === 'history' && (
             <HistoryTab entries={state.transaction_log || []} />
+          )}
+          {activeTab === 'achievements' && (
+            <AchievementsTab achievements={state.achievements || []} unlocks={state.achievement_unlocks || []} />
           )}
           {activeTab === 'showcase' && showcase && (
             <ShowcaseTab showcase={showcase} buy={buyShowcaseItem} back={() => setActiveTab('market')} />
@@ -988,6 +1072,7 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'inventory', label: '仓库', icon: <Briefcase className="w-5 h-5" /> },
     { tab: 'market', label: '市场', icon: <Landmark className="w-5 h-5" /> },
     { tab: 'leaderboard', label: '排行', icon: <ListOrdered className="w-5 h-5" /> },
+    { tab: 'achievements', label: '成就', icon: <Award className="w-5 h-5" /> },
     { tab: 'history', label: '流水', icon: <Clock className="w-5 h-5" /> },
     { tab: 'management', label: '财务', icon: <TrendingUp className="w-5 h-5" /> },
     { tab: 'staff', label: '员工', icon: <Users className="w-5 h-5" /> },
@@ -1036,9 +1121,14 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
         <SummaryLine label="交易盈亏" value={state.daily_summary.revenue} delta />
         <SummaryLine label="员工薪水" value={-state.daily_summary.salaries} delta />
         <SummaryLine label="运营成本" value={-state.daily_summary.operating_cost} delta />
+        <SummaryLine label="库存持有" value={-state.daily_summary.holding_cost} delta />
         <SummaryLine label="贷款利息" value={-state.daily_summary.loan_interest} delta />
         <SummaryLine label="营业税" value={-state.daily_summary.tax} delta />
         <SummaryLine label="净变化" value={state.daily_summary.net_profit} delta />
+        <p className="mt-4 text-xs text-[#616161] font-sans">
+          经济指数 {(state.daily_summary.economy_index || state.economy_index || 1).toFixed(3)}，
+          日变化 {formatSignedPercent(state.daily_summary.inflation_rate || state.inflation_rate || 0)}。
+        </p>
         <div className="my-8 space-y-3">{state.daily_summary.events.map((event, idx) => <p key={idx} className="border-l border-[#2A2D34] pl-4 text-[#9E9E9E]">{event}</p>)}</div>
         {state.pending_event && (
           <div className="border-y border-[#2A2D34] py-5 mb-6">
@@ -1086,7 +1176,8 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
     selectedAppraisal,
     appraisalContext.skillLevel,
     appraisalContext.roomLevel,
-    appraisalContext.hasAppraiser
+    appraisalContext.hasAppraiser,
+    state.economy_index || 1
   );
   const tradeMode = customer.role === 'seller'
     ? { label: '收购', tone: '你正在向顾客收购物品，报价越低利润空间越大。', priceLabel: '对方要价' }
@@ -1099,8 +1190,10 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
             <div className="flex items-center gap-3 mb-1">
               <span className="text-[#C8A97E] text-sm tracking-[0.25em]">{tradeMode.label}</span>
               <span className="text-[#616161] text-xs">{customer.trait_cn} / 耐心 {customer.patience}</span>
+              {customer.is_returning && <span className="text-[#C8A97E] text-xs border-l border-[#2A2D34] pl-3">{customer.relationship_cn} · 第 {customer.visit_count} 次</span>}
             </div>
             <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.name} 走进店里，{customer.backstory}</p>
+            {customer.last_deal_summary && <p className="text-[#616161] text-xs mt-1">旧账：{customer.last_deal_summary}</p>}
             <p className="text-[#616161] text-xs mt-1">{tradeMode.tone}</p>
           </div>
           <div className="text-left sm:text-right">
@@ -1129,7 +1222,7 @@ function LobbyTab({ appraisalMethod, appraising, chatEndRef, loading, message, n
         <div className="flex flex-col sm:flex-row gap-2 mt-3">
           <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 sm:w-[180px]">
             {Object.entries(state.appraisal_methods).map(([key, info]) => {
-              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser);
+              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
               return (
                 <option key={key} value={key}>
                   {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
@@ -1178,7 +1271,7 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
     const nextCondition = item.condition === 'Poor' ? 'Good' : item.condition === 'Good' ? 'Mint' : item.condition;
     const multiplier = item.condition === 'Poor' ? 1.35 : item.condition === 'Good' ? 1.55 : 1;
     const nextValue = Math.round(item.market_value * multiplier);
-    const baseCost = Math.max(60, Math.round(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (state.facilities.restoration_workshop - 1) - 0.03 * (state.skills.restoration.level - 1))));
+    const baseCost = Math.max(60, Math.round(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (state.economy_index || 1) * (1 - 0.05 * (state.facilities.restoration_workshop - 1) - 0.03 * (state.skills.restoration.level - 1))));
     const staffCost = state.staff.restorer ? Math.round(baseCost * 0.75) : baseCost;
     const cost = Math.max(30, Math.round(staffCost * method.cost_multiplier));
     const days = Math.max(1, item.repair_difficulty - Math.floor(state.facilities.restoration_workshop / 2) + method.days_delta);
@@ -1214,6 +1307,12 @@ function InventoryTab({ state, listingPrice, repairMethod, showcasePrice, onActi
             <button onClick={() => onAction('/api/sell', { item_id: item.id }, 'sell_result', '已出售。', 'cash')} disabled={item.status === 'repairing'} className="btn-primary !h-9 !px-4">系统出售</button>
             {item.status !== 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">系统出售预计：${systemSellPreview(item).min.toLocaleString()} - ${systemSellPreview(item).max.toLocaleString()}（市场估值 × 随机渠道 72%-92%，商业 Lv.{systemSellPreview(item).commerce}{systemSellPreview(item).showcaseBonus > 0 ? '，展示加成' : ''}{systemSellPreview(item).rarityBonus > 0 ? '，稀有度加成' : ''}）</div>}
             {item.status !== 'repairing' && item.condition !== 'Mint' && <div className="basis-full text-right text-xs text-[#616161]">修复成功：{CONDITION_MAP[item.condition] || item.condition} → {CONDITION_MAP[repairPreview(item).nextCondition] || repairPreview(item).nextCondition}，市场估值约 ${repairPreview(item).nextValue.toLocaleString()}，费用约 ${repairPreview(item).cost.toLocaleString()} / {repairPreview(item).days} 天</div>}
+            <div className="basis-full text-right text-xs text-[#616161]">
+              持有 {Math.max(0, state.day - (item.acquired_day || state.day))} 天；
+              成本 ${Number(item.purchase_price || item.base_value_at_purchase || 0).toLocaleString()}；
+              未实现盈亏 {formatMoneyDelta(item.market_value - Number(item.purchase_price || item.base_value_at_purchase || item.market_value))}；
+              累计持有成本 ${Number(item.holding_cost_paid || 0).toLocaleString()}
+            </div>
             {item.status === 'repairing' && <div className="basis-full text-right text-xs text-[#C8A97E]">修复中：还需 {item.repair_days_remaining} 天，营业结算后推进进度。</div>}
           </div>
         </div>
@@ -1371,6 +1470,53 @@ function HistoryTab({ entries }: { entries: TransactionEntry[] }) {
   );
 }
 
+function AchievementsTab({ achievements, unlocks }: { achievements: Achievement[]; unlocks: AchievementUnlock[] }) {
+  const unlockedCount = achievements.filter((achievement) => achievement.unlocked).length;
+  const categories = Array.from(new Set(achievements.map((achievement) => achievement.category)));
+  const rewardText = (reward: Record<string, unknown>) => {
+    const parts: string[] = [];
+    if (typeof reward.cash === 'number') parts.push(`现金 $${reward.cash.toLocaleString()}`);
+    if (typeof reward.reputation === 'number') parts.push(`声誉 +${reward.reputation}`);
+    if (reward.skill_xp && typeof reward.skill_xp === 'object') parts.push('技能经验');
+    return parts.join(' / ') || '纪念解锁';
+  };
+  return (
+    <ListPage title="经营成就" subtitle={`已解锁 ${unlockedCount}/${achievements.length} 项。`}>
+      {unlocks.length > 0 && (
+        <div className="border-b border-[#2A2D34] pb-5 mb-2">
+          <div className="text-[#C8A97E] font-bold mb-3">最近解锁</div>
+          <div className="space-y-2 text-sm text-[#9E9E9E]">
+            {unlocks.slice(-5).reverse().map((unlock) => <p key={`${unlock.id}-${unlock.day}`}>第 {unlock.day} 天 · {unlock.category} · {unlock.name}</p>)}
+          </div>
+        </div>
+      )}
+      {categories.map((category) => (
+        <div key={category} className="py-5 border-b border-[#2A2D34]">
+          <h2 className="text-[#C8A97E] font-bold mb-3">{category}</h2>
+          {achievements.filter((achievement) => achievement.category === category).map((achievement) => {
+            const percent = Math.min(100, Math.round((achievement.progress / Math.max(1, achievement.target)) * 100));
+            return (
+              <div key={achievement.id} className={`py-3 border-t border-[#2A2D34] ${achievement.unlocked ? 'text-[#E0E0E0]' : 'text-[#9E9E9E]'}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div>
+                    <div className="font-bold">{achievement.name} {achievement.unlocked && <span className="text-[#C8A97E] text-xs">已解锁</span>}</div>
+                    <p className="text-xs text-[#9E9E9E] mt-1">{achievement.desc}</p>
+                  </div>
+                  <div className="text-xs text-[#616161] sm:text-right shrink-0">
+                    <div>{achievement.progress.toLocaleString()} / {achievement.target.toLocaleString()}</div>
+                    <div>{rewardText(achievement.reward)}</div>
+                  </div>
+                </div>
+                <div className="progress-bg mt-3"><div className="progress-fill" style={{ width: `${percent}%` }} /></div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </ListPage>
+  );
+}
+
 function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ownerId: number, itemId: string) => Promise<void>; back: () => void }) {
   return (
     <ListPage title={`${showcase.owner.shop_name} 的当铺橱窗`} subtitle={`展示 ${showcase.items.length}/${showcase.display_capacity} 件藏品。只能购买标有橱窗售价的展示品。`}>
@@ -1403,20 +1549,29 @@ function ShowcaseTab({ back, buy, showcase }: { showcase: ShowcaseData; buy: (ow
 }
 
 function ManagementTab({ loanAmount, onAction, setLoanAmount, state }: { state: GameState; loanAmount: number; setLoanAmount: (value: number) => void; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
-  const dailyInterest = state.loan.principal > 0 ? Math.max(1, Math.round(state.loan.principal * state.loan.interest_rate)) : 0;
+  const dynamicInterestRate = state.loan.interest_rate + Math.max(0, state.inflation_rate || 0) * 0.5;
+  const dailyInterest = state.loan.principal > 0 ? Math.max(1, Math.round(state.loan.principal * dynamicInterestRate)) : 0;
+  const pressureLabel = state.economic_pressure === 'inflation' ? '通胀压力' : state.economic_pressure === 'deflation' ? '通缩压力' : '平稳';
+  const salaryEstimate = Object.entries(state.staff).reduce((sum, [key, active]) => sum + (active ? Math.round((state.staff_info[key]?.daily_salary || 0) * (state.economy_index || 1)) : 0), 0);
+  const operatingEstimate = Math.round((260 + state.shop_level * 90 + Object.values(state.facilities).reduce((sum, value) => sum + value, 0) * 18) * (state.economy_index || 1));
   return (
     <ListPage title="经营财务" subtitle="技能、贷款、税务和市场趋势共同影响长期竞争。">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
+        <Stat label="经济指数" value={`${(state.economy_index || 1).toFixed(3)} · ${pressureLabel}`} />
+        <Stat label="日变化" value={formatSignedPercent(state.inflation_rate || 0)} />
+        <Stat label="明日基础成本" value={`$${(salaryEstimate + operatingEstimate).toLocaleString()}`} />
+      </div>
       {Object.entries(state.skills).map(([key, skill]) => <div key={key} className="py-4 border-b border-[#2A2D34]"><div className="flex justify-between"><span>{state.skill_info[key]?.name_cn || key}</span><span className="text-[#C8A97E]">Lv.{skill.level}</span></div><div className="progress-bg mt-2"><div className="progress-fill" style={{ width: `${Math.min(100, (skill.xp / Math.max(100, skill.level * 100)) * 100)}%` }} /></div></div>)}
       <div className="py-6 border-b border-[#2A2D34] flex flex-col sm:flex-row flex-wrap gap-3 sm:items-center">
         <span>贷款本金 ${state.loan.principal.toLocaleString()}</span>
-        <span className="text-xs text-[#9E9E9E]">日息 {(state.loan.interest_rate * 100).toFixed(1)}%，结算扣 ${dailyInterest.toLocaleString()}</span>
+        <span className="text-xs text-[#9E9E9E]">动态日息 {(dynamicInterestRate * 100).toFixed(1)}%，结算扣 ${dailyInterest.toLocaleString()}</span>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
           <input type="number" value={loanAmount} onChange={(event) => setLoanAmount(parseInt(event.target.value) || 100)} className="input-field !h-9 flex-1 sm:flex-none sm:w-[150px] min-w-[100px]" style={{ paddingLeft: 12 }} />
           <button onClick={() => onAction('/api/loan/borrow', { amount: loanAmount }, 'loan_result', '贷款到账。', 'cash')} className="btn-primary !h-9 px-3 sm:px-4">借款</button>
           <button onClick={() => onAction('/api/loan/repay', { amount: loanAmount }, 'loan_result', '还款成功。', 'cash')} className="btn-secondary !h-9 px-3 sm:px-4">还款</button>
         </div>
       </div>
-      {Object.entries(state.market_trends).map(([category, trend]) => <div key={category} className="py-3 border-b border-[#2A2D34] flex justify-between"><span>{categoryLabel(category)}</span><span className="text-[#C8A97E]">{trend.toFixed(2)}x</span></div>)}
+      {Object.entries(state.market_trends).map(([category, trend]) => <div key={category} className="py-3 border-b border-[#2A2D34] flex justify-between"><span>{categoryLabel(category)}</span><span className={trend >= 1 ? 'text-[#C8A97E]' : 'text-[#9E9E9E]'}>{trend.toFixed(2)}x</span></div>)}
     </ListPage>
   );
 }
@@ -1471,10 +1626,26 @@ function InfoSidebar({ state }: { state: GameState }) {
     <>
       <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">资产</h3>
       <div className="space-y-3 text-sm mb-10"><Stat label="现金" value={`$${state.cash.toLocaleString()}`} /><Stat label="声誉" value={state.reputation} /><Stat label="盈利" value={`$${state.total_profit.toLocaleString()}`} /><Stat label="贷款" value={`$${state.loan.principal.toLocaleString()}`} /></div>
+      <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">经济</h3>
+      <div className="space-y-3 text-sm mb-10">
+        <Stat label="指数" value={`${(state.economy_index || 1).toFixed(3)}`} />
+        <Stat label="日变化" value={formatSignedPercent(state.inflation_rate || 0)} />
+        <Stat label="成就" value={`${(state.achievements || []).filter((item) => item.unlocked).length}/${(state.achievements || []).length}`} />
+      </div>
+      {(state.achievement_unlocks || []).length > 0 && (
+        <>
+          <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">里程</h3>
+          <div className="space-y-2 text-xs text-[#9E9E9E] mb-10">
+            {state.achievement_unlocks.slice(-3).reverse().map((unlock) => <p key={`${unlock.id}-${unlock.day}`}>第 {unlock.day} 天：{unlock.name}</p>)}
+          </div>
+        </>
+      )}
       {customer && <>
         <h3 className="text-[18px] font-bold text-[#C8A97E] mb-4 pb-2 border-b border-[#C8A97E] w-[50px]">顾客</h3>
-        <div className="flex items-center gap-3 mb-4"><img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34]" referrerPolicy="no-referrer" /><div><div className="font-bold">{customer.name}</div><div className="text-xs text-[#9E9E9E]">{customer.trait_cn} / 耐心 {customer.patience}</div></div></div>
+        <div className="flex items-center gap-3 mb-4"><img src={customer.avatar_url} alt={customer.name} className="w-12 h-12 rounded-full bg-[#14171C] border border-[#2A2D34]" referrerPolicy="no-referrer" /><div><div className="font-bold">{customer.name}</div><div className="text-xs text-[#9E9E9E]">{customer.trait_cn} / 耐心 {customer.patience}</div>{customer.is_returning && <div className="text-xs text-[#C8A97E]">{customer.relationship_cn} · 第 {customer.visit_count} 次</div>}</div></div>
         <div className="space-y-2 text-xs text-[#9E9E9E] mb-8">
+          {customer.last_deal_summary && <p>旧账：{customer.last_deal_summary}</p>}
+          {customer.referred_by && <p>来源：忠实顾客推荐</p>}
           {customer.transaction_prefs?.slice(0, 2).map((pref, index) => <p key={`pref-${index}`}>偏好：{pref}</p>)}
           {customer.persuasion_points?.slice(0, 2).map((point, index) => <p key={`point-${index}`}>突破口：{point}</p>)}
         </div>
@@ -1509,6 +1680,7 @@ function ItemText({ extra, item }: { item: Item; extra?: string }) {
         <span>类别：{categoryLabel(item.category)}</span>
         <span>年代：{item.era}</span>
         <span>市场估值：${item.market_value.toLocaleString()}</span>
+        {item.value_trend_note && <span>趋势：{item.value_trend_note}</span>}
         <span>鉴定：{appraisal}</span>
         {appraisalRange(item) && <span>鉴定区间：{appraisalRange(item)}</span>}
       </div>

@@ -98,6 +98,96 @@ RARITY_INFO = {
 CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
 
+ECONOMY_INDEX_MIN = 0.72
+ECONOMY_INDEX_MAX = 1.85
+
+RARITY_VALUE_DRIFT = {
+    "common": -0.012,
+    "rare": -0.004,
+    "epic": 0.002,
+    "legendary": 0.006,
+}
+
+CONDITION_VALUE_DRIFT = {
+    "Poor": -0.010,
+    "Good": 0.0,
+    "Mint": 0.002,
+}
+
+RARITY_HOLDING_RATE = {
+    "common": 0.0012,
+    "rare": 0.0016,
+    "epic": 0.0021,
+    "legendary": 0.0028,
+}
+
+
+def _achievement_defs() -> Dict[str, Dict[str, Any]]:
+    definitions: Dict[str, Dict[str, Any]] = {}
+
+    def add(achievement_id: str, category: str, name: str, desc: str, metric: str, target: int, reward: Optional[Dict[str, Any]] = None, hidden: bool = False):
+        definitions[achievement_id] = {
+            "id": achievement_id,
+            "category": category,
+            "name": name,
+            "desc": desc,
+            "metric": metric,
+            "target": target,
+            "reward": reward or {},
+            "hidden": hidden,
+        }
+
+    for target, name in [(20000, "现金流转"), (50000, "金库初成"), (100000, "六位数掌柜"), (250000, "城中富户"), (1000000, "百万富翁")]:
+        add(f"cash_{target}", "经营", name, f"现金达到 ${target:,}。", "cash", target, {"reputation": 1})
+    for target, name in [(5000, "第一桶金"), (25000, "稳定盈利"), (100000, "利润机器"), (500000, "财源滚滚"), (1000000, "当铺财阀")]:
+        add(f"profit_{target}", "经营", name, f"累计正向利润达到 ${target:,}。", "total_profit", target, {"cash": min(5000, target // 50)})
+    for target, name in [(1, "开张大吉"), (10, "熟练掌柜"), (50, "百炼柜台"), (100, "交易百次"), (300, "谈遍全城")]:
+        add(f"trades_{target}", "交易", name, f"成功完成 {target} 笔交易。", "successful_trades", target, {"reputation": 1})
+    for target, name in [(5, "好评初现"), (25, "街坊称赞"), (100, "口碑名店")]:
+        add(f"reviews_{target}", "声誉", name, f"获得 {target} 次正面评价。", "positive_reviews", target, {"reputation": 2})
+    for target, name in [(120, "小有名气"), (160, "信誉店铺"), (220, "金字招牌"), (320, "名满旧街"), (500, "传奇声望")]:
+        add(f"reputation_{target}", "声誉", name, f"声誉达到 {target}。", "reputation", target, {"cash": target * 5})
+    for target, name in [(7, "撑过首周"), (30, "月度经营"), (100, "百日老店"), (365, "一年掌柜")]:
+        add(f"days_{target}", "经营", name, f"经营到第 {target} 天。", "day", target, {"reputation": 2})
+    for target, name in [(1, "传说入库"), (5, "传奇收藏家"), (10, "镇店之宝库")]:
+        add(f"legendary_{target}", "收藏", name, f"累计拥有或售出 {target} 件传奇物品。", "legendary_total", target, {"reputation": 3})
+    for target, name in [(3, "史诗眼光"), (10, "高端藏家"), (25, "珍品经纪人")]:
+        add(f"epic_{target}", "收藏", name, f"累计拥有或售出 {target} 件史诗物品。", "epic_total", target, {"cash": target * 200})
+    for target, name in [(10, "仓库渐满"), (25, "藏品周转"), (50, "满仓经营")]:
+        add(f"inventory_{target}", "库存", name, f"库存达到 {target} 件。", "inventory_count", target, {"reputation": 1})
+    for target, name in [(5, "橱窗有人气"), (10, "展柜经理")]:
+        add(f"displayed_{target}", "库存", name, f"同时展示 {target} 件物品。", "displayed_count", target, {"cash": target * 120})
+    for target, name in [(1, "第一次鉴定"), (25, "鉴定常客"), (100, "鉴定专家")]:
+        add(f"appraisals_{target}", "鉴定", name, f"完成 {target} 次鉴定。", "appraisals", target, {"skill_xp": {"appraisal": 60}})
+    for target, name in [(1, "识破骗局"), (10, "反诈掌柜"), (30, "火眼金睛")]:
+        add(f"fakes_{target}", "鉴定", name, f"识破 {target} 次欺诈或赝品。", "fakes_detected", target, {"reputation": 2})
+    for target, name in [(1, "修好第一件"), (20, "修复熟手"), (75, "修复大师")]:
+        add(f"repairs_{target}", "修复", name, f"完成 {target} 次成功修复。", "repairs_completed", target, {"skill_xp": {"restoration": 60}})
+    for target, name in [(2, "门面升级"), (3, "豪华当铺"), (5, "世纪大掌柜")]:
+        add(f"shop_level_{target}", "升级", name, f"当铺等级达到 Lv.{target}。", "shop_level", target, {"reputation": target})
+    for target, name in [(3, "入门专精"), (6, "技能老练"), (10, "单项宗师")]:
+        add(f"max_skill_{target}", "技能", name, f"任意技能达到 Lv.{target}。", "max_skill_level", target, {"cash": target * 300})
+    for target, name in [(3, "全面发展"), (5, "全能掌柜"), (10, "五艺俱全")]:
+        add(f"all_skills_{target}", "技能", name, f"全部技能达到 Lv.{target}。", "all_skill_min", target, {"reputation": target})
+    for target, name in [(2, "设施起步"), (3, "店铺成型"), (5, "满级设施")]:
+        add(f"all_facilities_{target}", "升级", name, f"全部设施达到 Lv.{target}。", "all_facility_min", target, {"cash": target * 600})
+    for target, name in [(5, "熟面孔"), (20, "客源簿"), (50, "旧街人脉")]:
+        add(f"customers_{target}", "顾客", name, f"记录 {target} 位顾客关系。", "customer_records", target, {"reputation": 1})
+    for target, name in [(1, "第一位回头客"), (10, "忠实客群")]:
+        add(f"loyal_{target}", "顾客", name, f"拥有 {target} 位忠实顾客。", "loyal_customers", target, {"reputation": 3})
+    for target, name in [(1, "旧客回访"), (15, "老客成交"), (50, "回头生意")]:
+        add(f"returning_deals_{target}", "顾客", name, f"与回头客完成 {target} 笔交易。", "returning_customer_deals", target, {"cash": target * 150})
+    for target, name in [(1000, "仓储压力"), (10000, "库存税感")]:
+        add(f"holding_cost_{target}", "经济", name, f"累计支付持有成本 ${target:,}。", "holding_cost_paid", target, {"skill_xp": {"commerce": 50}})
+    for target, name in [(1000, "等到涨价"), (25000, "价值投资")]:
+        add(f"value_gain_{target}", "经济", name, f"靠持有与展示累计增值 ${target:,}。", "value_gain_from_holding", target, {"reputation": 2})
+    add("negative_reviews_1", "风险", "第一次差评", "收到一次负面评价。", "negative_reviews", 1, {"skill_xp": {"charm": 40}}, hidden=True)
+
+    return definitions
+
+
+ACHIEVEMENT_DEFS = _achievement_defs()
+
 APPRAISAL_METHODS = {
     "visual": {"name_cn": "目测初鉴", "cost_multiplier": 0.8, "accuracy_bonus": -0.20, "value_margin": 0.48, "xp": 20, "desc": "速度快、费用较低，只能给出粗略区间；对高仿赝品不够稳。"},
     "standard": {"name_cn": "标准鉴定", "cost_multiplier": 1.45, "accuracy_bonus": -0.02, "value_margin": 0.30, "xp": 35, "desc": "检查材质、工艺和市场记录，适合大多数交易，但仍保留误差。"},
@@ -144,6 +234,12 @@ class Item:
         market_value: Optional[int] = None,
         item_id: Optional[str] = None,
         acquired_at: Optional[int] = None,
+        acquired_day: Optional[int] = None,
+        last_value_update_day: Optional[int] = None,
+        base_value_at_purchase: Optional[int] = None,
+        value_history: Optional[List[Dict[str, Any]]] = None,
+        holding_cost_paid: int = 0,
+        value_trend_note: Optional[str] = None,
         last_trade_at: Optional[int] = None,
         showcase_price: Optional[int] = None,
         era: Optional[str] = None,
@@ -182,6 +278,12 @@ class Item:
         self.repair_success_bonus = 0.0
         self.display_slot: Optional[int] = None
         self.acquired_at = int(acquired_at if acquired_at is not None else time.time())
+        self.acquired_day = int(acquired_day) if acquired_day is not None else 1
+        self.last_value_update_day = int(last_value_update_day) if last_value_update_day is not None else self.acquired_day
+        self.base_value_at_purchase = int(base_value_at_purchase) if base_value_at_purchase is not None else self.market_value
+        self.value_history = value_history or []
+        self.holding_cost_paid = int(holding_cost_paid or 0)
+        self.value_trend_note = value_trend_note or "尚未经历库存时间价值结算。"
         self.last_trade_at = last_trade_at
         self.showcase_price = showcase_price
 
@@ -218,6 +320,12 @@ class Item:
             "repair_success_bonus": self.repair_success_bonus,
             "display_slot": self.display_slot,
             "acquired_at": self.acquired_at,
+            "acquired_day": self.acquired_day,
+            "last_value_update_day": self.last_value_update_day,
+            "base_value_at_purchase": self.base_value_at_purchase,
+            "value_history": self.value_history[-12:],
+            "holding_cost_paid": self.holding_cost_paid,
+            "value_trend_note": self.value_trend_note,
             "last_trade_at": self.last_trade_at,
             "showcase_price": self.showcase_price,
         }
@@ -238,6 +346,12 @@ class Item:
             repair_difficulty=int(data.get("repair_difficulty", 1)),
             item_id=data.get("id"),
             acquired_at=data.get("acquired_at"),
+            acquired_day=data.get("acquired_day"),
+            last_value_update_day=data.get("last_value_update_day"),
+            base_value_at_purchase=data.get("base_value_at_purchase"),
+            value_history=list(data.get("value_history", [])),
+            holding_cost_paid=int(data.get("holding_cost_paid", 0)),
+            value_trend_note=data.get("value_trend_note"),
             last_trade_at=data.get("last_trade_at"),
             showcase_price=data.get("showcase_price"),
             era=data.get("era"),
@@ -282,11 +396,25 @@ class Customer:
         limit_price: Optional[int] = None,
         transaction_prefs: Optional[List[str]] = None,
         persuasion_points: Optional[List[str]] = None,
+        customer_id: Optional[str] = None,
+        is_returning: bool = False,
+        visit_count: int = 1,
+        relationship_level: Optional[str] = None,
+        last_deal_summary: Optional[str] = None,
+        satisfaction: int = 50,
+        referred_by: Optional[str] = None,
     ):
+        self.customer_id = customer_id or str(uuid.uuid4())[:10]
         self.name = name
         self.trait = trait if trait in CUSTOMER_TRAITS else "hesitant"
         self.role = role if role in ["seller", "buyer"] else "seller"
         self.item = item
+        self.is_returning = bool(is_returning)
+        self.visit_count = max(1, int(visit_count or 1))
+        self.satisfaction = clamp(int(satisfaction), 0, 100)
+        self.relationship_level = relationship_level or self._relationship_from_satisfaction(self.satisfaction, self.visit_count)
+        self.last_deal_summary = last_deal_summary
+        self.referred_by = referred_by
         self.age = age or random.randint(22, 72)
         self.appearance = appearance or random.choice(["穿着旧呢大衣", "拎着磨旧皮箱", "戴着金边眼镜", "神色匆忙", "衣着体面"])
         self.backstory = backstory or self._default_backstory()
@@ -300,6 +428,10 @@ class Customer:
         if self.trait == "hardball":
             base_patience -= 1
         elif self.trait in ["eager", "hesitant"]:
+            base_patience += 1
+        if self.is_returning:
+            base_patience += 1
+        if self.relationship_level in ["loyal", "vip"]:
             base_patience += 1
         self.patience = clamp(int(patience if patience is not None else base_patience), 1, 7)
 
@@ -356,7 +488,33 @@ class Customer:
             perceived_value = self.item.actual_value
 
         limit_ratio, start_ratio = ratios[self.trait]
+        if self.relationship_level in ["loyal", "vip"]:
+            if self.role == "seller":
+                limit_ratio *= 0.96
+                start_ratio *= 0.94
+            else:
+                limit_ratio *= 1.05
+                start_ratio *= 1.04
+        elif self.is_returning:
+            if self.role == "seller":
+                limit_ratio *= 0.98
+                start_ratio *= 0.97
+            else:
+                limit_ratio *= 1.02
+                start_ratio *= 1.02
         return max(5, int(perceived_value * limit_ratio)), max(10, int(perceived_value * start_ratio))
+
+    @staticmethod
+    def _relationship_from_satisfaction(satisfaction: int, visit_count: int) -> str:
+        if satisfaction >= 88 and visit_count >= 3:
+            return "vip"
+        if satisfaction >= 76 and visit_count >= 2:
+            return "loyal"
+        if satisfaction >= 58 or visit_count >= 2:
+            return "familiar"
+        if satisfaction <= 28:
+            return "strained"
+        return "new"
 
     def retarget_item(self, item: Item, note: Optional[str] = None):
         self.item = item
@@ -371,6 +529,7 @@ class Customer:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            "customer_id": self.customer_id,
             "name": self.name,
             "trait": self.trait,
             "trait_cn": CUSTOMER_TRAITS[self.trait]["name_cn"],
@@ -384,6 +543,19 @@ class Customer:
             "transaction_prefs": self.transaction_prefs,
             "persuasion_points": self.persuasion_points,
             "avatar_url": self.avatar_url,
+            "is_returning": self.is_returning,
+            "visit_count": self.visit_count,
+            "relationship_level": self.relationship_level,
+            "relationship_cn": {
+                "new": "新客",
+                "familiar": "熟客",
+                "loyal": "忠实顾客",
+                "vip": "贵宾",
+                "strained": "关系紧张",
+            }.get(self.relationship_level, "新客"),
+            "last_deal_summary": self.last_deal_summary,
+            "satisfaction": self.satisfaction,
+            "referred_by": self.referred_by,
             "patience": self.patience,
             "current_offer": self.current_offer,
             "initial_offer": self.initial_offer,
@@ -412,6 +584,13 @@ class Customer:
             limit_price=data.get("limit_price"),
             transaction_prefs=list(data.get("transaction_prefs") or []),
             persuasion_points=list(data.get("persuasion_points") or []),
+            customer_id=data.get("customer_id"),
+            is_returning=bool(data.get("is_returning", False)),
+            visit_count=int(data.get("visit_count", 1)),
+            relationship_level=data.get("relationship_level"),
+            last_deal_summary=data.get("last_deal_summary"),
+            satisfaction=int(data.get("satisfaction", 50)),
+            referred_by=data.get("referred_by"),
         )
 
 
@@ -429,12 +608,34 @@ class GameStateManager:
         self.loan = {"principal": 0, "interest_rate": 0.02}
         self.tax = {"next_due_day": 7, "rate": 0.08, "last_paid": 0}
         self.market_trends: Dict[str, float] = {category: 1.0 for category in ITEM_TEMPLATES}
+        self.economy_index = 1.0
+        self.inflation_rate = 0.0
+        self.money_supply_score = 10000
+        self.economic_pressure = "stable"
+        self.economy_history: List[Dict[str, Any]] = []
         self.pending_event: Optional[Dict[str, Any]] = None
         self.shop_name = "无名当铺"
         self.reputation = 100
         self.total_profit = 0
         self.successful_trades = 0
         self.positive_reviews = 0
+        self.customer_registry: Dict[str, Dict[str, Any]] = {}
+        self.achievements: Dict[str, Dict[str, Any]] = {}
+        self.achievement_unlocks: List[Dict[str, Any]] = []
+        self.achievement_stats: Dict[str, int] = {
+            "appraisals": 0,
+            "fakes_detected": 0,
+            "repairs_completed": 0,
+            "repair_failures": 0,
+            "returning_customer_deals": 0,
+            "negative_reviews": 0,
+            "holding_cost_paid": 0,
+            "value_gain_from_holding": 0,
+            "highest_cash": self.cash,
+            "highest_inventory_value": 0,
+            "total_customers_seen": 0,
+            "referrals_generated": 0,
+        }
         self.ranking_badge: Optional[str] = None
         self.ranking_reward_bonus = 0
         self.active_customer: Optional[Customer] = None
@@ -464,6 +665,9 @@ class GameStateManager:
             "operating_cost": 0,
             "loan_interest": 0,
             "tax": 0,
+            "holding_cost": 0,
+            "economy_index": self.economy_index,
+            "inflation_rate": self.inflation_rate,
             "events": [],
             "starting_cash": self.cash,
             "ending_cash": self.cash,
@@ -477,13 +681,17 @@ class GameStateManager:
         self.daily_customer_queue = []
         tasks = [self.generate_random_customer_async(ai_client) for _ in range(self.total_customers_today)]
         self.daily_customer_queue.extend(await asyncio.gather(*tasks))
+        self._inject_relationship_customers()
         self._rebalance_buyer_targets()
+        self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
 
     def initialize_day_fast(self):
         """Initialize a playable day immediately with local templates."""
         self.daily_customer_queue = [self.generate_random_customer() for _ in range(self.total_customers_today)]
+        self._inject_relationship_customers()
         self._rebalance_buyer_targets()
+        self.achievement_stats["total_customers_seen"] = int(self.achievement_stats.get("total_customers_seen", 0)) + len(self.daily_customer_queue)
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
 
     def generate_random_customer(self) -> Customer:
@@ -533,6 +741,146 @@ class GameStateManager:
         )
         customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
         return customer
+
+    def _relationship_cn(self, level: str) -> str:
+        return {
+            "new": "新客",
+            "familiar": "熟客",
+            "loyal": "忠实顾客",
+            "vip": "贵宾",
+            "strained": "关系紧张",
+        }.get(level, "新客")
+
+    def _customer_record(self, customer: Customer) -> Dict[str, Any]:
+        return {
+            "customer_id": customer.customer_id,
+            "name": customer.name,
+            "trait": customer.trait,
+            "age": customer.age,
+            "appearance": customer.appearance,
+            "avatar_url": customer.avatar_url,
+            "visit_count": customer.visit_count,
+            "last_visit_day": self.day,
+            "satisfaction": customer.satisfaction,
+            "relationship_level": customer.relationship_level,
+            "last_deal_summary": customer.last_deal_summary,
+            "positive_deals": 0,
+            "negative_deals": 0,
+            "referrals_generated": 0,
+        }
+
+    def _generate_customer_from_record(self, record: Dict[str, Any], referred_by: Optional[str] = None) -> Customer:
+        saleable_items = self._saleable_items()
+        role = "buyer" if saleable_items and random.random() < 0.52 else "seller"
+        if role == "seller":
+            category = random.choice(list(ITEM_TEMPLATES.keys()))
+            template = random.choice(ITEM_TEMPLATES[category])
+            item = self._generate_item_from_template(template, category)
+            quality_bonus = 1.08 + min(0.18, int(record.get("visit_count", 1)) * 0.025)
+            item.market_value = int(item.market_value * quality_bonus)
+            item.actual_value = int(item.actual_value * quality_bonus)
+            item.hidden_attrs = list(dict.fromkeys(item.hidden_attrs + ["回头客带来的更优质来源"]))
+        else:
+            item = self._choose_saleable_item() or random.choice(saleable_items)
+        visit_count = int(record.get("visit_count", 1)) + 1
+        satisfaction = int(record.get("satisfaction", 55))
+        relationship_level = Customer._relationship_from_satisfaction(satisfaction, visit_count)
+        backstory = (
+            f"{record.get('name', '熟客')} 又回到店里，提起上次交易：{record.get('last_deal_summary') or '还记得你这里办事利落'}。"
+            if not referred_by
+            else f"{record.get('name', '熟客')} 推荐来的朋友，听说你的铺子讲规矩，想先试一笔。"
+        )
+        customer = Customer(
+            name=str(record.get("name") or random.choice(CUSTOMER_NAMES)),
+            trait=str(record.get("trait") or random.choice(list(CUSTOMER_TRAITS.keys()))),
+            role=role,
+            item=item,
+            shop_level=self.shop_level,
+            marketer_active=self.staff["marketer"],
+            age=record.get("age"),
+            appearance=record.get("appearance"),
+            backstory=backstory,
+            avatar_url=record.get("avatar_url"),
+            customer_id=str(record.get("customer_id") or str(uuid.uuid4())[:10]),
+            is_returning=not bool(referred_by),
+            visit_count=visit_count,
+            relationship_level=relationship_level,
+            last_deal_summary=record.get("last_deal_summary"),
+            satisfaction=satisfaction,
+            referred_by=referred_by,
+        )
+        customer.patience = clamp(customer.patience + self.skills["charm"]["level"] // 2, 1, 8)
+        return customer
+
+    def _inject_relationship_customers(self):
+        if not self.daily_customer_queue:
+            return
+        candidates = []
+        for record in self.customer_registry.values():
+            if self.day - int(record.get("last_visit_day", 0)) < 2:
+                continue
+            satisfaction = int(record.get("satisfaction", 50))
+            if satisfaction < 58:
+                continue
+            base_chance = 0.30 if satisfaction >= 70 else 0.14
+            base_chance += min(0.08, (self.reputation - 100) / 1000)
+            base_chance += min(0.06, self.skills["charm"]["level"] * 0.006)
+            if record.get("relationship_level") == "vip":
+                base_chance += 0.08
+            if random.random() < base_chance:
+                candidates.append(record)
+        random.shuffle(candidates)
+        slots = min(len(candidates), max(1, self.total_customers_today // 3))
+        for index, record in enumerate(candidates[:slots]):
+            self.daily_customer_queue[index % len(self.daily_customer_queue)] = self._generate_customer_from_record(record)
+
+        loyal_records = [record for record in self.customer_registry.values() if record.get("relationship_level") in ["loyal", "vip"]]
+        if loyal_records and random.random() < 0.18 + (0.07 if self.staff["marketer"] else 0):
+            source = random.choice(loyal_records)
+            insert_at = min(len(self.daily_customer_queue) - 1, slots)
+            referred = self._generate_customer_from_record(source, referred_by=str(source.get("customer_id")))
+            referred.name = random.choice(CUSTOMER_NAMES)
+            referred.customer_id = str(uuid.uuid4())[:10]
+            referred.is_returning = False
+            referred.visit_count = 1
+            self.daily_customer_queue[insert_at] = referred
+            source["referrals_generated"] = int(source.get("referrals_generated", 0)) + 1
+            self.achievement_stats["referrals_generated"] = int(self.achievement_stats.get("referrals_generated", 0)) + 1
+
+    def _record_customer_outcome(self, customer: Customer, outcome: str, price: Optional[int] = None, item: Optional[Item] = None):
+        record = self.customer_registry.get(customer.customer_id) or self._customer_record(customer)
+        record["visit_count"] = max(int(record.get("visit_count", 0)), customer.visit_count)
+        record["last_visit_day"] = self.day
+        delta = 0
+        if outcome == "deal":
+            delta = 14 if customer.role == "seller" else 12
+            record["positive_deals"] = int(record.get("positive_deals", 0)) + 1
+            if customer.is_returning:
+                self.achievement_stats["returning_customer_deals"] = int(self.achievement_stats.get("returning_customer_deals", 0)) + 1
+        elif outcome == "reject":
+            delta = -8
+        elif outcome == "walk_out":
+            delta = -14
+        elif outcome == "fraud_detected":
+            delta = -22
+            record["negative_deals"] = int(record.get("negative_deals", 0)) + 1
+        satisfaction = clamp(int(record.get("satisfaction", customer.satisfaction)) + delta, 0, 100)
+        record["satisfaction"] = satisfaction
+        record["relationship_level"] = Customer._relationship_from_satisfaction(satisfaction, int(record.get("visit_count", 1)))
+        if price is not None and item is not None:
+            verb = "卖给你" if customer.role == "seller" else "从你这里买走"
+            record["last_deal_summary"] = f"第 {self.day} 天以 ${price} {verb}【{item.name}】"
+        record["name"] = customer.name
+        record["trait"] = customer.trait
+        record["age"] = customer.age
+        record["appearance"] = customer.appearance
+        record["avatar_url"] = customer.avatar_url
+        self.customer_registry[customer.customer_id] = record
+        if outcome in ["reject", "walk_out"] and random.random() < 0.10:
+            self.reputation -= 1
+            self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
+            if self.daily_summary:
+                self.daily_summary["events"].append(f"{customer.name} 留下一条负面评价，声誉 -1。")
 
     def _retarget_buyer(self, customer: Customer, unavailable_item_id: Optional[str] = None, target_counts: Optional[Dict[str, int]] = None, announce: bool = True) -> bool:
         if customer.role != "buyer":
@@ -612,8 +960,198 @@ class GameStateManager:
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:
-            drift = random.uniform(-0.12, 0.14)
-            self.market_trends[category] = round(clamp(int((1.0 + drift) * 100), 78, 135) / 100, 2)
+            macro_bias = (self.economy_index - 1.0) * 0.10
+            drift = random.uniform(-0.12, 0.14) + macro_bias
+            self.market_trends[category] = round(clamp(int((1.0 + drift) * 100), 72, 150) / 100, 2)
+
+    def _inventory_value(self) -> int:
+        return int(sum(item.market_value for item in self.inventory if item.status != "sold"))
+
+    def _achievement_metric(self, metric: str) -> int:
+        rarity_totals = {"common": 0, "rare": 0, "epic": 0, "legendary": 0}
+        for item in self.inventory + self.sold_items:
+            rarity_totals[item.rarity] = rarity_totals.get(item.rarity, 0) + 1
+        if metric == "cash":
+            return int(self.cash)
+        if metric == "total_profit":
+            return int(self.total_profit)
+        if metric == "successful_trades":
+            return int(self.successful_trades)
+        if metric == "positive_reviews":
+            return int(self.positive_reviews)
+        if metric == "reputation":
+            return int(self.reputation)
+        if metric == "day":
+            return int(self.day)
+        if metric == "inventory_count":
+            return len([item for item in self.inventory if item.status != "sold"])
+        if metric == "displayed_count":
+            return len([item for item in self.inventory if item.status == "displayed"])
+        if metric == "legendary_total":
+            return rarity_totals.get("legendary", 0)
+        if metric == "epic_total":
+            return rarity_totals.get("epic", 0)
+        if metric == "shop_level":
+            return int(self.shop_level)
+        if metric == "max_skill_level":
+            return max((value["level"] for value in self.skills.values()), default=1)
+        if metric == "all_skill_min":
+            return min((value["level"] for value in self.skills.values()), default=1)
+        if metric == "all_facility_min":
+            return min(self.facilities.values()) if self.facilities else 1
+        if metric == "customer_records":
+            return len(self.customer_registry)
+        if metric == "loyal_customers":
+            return len([record for record in self.customer_registry.values() if record.get("relationship_level") in ["loyal", "vip"]])
+        return int(self.achievement_stats.get(metric, 0))
+
+    def _update_achievement_stats(self):
+        self.achievement_stats["highest_cash"] = max(int(self.achievement_stats.get("highest_cash", 0)), int(self.cash))
+        self.achievement_stats["highest_inventory_value"] = max(int(self.achievement_stats.get("highest_inventory_value", 0)), self._inventory_value())
+        self.achievement_stats["total_customers_seen"] = max(
+            int(self.achievement_stats.get("total_customers_seen", 0)),
+            self.customers_served_today + len(self.customer_registry),
+        )
+
+    def _apply_achievement_reward(self, reward: Dict[str, Any]):
+        cash_reward = int(reward.get("cash") or 0)
+        reputation_reward = int(reward.get("reputation") or 0)
+        if cash_reward:
+            self.cash += cash_reward
+            if self.daily_summary:
+                self.daily_summary["revenue"] = self.daily_summary.get("revenue", 0) + cash_reward
+        if reputation_reward:
+            self.reputation += reputation_reward
+        skill_rewards = reward.get("skill_xp") if isinstance(reward.get("skill_xp"), dict) else {}
+        for skill, amount in skill_rewards.items():
+            self.add_skill_xp(skill, int(amount))
+
+    def _check_achievements(self, event_type: str = "", context: Optional[Dict[str, Any]] = None):
+        _ = event_type, context
+        self._update_achievement_stats()
+        for achievement_id, definition in ACHIEVEMENT_DEFS.items():
+            current = self.achievements.get(achievement_id, {})
+            progress = self._achievement_metric(definition["metric"])
+            unlocked = bool(current.get("unlocked"))
+            if not unlocked and progress >= int(definition["target"]):
+                unlocked = True
+                self._apply_achievement_reward(definition.get("reward", {}))
+                unlock = {
+                    "id": achievement_id,
+                    "name": definition["name"],
+                    "category": definition["category"],
+                    "day": self.day,
+                    "reward": definition.get("reward", {}),
+                }
+                self.achievement_unlocks.append(unlock)
+                self.achievement_unlocks = self.achievement_unlocks[-12:]
+            self.achievements[achievement_id] = {
+                "id": achievement_id,
+                "progress": min(progress, int(definition["target"])),
+                "target": int(definition["target"]),
+                "unlocked": unlocked,
+                "unlocked_day": current.get("unlocked_day") or (self.day if unlocked else None),
+            }
+
+    def achievement_list(self) -> List[Dict[str, Any]]:
+        self._update_achievement_stats()
+        items: List[Dict[str, Any]] = []
+        for achievement_id, definition in ACHIEVEMENT_DEFS.items():
+            progress = self._achievement_metric(definition["metric"])
+            state = self.achievements.get(achievement_id, {})
+            unlocked = bool(state.get("unlocked")) or progress >= int(definition["target"])
+            hidden = bool(definition.get("hidden")) and not unlocked
+            items.append(
+                {
+                    **definition,
+                    "name": "隐藏成就" if hidden else definition["name"],
+                    "desc": "继续经营以揭开这个目标。" if hidden else definition["desc"],
+                    "progress": min(progress, int(definition["target"])),
+                    "unlocked": unlocked,
+                    "unlocked_day": state.get("unlocked_day"),
+                }
+            )
+        return items
+
+    def _apply_economy_tick(self) -> Dict[str, Any]:
+        previous = float(self.economy_index)
+        assets = max(0, int(self.cash) + self._inventory_value())
+        self.money_supply_score = assets + int(self.loan.get("principal", 0) * 0.45) + self.successful_trades * 180
+        wealth_pressure = min(0.018, max(0.0, (assets - 35000) / 900000))
+        time_pressure = min(0.010, self.day / 30000)
+        debt_drag = min(0.010, self.loan.get("principal", 0) / 700000)
+        random_drift = random.uniform(-0.006, 0.008)
+        daily_change = random_drift + wealth_pressure + time_pressure - debt_drag
+        self.economy_index = round(max(ECONOMY_INDEX_MIN, min(ECONOMY_INDEX_MAX, previous * (1 + daily_change))), 3)
+        self.inflation_rate = round(self.economy_index - previous, 4)
+        if self.inflation_rate > 0.012:
+            self.economic_pressure = "inflation"
+        elif self.inflation_rate < -0.008:
+            self.economic_pressure = "deflation"
+        else:
+            self.economic_pressure = "stable"
+        entry = {
+            "day": self.day,
+            "economy_index": self.economy_index,
+            "inflation_rate": self.inflation_rate,
+            "pressure": self.economic_pressure,
+            "money_supply_score": self.money_supply_score,
+        }
+        self.economy_history.append(entry)
+        self.economy_history = self.economy_history[-30:]
+        return entry
+
+    def _apply_inventory_value_tick(self) -> Dict[str, Any]:
+        total_holding_cost = 0
+        total_value_delta = 0
+        changed_items = 0
+        security_discount = min(0.35, (self.facilities["security"] - 1) * 0.04)
+        commerce_discount = min(0.20, (self.skills["commerce"]["level"] - 1) * 0.025)
+        for item in self.inventory:
+            if item.status not in ["stored", "displayed", "repairing"]:
+                continue
+            last_day = int(getattr(item, "last_value_update_day", getattr(item, "acquired_day", self.day)) or self.day)
+            days_elapsed = max(0, self.day - last_day)
+            if days_elapsed <= 0:
+                continue
+            old_value = int(item.market_value)
+            trend = float(self.market_trends.get(item.category, 1.0))
+            rarity_drift = RARITY_VALUE_DRIFT.get(item.rarity, -0.006)
+            condition_drift = CONDITION_VALUE_DRIFT.get(item.condition, 0.0)
+            display_drift = 0.004 + self.facilities["showcase"] * 0.001 if item.status == "displayed" else 0.0
+            repair_drag = -0.004 if item.status == "repairing" else 0.0
+            market_drift = (trend - 1.0) * 0.08
+            macro_drift = (self.economy_index - 1.0) * 0.006
+            daily_rate = max(-0.035, min(0.032, rarity_drift + condition_drift + display_drift + repair_drag + market_drift + macro_drift))
+            new_value = max(10, int(old_value * ((1 + daily_rate) ** days_elapsed)))
+            value_delta = new_value - old_value
+            storage_rate = RARITY_HOLDING_RATE.get(item.rarity, 0.0014)
+            if item.status == "displayed":
+                storage_rate += 0.0008
+            if item.status == "repairing":
+                storage_rate += 0.0005
+            storage_rate *= max(0.45, 1 - security_discount - commerce_discount)
+            holding_cost = max(days_elapsed * 2, int(old_value * storage_rate * days_elapsed))
+            item.market_value = new_value
+            item.holding_cost_paid = int(getattr(item, "holding_cost_paid", 0)) + holding_cost
+            item.last_value_update_day = self.day
+            item.value_trend_note = (
+                f"{days_elapsed} 天内{'增值' if value_delta >= 0 else '折价'} ${abs(value_delta)}，"
+                f"持有成本 ${holding_cost}，市场系数 {trend:.2f}x。"
+            )
+            item.value_history = (getattr(item, "value_history", []) or []) + [
+                {"day": self.day, "market_value": new_value, "delta": value_delta, "holding_cost": holding_cost}
+            ]
+            item.value_history = item.value_history[-12:]
+            total_holding_cost += holding_cost
+            total_value_delta += value_delta
+            changed_items += 1
+        if total_holding_cost:
+            self.cash -= total_holding_cost
+            self.achievement_stats["holding_cost_paid"] = int(self.achievement_stats.get("holding_cost_paid", 0)) + total_holding_cost
+        if total_value_delta > 0:
+            self.achievement_stats["value_gain_from_holding"] = int(self.achievement_stats.get("value_gain_from_holding", 0)) + total_value_delta
+        return {"holding_cost": total_holding_cost, "value_delta": total_value_delta, "changed_items": changed_items}
 
     def _choose_rarity(self) -> str:
         boost = self.shop_level + self.facilities["storefront"] + (1 if self.staff["marketer"] else 0)
@@ -630,7 +1168,7 @@ class GameStateManager:
         condition = random.choices(["Poor", "Good", "Mint"], weights=[35, 45, 20], k=1)[0]
         raw_value = template["mint_val"] if condition == "Mint" else template["good_val"] if condition == "Good" else template["poor_val"]
         rarity = self._choose_rarity()
-        value = int(raw_value * RARITY_INFO[rarity]["multiplier"] * random.uniform(0.85, 1.16))
+        value = int(raw_value * RARITY_INFO[rarity]["multiplier"] * self.economy_index * random.uniform(0.85, 1.16))
         is_fake = random.random() < template["fake_rate"]
         if is_fake:
             value = max(15, int(value * random.uniform(0.10, 0.22)))
@@ -657,6 +1195,9 @@ class GameStateManager:
             special_effects=[str(value) for value in (ai_item.get("special_effects") if isinstance(ai_item.get("special_effects"), list) else ["适合展示吸引收藏客"])],
             authentication_tips=[str(value) for value in (ai_item.get("authentication_tips") if isinstance(ai_item.get("authentication_tips"), list) else ["观察材质老化", "核对款识与来源"])],
             repair_difficulty=random.randint(1, 5),
+            acquired_day=self.day,
+            last_value_update_day=self.day,
+            base_value_at_purchase=market_value,
         )
 
     async def generate_random_customer_async(self, ai_client) -> Customer:
@@ -679,7 +1220,18 @@ class GameStateManager:
             displayed = [i for i in saleable_items if i.status == "displayed"]
             item = random.choice(displayed or saleable_items)
 
-        profile = await ai_client.generate_customer_profile(role, trait, item.name, item.category)
+        profile = await ai_client.generate_customer_profile(
+            role,
+            trait,
+            item.name,
+            item.category,
+            {
+                "economy_index": self.economy_index,
+                "economic_pressure": self.economic_pressure,
+                "market_trend": self.market_trends.get(item.category, 1.0),
+                "reputation": self.reputation,
+            },
+        )
         customer = Customer(
             name=str(profile.get("name") or name),
             trait=trait,
@@ -725,7 +1277,7 @@ class GameStateManager:
         item = self.active_customer.item
         facility_level = self.facilities["appraisal_room"]
         skill_level = self.skills["appraisal"]["level"]
-        base_cost = max(160, int(item.market_value * 0.08))
+        base_cost = max(160, int(item.market_value * 0.08 * self.economy_index))
         discount = 0.08 * (facility_level - 1) + (0.35 if self.staff["appraiser"] else 0)
         cost = max(120, int(base_cost * method_info["cost_multiplier"] * (1 - min(0.45, discount))))
         if self.cash < cost:
@@ -753,6 +1305,11 @@ class GameStateManager:
         ]
         item.appraisal_notes = ai_notes or fallback_notes
         self.add_skill_xp("appraisal", int(method_info["xp"]))
+        self.achievement_stats["appraisals"] = int(self.achievement_stats.get("appraisals", 0)) + 1
+        if detects_fake:
+            self.achievement_stats["fakes_detected"] = int(self.achievement_stats.get("fakes_detected", 0)) + 1
+            self._record_customer_outcome(self.active_customer, "fraud_detected")
+        self._check_achievements("appraise", {"method": method, "detected_fake": detects_fake})
         return {
             "success": True,
             "cost": cost,
@@ -841,7 +1398,7 @@ class GameStateManager:
         method_info = REPAIR_METHODS.get(method, REPAIR_METHODS["standard"])
         facility_level = self.facilities["restoration_workshop"]
         skill_level = self.skills["restoration"]["level"]
-        cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
+        cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * self.economy_index * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
         if self.staff["restorer"]:
             cost = int(cost * 0.75)
         cost = max(30, int(cost * method_info["cost_multiplier"]))
@@ -870,7 +1427,7 @@ class GameStateManager:
         method_info = REPAIR_METHODS.get(method, REPAIR_METHODS["standard"])
         facility_level = self.facilities["restoration_workshop"]
         skill_level = self.skills["restoration"]["level"]
-        preview_cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
+        preview_cost = max(60, int(item.market_value * (0.08 + item.repair_difficulty * 0.015) * self.economy_index * (1 - 0.05 * (facility_level - 1) - 0.03 * (skill_level - 1))))
         if self.staff["restorer"]:
             preview_cost = int(preview_cost * 0.75)
         preview_cost = max(30, int(preview_cost * method_info["cost_multiplier"]))
@@ -902,6 +1459,7 @@ class GameStateManager:
         self.daily_summary["revenue"] += price
         self.transaction_log.append({"day": self.day, "type": "direct_sell", "item": item.name, "amount": price})
         self.add_skill_xp("commerce", 35)
+        self._check_achievements("direct_sell", {"item": item.to_dict(), "price": price})
         message = f"你通过渠道卖出了【{item.name}】，收入 ${price}。"
         if active_buyer_waiting:
             if self._retarget_buyer(self.active_customer, item_id):
@@ -925,6 +1483,12 @@ class GameStateManager:
             self.cash -= price
             item.purchase_price = price
             item.acquired_at = int(time.time())
+            item.acquired_day = self.day
+            item.last_value_update_day = self.day
+            item.base_value_at_purchase = item.market_value
+            item.holding_cost_paid = 0
+            item.value_history = [{"day": self.day, "market_value": item.market_value, "delta": 0, "holding_cost": 0}]
+            item.value_trend_note = "今天刚入库，尚未产生持有成本。"
             item.status = "stored"
             self.inventory.append(item)
             self.daily_summary["revenue"] -= price
@@ -953,16 +1517,20 @@ class GameStateManager:
         self.successful_trades += 1
         self.positive_reviews += 1 if random.random() < 0.75 else 0
         self.reputation += 1
+        self._record_customer_outcome(customer, "deal", price, item)
         if tx_type == "sell":
             self.add_skill_xp("commerce", 20)
             self._repair_buyer_queue_after_item_removed(item.id)
         self.select_next_customer()
+        self._check_achievements("deal", {"type": tx_type, "item": item.to_dict(), "price": price})
         return {"success": True, "message": message, "price_transacted": price, "dialogue": dialogue}
 
     def reject(self) -> Dict[str, Any]:
         if not self.active_customer:
             return {"error": "没有活跃的顾客。"}
+        self._record_customer_outcome(self.active_customer, "reject")
         self.select_next_customer()
+        self._check_achievements("reject")
         return {"success": True, "message": "已拒绝交易。下一位顾客！"}
 
     def hire_staff(self, staff_type: str) -> Dict[str, Any]:
@@ -970,12 +1538,13 @@ class GameStateManager:
             return {"error": "未知的职员类型。"}
         if self.staff[staff_type]:
             return {"error": "你已经雇佣了该岗位的员工！"}
-        cost = STAFF_TYPES[staff_type]["hire_cost"]
+        cost = int(STAFF_TYPES[staff_type]["hire_cost"] * self.economy_index)
         if self.cash < cost:
             return {"error": f"招聘资金不足，需要花费 ${cost}。"}
         self.cash -= cost
         self.staff[staff_type] = True
         self.daily_summary["upgrades"] += cost
+        self._check_achievements("hire", {"staff_type": staff_type})
         return {"success": True, "message": f"成功雇佣了一名【{STAFF_TYPES[staff_type]['name_cn']}】！"}
 
     def fire_staff(self, staff_type: str) -> Dict[str, Any]:
@@ -990,12 +1559,13 @@ class GameStateManager:
         next_lvl = self.shop_level + 1
         if next_lvl > 5:
             return {"error": "你的店铺等级已达到上限！"}
-        cost = SHOP_UPGRADE_COSTS[next_lvl]["cost"]
+        cost = int(SHOP_UPGRADE_COSTS[next_lvl]["cost"] * self.economy_index)
         if self.cash < cost:
             return {"error": f"店铺升级资金不足，需要 ${cost}。"}
         self.cash -= cost
         self.shop_level = next_lvl
         self.daily_summary["upgrades"] += cost
+        self._check_achievements("upgrade_shop")
         return {"success": True, "message": f"店铺升级成功！当前等级：Lv.{self.shop_level} ({SHOP_UPGRADE_COSTS[next_lvl]['desc']})"}
 
     def facility_upgrade_cost(self, facility: str) -> Optional[int]:
@@ -1004,7 +1574,7 @@ class GameStateManager:
         level = self.facilities[facility]
         if level >= 5:
             return None
-        return int(FACILITY_INFO[facility]["base_cost"] * (level ** 1.65))
+        return int(FACILITY_INFO[facility]["base_cost"] * (level ** 1.65) * self.economy_index)
 
     def upgrade_facility(self, facility: str) -> Dict[str, Any]:
         if facility not in FACILITY_INFO:
@@ -1017,11 +1587,12 @@ class GameStateManager:
         self.cash -= cost
         self.facilities[facility] += 1
         self.daily_summary["upgrades"] += cost
+        self._check_achievements("upgrade_facility", {"facility": facility})
         return {"success": True, "message": f"【{FACILITY_INFO[facility]['name_cn']}】升级到 Lv.{self.facilities[facility]}。"}
 
     def borrow_loan(self, amount: int) -> Dict[str, Any]:
         amount = int(amount)
-        max_principal = 20000 + self.shop_level * 8000
+        max_principal = int((20000 + self.shop_level * 8000) * max(0.85, self.economy_index))
         if amount <= 0:
             return {"error": "借款金额必须大于 0。"}
         if self.loan["principal"] + amount > max_principal:
@@ -1056,12 +1627,16 @@ class GameStateManager:
                 item.market_value = int(item.market_value * (1.35 if item.condition == "Good" else 1.55))
                 events.append(f"修复完成：【{item.name}】成色从 {old_condition} 提升到 {item.condition}。")
                 self.add_skill_xp("restoration", 40)
+                self.achievement_stats["repairs_completed"] = int(self.achievement_stats.get("repairs_completed", 0)) + 1
             else:
                 item.actual_value = max(10, int(item.actual_value * 0.92))
                 events.append(f"修复意外：【{item.name}】修复失败，价值略有受损。")
+                self.achievement_stats["repair_failures"] = int(self.achievement_stats.get("repair_failures", 0)) + 1
             item.status = "stored"
             item.repair_days_remaining = 0
             item.repair_success_bonus = 0.0
+        if events:
+            self._check_achievements("repair")
         return events
 
     def _generate_pending_event(self) -> Optional[Dict[str, Any]]:
@@ -1169,6 +1744,9 @@ class GameStateManager:
                         "cash": self.cash,
                         "day": self.day,
                         "reputation": self.reputation,
+                        "economy_index": self.economy_index,
+                        "economic_pressure": self.economic_pressure,
+                        "money_supply_score": self.money_supply_score,
                     }
                 )
             )
@@ -1206,6 +1784,7 @@ class GameStateManager:
             self.pending_event = None
             self.daily_summary["ending_cash"] = self.cash
             self.daily_summary["net_profit"] = self.cash - self.daily_summary.get("starting_cash", self.cash)
+            self._check_achievements("event", {"title": title, "choice": choice_id})
             return {"success": True, "message": message}
         if title == "夜间异响":
             if choice_id == "guard":
@@ -1263,6 +1842,7 @@ class GameStateManager:
         self.pending_event = None
         self.daily_summary["ending_cash"] = self.cash
         self.daily_summary["net_profit"] = self.cash - self.daily_summary.get("starting_cash", self.cash)
+        self._check_achievements("event", {"title": title, "choice": choice_id})
         return {"success": True, "message": message}
 
     def end_day(self) -> Dict[str, Any]:
@@ -1270,24 +1850,40 @@ class GameStateManager:
             return {"error": "今天已经结算过了！"}
         self.day_ended = True
 
-        salary_total = sum(STAFF_TYPES[s]["daily_salary"] for s, active in self.staff.items() if active)
+        economy_entry = self._apply_economy_tick()
+        salary_total = int(sum(STAFF_TYPES[s]["daily_salary"] for s, active in self.staff.items() if active) * self.economy_index)
         commerce_discount = min(0.25, (self.skills["commerce"]["level"] - 1) * 0.025)
-        operating_cost = int((260 + self.shop_level * 90 + sum(self.facilities.values()) * 18) * (1 - commerce_discount))
-        interest = max(1, round(self.loan["principal"] * self.loan["interest_rate"])) if self.loan["principal"] else 0
+        operating_cost = int((260 + self.shop_level * 90 + sum(self.facilities.values()) * 18) * self.economy_index * (1 - commerce_discount))
+        interest_rate = self.loan["interest_rate"] + max(0, self.inflation_rate) * 0.5
+        interest = max(1, round(self.loan["principal"] * interest_rate)) if self.loan["principal"] else 0
         tax_due = 0
         if self.day >= self.tax["next_due_day"]:
             taxable = max(0, self.cash - self.daily_summary["starting_cash"])
-            tax_due = int(taxable * self.tax["rate"])
+            tax_due = int(taxable * (self.tax["rate"] + max(0, self.economy_index - 1.0) * 0.015))
             self.tax["last_paid"] = tax_due
             self.tax["next_due_day"] = self.day + 7
 
+        inventory_tick = self._apply_inventory_value_tick()
+        holding_cost = int(inventory_tick["holding_cost"])
         self.cash -= salary_total + operating_cost + interest + tax_due
         self.daily_summary["salaries"] = salary_total
         self.daily_summary["operating_cost"] = operating_cost
         self.daily_summary["loan_interest"] = interest
         self.daily_summary["tax"] = tax_due
+        self.daily_summary["holding_cost"] = holding_cost
+        self.daily_summary["economy_index"] = self.economy_index
+        self.daily_summary["inflation_rate"] = self.inflation_rate
+        self.daily_summary["economy_pressure"] = self.economic_pressure
+        if economy_entry["pressure"] != "stable":
+            label = "通胀" if economy_entry["pressure"] == "inflation" else "通缩"
+            self.daily_summary["events"].append(f"宏观环境进入{label}压力，经济指数 {self.economy_index:.3f}。")
+        if holding_cost:
+            self.daily_summary["events"].append(f"库存持有成本 ${holding_cost}，{inventory_tick['changed_items']} 件藏品完成时间价值结算。")
+        if inventory_tick["value_delta"]:
+            direction = "增值" if inventory_tick["value_delta"] > 0 else "折价"
+            self.daily_summary["events"].append(f"库存估值整体{direction} ${abs(int(inventory_tick['value_delta']))}。")
         if interest:
-            self.daily_summary["events"].append(f"银行按 {self.loan['interest_rate'] * 100:.1f}% 收取贷款利息 ${interest}。")
+            self.daily_summary["events"].append(f"银行按动态利率 {interest_rate * 100:.1f}% 收取贷款利息 ${interest}。")
 
         for event in self._process_repairs():
             self.daily_summary["events"].append(event)
@@ -1301,6 +1897,7 @@ class GameStateManager:
         self.daily_summary["net_profit"] = self.cash - self.daily_summary["starting_cash"]
         if self.daily_summary["net_profit"] > 0:
             self.total_profit += self.daily_summary["net_profit"]
+        self._check_achievements("end_day")
         return self.daily_summary
 
     def to_dict(self) -> Dict[str, Any]:
@@ -1320,12 +1917,21 @@ class GameStateManager:
             "loan": self.loan,
             "tax": self.tax,
             "market_trends": self.market_trends,
+            "economy_index": self.economy_index,
+            "inflation_rate": self.inflation_rate,
+            "money_supply_score": self.money_supply_score,
+            "economic_pressure": self.economic_pressure,
+            "economy_history": self.economy_history[-30:],
             "pending_event": self.pending_event,
             "shop_name": self.shop_name,
             "reputation": self.reputation,
             "total_profit": self.total_profit,
             "successful_trades": self.successful_trades,
             "positive_reviews": self.positive_reviews,
+            "customer_registry": self.customer_registry,
+            "achievements": self.achievement_list(),
+            "achievement_unlocks": self.achievement_unlocks[-12:],
+            "achievement_stats": self.achievement_stats,
             "ranking_badge": self.ranking_badge,
             "ranking_reward_bonus": self.ranking_reward_bonus,
             "active_customer": self.active_customer.to_dict() if self.active_customer else None,
@@ -1355,7 +1961,13 @@ class GameStateManager:
         state.cash = int(data.get("cash", 10000))
         state.day = int(data.get("day", 1))
         state.shop_level = int(data.get("shop_level", 1))
-        state.inventory = [Item.from_dict(item) for item in data.get("inventory", [])]
+        inventory_data = list(data.get("inventory", []))
+        state.inventory = [Item.from_dict(item) for item in inventory_data]
+        for item_data, item in zip(inventory_data, state.inventory):
+            if "acquired_day" not in item_data:
+                item.acquired_day = state.day
+                item.last_value_update_day = state.day
+                item.base_value_at_purchase = item.market_value
         state.sold_items = [Item.from_dict(item) for item in data.get("sold_items", [])]
         state.transaction_log = list(data.get("transaction_log", []))
         state.staff = {key: bool(data.get("staff", {}).get(key, False)) for key in STAFF_TYPES}
@@ -1374,12 +1986,36 @@ class GameStateManager:
             "last_paid": int(data.get("tax", {}).get("last_paid", 0)),
         }
         state.market_trends = {category: float(data.get("market_trends", {}).get(category, 1.0)) for category in ITEM_TEMPLATES}
+        state.economy_index = float(data.get("economy_index", 1.0))
+        state.inflation_rate = float(data.get("inflation_rate", 0.0))
+        state.money_supply_score = int(data.get("money_supply_score", state.cash))
+        state.economic_pressure = data.get("economic_pressure", "stable")
+        state.economy_history = list(data.get("economy_history", []))[-30:]
         state.pending_event = data.get("pending_event")
         state.shop_name = data.get("shop_name", "无名当铺")
         state.reputation = int(data.get("reputation", 100))
         state.total_profit = int(data.get("total_profit", 0))
         state.successful_trades = int(data.get("successful_trades", 0))
         state.positive_reviews = int(data.get("positive_reviews", 0))
+        state.customer_registry = {
+            str(key): dict(value)
+            for key, value in (data.get("customer_registry") or {}).items()
+            if isinstance(value, dict)
+        }
+        state.achievements = {
+            str(item.get("id") or key): dict(item)
+            for key, item in (data.get("achievements") or {}).items()
+            if isinstance(item, dict)
+        } if isinstance(data.get("achievements"), dict) else {
+            str(item.get("id")): {"id": str(item.get("id")), "progress": int(item.get("progress", 0)), "target": int(item.get("target", 1)), "unlocked": bool(item.get("unlocked")), "unlocked_day": item.get("unlocked_day")}
+            for item in (data.get("achievements") or [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        state.achievement_unlocks = list(data.get("achievement_unlocks", []))[-12:]
+        state.achievement_stats = {
+            **state.achievement_stats,
+            **{key: int(value) for key, value in (data.get("achievement_stats") or {}).items() if isinstance(value, (int, float))},
+        }
         state.ranking_badge = data.get("ranking_badge")
         state.ranking_reward_bonus = int(data.get("ranking_reward_bonus", 0))
         state.active_customer = Customer.from_dict(data["active_customer"]) if data.get("active_customer") else None
@@ -1395,6 +2031,9 @@ class GameStateManager:
             "operating_cost": 0,
             "loan_interest": 0,
             "tax": 0,
+            "holding_cost": 0,
+            "economy_index": state.economy_index,
+            "inflation_rate": state.inflation_rate,
             "events": [],
             "starting_cash": state.cash,
             "ending_cash": state.cash,

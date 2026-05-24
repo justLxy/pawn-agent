@@ -215,6 +215,8 @@ def apply_negotiation_outcome(
             raise HTTPException(status_code=400, detail=deal_result["error"])
         return {"negotiation": negotiation_summary, "deal_completed": True, "deal_result": deal_result, "state": commit_state(player, state)}
     if walk_out:
+        state._record_customer_outcome(customer, "walk_out")
+        state._check_achievements("walk_out")
         state.select_next_customer()
         return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": True, "state": commit_state(player, state)}
     return {"negotiation": negotiation_summary, "deal_completed": False, "walk_out_completed": False, "state": commit_state(player, state)}
@@ -311,6 +313,16 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         raise HTTPException(status_code=400, detail=f"现金不足，你当前最多只能出 ${state.cash}。")
 
     customer.dialogue_history.append({"role": "player", "content": req.message.strip()})
+    economy_context = {
+        "economy_index": state.economy_index,
+        "economic_pressure": state.economic_pressure,
+        "market_trend": state.market_trends.get(customer.item.category, 1.0),
+    }
+    customer_memory = {
+        "relationship_cn": customer.to_dict().get("relationship_cn"),
+        "visit_count": customer.visit_count,
+        "last_deal_summary": customer.last_deal_summary,
+    }
     ai_response = await ai_client.generate_negotiation(
         customer_name=customer.name,
         trait=customer.trait,
@@ -330,6 +342,8 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
         negotiation_level=state.skills["negotiation"]["level"],
         charm_level=state.skills["charm"]["level"],
         dialogue_history=customer.dialogue_history,
+        economy_context=economy_context,
+        customer_memory=customer_memory,
     )
     ai_response = sanitize_negotiation_result(state, ai_response, player_offer, intent)
     return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
@@ -357,6 +371,16 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 
     player_message = req.message.strip()
     customer.dialogue_history.append({"role": "player", "content": player_message})
+    economy_context = {
+        "economy_index": state.economy_index,
+        "economic_pressure": state.economic_pressure,
+        "market_trend": state.market_trends.get(customer.item.category, 1.0),
+    }
+    customer_memory = {
+        "relationship_cn": customer.to_dict().get("relationship_cn"),
+        "visit_count": customer.visit_count,
+        "last_deal_summary": customer.last_deal_summary,
+    }
     effective_offer = player_offer if player_offer is not None else customer.current_offer
     rule_response = ai_client._calculate_algorithmic_fallback(
         role=customer.role,
@@ -388,6 +412,8 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
                 accepted=bool(ai_response["accepted"]),
                 walk_out=bool(ai_response["walk_out"]),
                 dialogue_history=customer.dialogue_history,
+                economy_context=economy_context,
+                customer_memory=customer_memory,
             ):
                 streamed_dialogue += chunk
                 yield line({"type": "chunk", "content": chunk})

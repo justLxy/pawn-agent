@@ -276,6 +276,12 @@ def buy_showcase_item(buyer_id: int, owner_id: int, item_id: str) -> Dict[str, A
         item.purchase_price = price
         item.last_trade_at = int(time.time())
         item.acquired_at = int(time.time())
+        item.acquired_day = buyer.day
+        item.last_value_update_day = buyer.day
+        item.base_value_at_purchase = item.market_value
+        item.holding_cost_paid = 0
+        item.value_history = [{"day": buyer.day, "market_value": item.market_value, "delta": 0, "holding_cost": 0}]
+        item.value_trend_note = "今天从玩家橱窗购入，尚未产生持有成本。"
         buyer.cash -= price
         buyer.inventory.append(item)
         owner.cash += owner_income
@@ -287,6 +293,8 @@ def buy_showcase_item(buyer_id: int, owner_id: int, item_id: str) -> Dict[str, A
         owner.positive_reviews += 1
         owner.reputation += 2
         owner.total_profit += max(0, owner_income - original_purchase_price)
+        buyer._check_achievements("showcase_buy", {"item": item.to_dict(), "price": price})
+        owner._check_achievements("showcase_sell", {"item": item.to_dict(), "price": owner_income})
         now = int(time.time())
 
         conn.execute(
@@ -329,6 +337,12 @@ def buy_listing(buyer_id: int, listing_id: str) -> Dict[str, Any]:
         item.purchase_price = price
         item.last_trade_at = int(time.time())
         item.acquired_at = int(time.time())
+        item.acquired_day = buyer.day
+        item.last_value_update_day = buyer.day
+        item.base_value_at_purchase = item.market_value
+        item.holding_cost_paid = 0
+        item.value_history = [{"day": buyer.day, "market_value": item.market_value, "delta": 0, "holding_cost": 0}]
+        item.value_trend_note = "今天从玩家市场购入，尚未产生持有成本。"
         item.display_slot = None
         buyer.cash -= price
         buyer.inventory.append(item)
@@ -341,6 +355,8 @@ def buy_listing(buyer_id: int, listing_id: str) -> Dict[str, Any]:
         seller.positive_reviews += 1
         seller.reputation += 2
         seller.total_profit += max(0, seller_income - original_purchase_price)
+        buyer._check_achievements("market_buy", {"item": item.to_dict(), "price": price})
+        seller._check_achievements("market_sell", {"item": item.to_dict(), "price": seller_income})
         now = int(time.time())
 
         conn.execute("UPDATE market_listings SET status = 'sold', updated_at = ? WHERE id = ?", (now, listing_id))
