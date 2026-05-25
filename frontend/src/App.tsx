@@ -1312,7 +1312,7 @@ export default function App() {
           <span>现金 ${state.cash.toLocaleString()}</span>
           <span>声誉 {state.reputation}</span>
           <span>经济 {(state.economy_index || 1).toFixed(2)}x</span>
-          <span>客流 {Math.min(state.customers_served_today + (activeCustomer ? 1 : 0), state.total_customers_today)}/{state.total_customers_today}</span>
+          <span>客流 {state.customers_served_today + (activeCustomer ? 1 : 0)}/{state.total_customers_today}</span>
           <span>展示 {displayedCount}/{state.display_capacity}</span>
         </div>
         <div className="flex items-center gap-1 md:gap-2">
@@ -1667,7 +1667,7 @@ function getTradeMode(customer: Customer) {
 }
 
 function MobileStatusBar({ state, displayedCount, hasActiveCustomer }: { state: GameState; displayedCount: number; hasActiveCustomer: boolean }) {
-  const served = Math.min(state.customers_served_today + (hasActiveCustomer ? 1 : 0), state.total_customers_today);
+  const served = state.customers_served_today + (hasActiveCustomer ? 1 : 0);
   const pills = [
     { label: '天数', value: `第 ${state.day} 天`, accent: false },
     { label: '现金', value: `$${state.cash.toLocaleString()}`, accent: true },

@@ -1438,6 +1438,15 @@ class GameStateManager:
             return 0
         return min(4, max(local_sellers, 2))
 
+    def _max_waiting_customers(self) -> int:
+        """Remaining queue slots for today (active customer already counts toward daily total)."""
+        return max(0, self.total_customers_today - 1 - self.customers_served_today)
+
+    def _trim_daily_customer_queue(self) -> None:
+        max_waiting = self._max_waiting_customers()
+        if len(self.daily_customer_queue) > max_waiting:
+            self.daily_customer_queue = self.daily_customer_queue[:max_waiting]
+
     def apply_queue_refill(self, ai_customers: List["Customer"]) -> int:
         if not ai_customers:
             return 0
@@ -1454,13 +1463,7 @@ class GameStateManager:
             replacement.deal_summary = None
             self.daily_customer_queue[index] = replacement
             applied += 1
-        while pending:
-            replacement = pending.pop(0)
-            replacement.generation_source = "ai"
-            replacement.session_closed = None
-            replacement.deal_summary = None
-            self.daily_customer_queue.append(replacement)
-            applied += 1
+        self._trim_daily_customer_queue()
         return applied
 
     async def async_initialize_day(self, ai_client):
@@ -1556,6 +1559,7 @@ class GameStateManager:
                 customer.ensure_opening_greeting()
 
         self.daily_customer_queue = prepared_customers
+        self._trim_daily_customer_queue()
         self._open_day_customer_queue()
         return {"success": True, "fallback": False, "count": len(prepared_customers)}
 
@@ -2383,6 +2387,10 @@ class GameStateManager:
 
     def select_next_customer(self) -> bool:
         self.customers_served_today += 1
+        if self.customers_served_today >= self.total_customers_today:
+            self.active_customer = None
+            self.daily_customer_queue.clear()
+            return False
         if self.daily_customer_queue:
             self.active_customer = self.daily_customer_queue.pop(0)
             if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
