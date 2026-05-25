@@ -2597,27 +2597,91 @@ function ChatScreenshotButton({
   );
 }
 
-const CUSTOMER_THINKING_BY_TRAIT: Record<string, string[]> = {
-  强硬: ['指尖敲桌，目光沉沉…', '在心里把底价又盘了一遍…', '冷笑一声，并不急着接话…', '衡量你是不是在虚张声势…'],
-  急切: ['飞快掂量兜里还剩多少…', '眉头一皱，算计能不能快出…', '来回踱了半步，显然等不及…', '嘴里念叨着数目，犹豫片刻…'],
-  犹豫: ['抿了抿嘴，拿不定主意…', '反复看你，又看手里物件…', '低声嘀咕，像是在自我说服…', '沉默良久，仍难下决断…'],
-  欺诈: ['眼神游移，话到嘴边又咽回…', '故作镇定，盘算下一句怎么圆…', '嘴角一牵，似乎在掂量你的深浅…', '把物件往怀里收了收…'],
-  专家: ['眯眼审视，像在默算行情…', '以行家口吻在心里过了一遍…', '不动声色，却已在脑中估价…', '轻哼一声，斟酌该如何开口…']
+/** 顾客内心独白碎片：口水话、无实质信息，串起来像真在想 */
+const CUSTOMER_THINKING_CHAINS: Record<string, { seller: string[][]; buyer: string[][] }> = {
+  强硬: {
+    seller: [
+      ['你这价……听着也不是完全瞎报……', '但我凭什么就这么让了……', '再想想……我要是松口了岂不是很亏……', '不行，还得绷住……'],
+      ['嗯……你话说得挺圆……', '可我心里这关还是过不去……', '卖便宜了回头找谁哭去……', '再拖一拖也无妨……'],
+    ],
+    buyer: [
+      ['行吧……你讲得也算有道理……', '可我就这预算……再多真掏不出……', '要不再磨磨……', '总不能上赶着送钱吧……'],
+      ['听着是挺像那么回事……', '但我也不想当冤大头啊……', '这价……还能不能再往下聊聊……', '急什么，我又不是非买不可……'],
+    ],
+  },
+  急切: {
+    seller: [
+      ['你这话……好像也有点道理……', '但我现在就想赶紧出手……', '拖下去夜长梦多……', '要不再让一点点？就一点点……'],
+      ['嗯……是这么个理……', '可我还等着用钱呢……', '再磨下去我怕黄了……', '算了算了……差不多就行了吧……'],
+    ],
+    buyer: [
+      ['好像……也不是不能考虑……', '但我兜里就这么多……', '再砍砍行不行……', '再拖我可就走了啊……'],
+      ['你讲得我也有点动心……', '就是手头紧……', '能不能痛快点……', '再犹豫下去店都要关门了……'],
+    ],
+  },
+  犹豫: {
+    seller: [
+      ['你刚才说的……好像也有点道理……', '可我要是真答应你……', '回家会不会越想越后悔……', '要不再想想……真的要这样吗……'],
+      ['嗯……听着是挺像那么回事……', '但我心里还是没底……', '卖了会不会亏啊……', '要不……再等等看？'],
+    ],
+    buyer: [
+      ['你说的……似乎有点道理……', '但我想想……真的要买吗……', '不买吧又怕错过……', '买了吧又怕买贵了……'],
+      ['这个价……好像还行……', '又好像不太行……', '要不再看看别家……', '唉……好难决定啊……'],
+    ],
+  },
+  欺诈: {
+    seller: [
+      ['他这表情……应该没看出来吧……', '反正先稳住……', '能蒙过去就蒙过去……', '对对对……就这么圆……'],
+      ['嗯……不能露怯……', '咬死这个价……', '他要是再追问……', '我就再编个理由……'],
+    ],
+    buyer: [
+      ['这老板……看着挺好忽悠……', '再压压价……', '他要是答应了就赚了……', '不行就换一家呗……'],
+      ['嗯……先装犹豫一下……', '让他觉得我不想买……', '说不定还能再便宜点……', '反正我不急……'],
+    ],
+  },
+  专家: {
+    seller: [
+      ['这成色……他心里应该有数……', '我报高了怕露馅……', '报低了又亏……', '再掂量掂量怎么开口……'],
+      ['他说的那个点……不算外行……', '我得把话圆回来……', '不能让他觉得我好糊弄……', '嗯……下一句怎么说……'],
+    ],
+    buyer: [
+      ['这东西……值不值这个价……', '他有没有在唬我……', '再挑挑毛病试试……', '能砍一点是一点……'],
+      ['嗯……细节对得上……', '但总觉得还能再聊聊……', '老板表情有点虚？……', '要不再试探试探……'],
+    ],
+  },
 };
 
-const CUSTOMER_THINKING_SELLER = ['掂了掂物件的分量…', '琢磨你这话里有几成诚意…', '盘算这件货能不能出手…', '权衡是走是留…'];
-const CUSTOMER_THINKING_BUYER = ['扫视柜面，心算值不值得掏银…', '掂量自己带的钱够不够…', '琢磨还能不能再抬一口…', '犹豫要不要就此作罢…'];
-const CUSTOMER_THINKING_COMMON = ['话语在喉间转了一圈…', '半晌没有接话…', '只闻柜台外街声阵阵…'];
+const CUSTOMER_THINKING_FALLBACK: { seller: string[]; buyer: string[] } = {
+  seller: [
+    '你刚才那话……',
+    '好像也不是完全没道理……',
+    '但我还得再琢磨琢磨……',
+    '真的要就这样吗……',
+  ],
+  buyer: [
+    '听着是挺诱人的……',
+    '可我钱包不允许啊……',
+    '要不再想想……',
+    '不买又有点不甘心……',
+  ],
+};
+
+function thinkingChainSeed(customerId: string): number {
+  let hash = 0;
+  for (let i = 0; i < customerId.length; i += 1) {
+    hash = (hash * 31 + customerId.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
 
 function buildCustomerThinkingSequence(customer: Customer): string[] {
-  const traitLines = CUSTOMER_THINKING_BY_TRAIT[customer.trait_cn] || [];
-  const roleLines = customer.role === 'buyer' ? CUSTOMER_THINKING_BUYER : CUSTOMER_THINKING_SELLER;
-  const sequence: string[] = [];
-  if (traitLines[0]) sequence.push(traitLines[0]);
-  if (traitLines[1]) sequence.push(traitLines[1]);
-  if (roleLines[0]) sequence.push(roleLines[0]);
-  if (CUSTOMER_THINKING_COMMON[0]) sequence.push(CUSTOMER_THINKING_COMMON[0]);
-  return sequence.length ? sequence : [CUSTOMER_THINKING_COMMON[0]];
+  const roleKey = customer.role === 'buyer' ? 'buyer' : 'seller';
+  const traitChains = CUSTOMER_THINKING_CHAINS[customer.trait_cn]?.[roleKey];
+  if (traitChains?.length) {
+    const index = thinkingChainSeed(customer.customer_id) % traitChains.length;
+    return traitChains[index];
+  }
+  return CUSTOMER_THINKING_FALLBACK[roleKey];
 }
 
 const THINKING_CHAR_MS = 52;
@@ -2657,7 +2721,9 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
     return undefined;
   }, [sentenceIndex, charIndex, lines]);
 
+  const completedText = lines.slice(0, sentenceIndex).join('');
   const currentLine = lines[sentenceIndex] ?? '';
+  const visibleText = completedText + currentLine.slice(0, charIndex);
 
   return (
     <div className="flex gap-3 max-w-[86%] animate-slide-up">
@@ -2670,19 +2736,10 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
       <div className="flex flex-col min-w-0 items-start">
         <span className="text-xs text-[#616161] mb-1 font-sans">{customer.name}</span>
         <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] rounded-sm min-w-[140px] max-w-[min(320px,72vw)]">
-          <div className="customer-thinking-stack flex flex-col gap-1.5">
-            {lines.slice(0, sentenceIndex).map((line, index) => (
-              <p key={`done-${index}`} className="text-sm text-[#616161] italic leading-relaxed m-0">
-                {line}
-              </p>
-            ))}
-            {currentLine && (
-              <p className="text-sm text-[#616161] italic leading-relaxed m-0 min-h-[22px]">
-                {currentLine.slice(0, charIndex)}
-                {!allDone && <span className="customer-thinking-cursor" aria-hidden />}
-              </p>
-            )}
-          </div>
+          <p className="customer-thinking-text text-sm text-[#616161] italic leading-relaxed m-0 min-h-[22px]">
+            {visibleText}
+            {!allDone && <span className="customer-thinking-cursor" aria-hidden />}
+          </p>
         </div>
       </div>
     </div>

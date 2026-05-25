@@ -456,8 +456,10 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   animation: dayLoaderTipFade 2.8s ease forwards;
 }
 
-.customer-thinking-stack {
+.customer-thinking-text {
   min-height: 22px;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .customer-thinking-cursor {
