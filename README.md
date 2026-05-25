@@ -840,6 +840,22 @@ Authorization: Bearer <token>
 | POST | `/api/showcase/price` | 设置橱窗价 |
 | POST | `/api/showcase/buy` | 购买橱窗品 |
 
+### 玩家市场活力（服务端，Railway 零命令）
+
+低在线阶段由后台维护一批**拟真玩家当铺**（库内标记 `is_system_player`，仅用于禁止登录/找回密码，**不**暴露给前端），在全服市场挂单、调价、橱窗陈列，并**正常出现在排行榜与在线人数**中，与真人无异。
+
+**部署到 Railway 后无需执行额外脚本**：服务 `startup` 时会自动补全 NPC 与挂单、执行一次市场 tick，并每 6 小时周期性维护。
+
+| 环境变量 | 默认 | 说明 |
+|----------|------|------|
+| `NPC_MARKET_ENABLED` | `1` | 启用 NPC 市场（设为 `0` 可关闭） |
+| `NPC_MARKET_AUTO_SEED` | `1` | 启动时自动补全 NPC 与挂单 |
+| `NPC_MARKET_STARTUP_TICK` | `1` | 启动时立即跑一轮维护 |
+| `NPC_MARKET_TICK_HOURS` | `6` | 周期 tick 间隔（小时） |
+| `NPC_SHOP_COUNT` | `6` | NPC 当铺数量 |
+
+本地调试可选脚本（**生产不必**）：`python scripts/seed_npc_shops.py`、`python scripts/npc_market_tick.py`。
+
 ---
 
 ## 界面设计规范

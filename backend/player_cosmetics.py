@@ -11,7 +11,21 @@ def _row_get(row: Any, key: str, default=None):
         return default
 
 
+def _empty_cosmetics() -> Dict[str, Any]:
+    return {
+        "is_sponsor": False,
+        "sponsor_title": None,
+        "monthly_expires_at": None,
+        "shop_emblem": None,
+        "shop_emblem_label": None,
+        "has_plaque": False,
+        "showcase_tagline": None,
+    }
+
+
 def cosmetics_from_row(row: Any, now: Optional[int] = None) -> Dict[str, Any]:
+    if int(_row_get(row, "is_system_player", 0) or 0):
+        return _empty_cosmetics()
     now = now if now is not None else int(time.time())
     monthly_expires_at = _row_get(row, "monthly_expires_at")
     shop_emblem = _row_get(row, "shop_emblem")

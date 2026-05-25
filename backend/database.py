@@ -47,7 +47,8 @@ def init_db() -> None:
                 created_at INTEGER NOT NULL,
                 last_seen INTEGER NOT NULL,
                 ranking_badge TEXT,
-                reward_bonus INTEGER NOT NULL DEFAULT 0
+                reward_bonus INTEGER NOT NULL DEFAULT 0,
+                is_system_player INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS game_saves (
@@ -186,3 +187,5 @@ def _migrate_shop_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE players ADD COLUMN shop_emblem TEXT")
     if "showcase_tagline" not in columns:
         conn.execute("ALTER TABLE players ADD COLUMN showcase_tagline TEXT")
+    if "is_system_player" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN is_system_player INTEGER NOT NULL DEFAULT 0")

@@ -1396,6 +1396,9 @@ def load_state_for_response(player: Dict[str, Any]) -> GameStateManager:
 @app.on_event("startup")
 async def startup_event():
     init_db()
+    from npc_scheduler import startup_npc_market
+
+    await startup_npc_market()
 
 
 if __name__ == "__main__":

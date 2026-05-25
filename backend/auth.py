@@ -93,7 +93,10 @@ def count_online_players(now: Optional[int] = None) -> int:
     now = now if now is not None else int(time.time())
     threshold = now - ONLINE_IDLE_SECONDS
     with get_connection() as conn:
-        row = conn.execute("SELECT COUNT(*) AS c FROM players WHERE last_seen > ?", (threshold,)).fetchone()
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM players WHERE last_seen > ?",
+            (threshold,),
+        ).fetchone()
     return int(row["c"] or 0)
 
 
@@ -102,7 +105,9 @@ def recover_usernames_by_password(password: str) -> list[str]:
         raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")
     matches: list[str] = []
     with get_connection() as conn:
-        rows = conn.execute("SELECT username, password_hash, salt FROM players").fetchall()
+        rows = conn.execute(
+            "SELECT username, password_hash, salt FROM players WHERE COALESCE(is_system_player, 0) = 0"
+        ).fetchall()
     for row in rows:
         if _verify_password(password, row["password_hash"], row["salt"]):
             matches.append(row["username"])
@@ -116,6 +121,8 @@ def login_player(username: str, password: str) -> Dict[str, Any]:
     with get_connection() as conn:
         player = conn.execute("SELECT * FROM players WHERE username = ?", (username,)).fetchone()
         if not player or not _verify_password(password, player["password_hash"], player["salt"]):
+            raise HTTPException(status_code=401, detail="用户名或密码错误。")
+        if int(player["is_system_player"] or 0):
             raise HTTPException(status_code=401, detail="用户名或密码错误。")
         conn.execute("UPDATE players SET token = ?, online = 1, last_seen = ? WHERE id = ?", (token, now, player["id"]))
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
@@ -137,6 +144,8 @@ def get_player_by_token(token: str) -> Dict[str, Any]:
     with get_connection() as conn:
         player = conn.execute("SELECT * FROM players WHERE token = ?", (token,)).fetchone()
         if not player:
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录。")
+        if int(player["is_system_player"] or 0):
             raise HTTPException(status_code=401, detail="登录已失效，请重新登录。")
         conn.execute("UPDATE players SET online = 1, last_seen = ? WHERE id = ?", (int(time.time()), player["id"]))
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()

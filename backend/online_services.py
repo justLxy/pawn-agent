@@ -369,7 +369,11 @@ def set_showcase_price(player_id: int, item_id: str, price: Optional[int]) -> Di
 def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
     with get_connection() as conn:
         owner = conn.execute(
-            "SELECT id, shop_name, last_seen, reputation, ranking_badge, monthly_expires_at, shop_emblem, showcase_tagline FROM players WHERE id = ?",
+            """
+            SELECT id, shop_name, last_seen, reputation, ranking_badge,
+                   monthly_expires_at, shop_emblem, showcase_tagline, is_system_player
+            FROM players WHERE id = ?
+            """,
             (owner_id,),
         ).fetchone()
         save = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (owner_id,)).fetchone()
@@ -925,7 +929,7 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
                    COUNT(*) AS total_likes,
                    p.shop_name, p.last_seen, p.ranking_badge,
                    p.monthly_expires_at, p.shop_emblem, p.showcase_tagline,
-                   gs.state_json
+                   p.is_system_player, gs.state_json
             FROM showcase_likes sl
             JOIN players p ON p.id = sl.owner_id
             LEFT JOIN game_saves gs ON gs.player_id = sl.owner_id
@@ -1125,7 +1129,8 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
         rows = conn.execute(
             """
             SELECT p.id, p.username, p.shop_name, p.last_seen, p.ranking_badge,
-                   p.monthly_expires_at, p.shop_emblem, p.showcase_tagline, gs.state_json
+                   p.monthly_expires_at, p.shop_emblem, p.showcase_tagline,
+                   p.is_system_player, gs.state_json
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """
         ).fetchall()

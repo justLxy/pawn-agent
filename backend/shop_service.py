@@ -302,12 +302,14 @@ def list_public_sponsors(limit: int = 200) -> List[Dict[str, Any]]:
             """
             SELECT p.id, p.shop_name, p.username, p.monthly_expires_at, p.shop_emblem
             FROM players p
-            WHERE p.monthly_expires_at > ?
+            WHERE COALESCE(p.is_system_player, 0) = 0
+              AND (
+                   p.monthly_expires_at > ?
                OR p.shop_emblem IS NOT NULL
                OR EXISTS (
                     SELECT 1 FROM shop_orders o
                     WHERE o.player_id = p.id AND o.status = 'fulfilled'
-               )
+               ))
             ORDER BY
               CASE WHEN p.monthly_expires_at > ? THEN 0 ELSE 1 END,
               CASE WHEN p.shop_emblem IS NOT NULL THEN 0 ELSE 1 END,
