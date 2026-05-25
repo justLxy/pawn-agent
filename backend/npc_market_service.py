@@ -5,6 +5,8 @@ import time
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
+from fastapi import HTTPException
+
 from auth import ONLINE_IDLE_SECONDS, _hash_password, player_is_online
 from database import get_connection, transaction
 from game_state import GameStateManager, Item
@@ -35,6 +37,7 @@ from npc_market_config import (
 )
 from npc_personas import LEGACY_NPC_USERNAME, NpcPersona, active_personas
 from online_services import (
+    TRADE_COOLDOWN_SECONDS,
     _execute_market_sale,
     list_item,
     load_state,
@@ -381,27 +384,44 @@ def count_active_listings(player_id: int) -> int:
     return int(row["c"] or 0)
 
 
+def _npc_listable_stored(state: GameStateManager) -> List[Item]:
+    now = int(time.time())
+    return [
+        item
+        for item in state.inventory
+        if item.status == "stored"
+        and (not item.last_trade_at or now - int(item.last_trade_at) >= TRADE_COOLDOWN_SECONDS)
+    ]
+
+
 def npc_list_stored_item(player_id: int, persona: NpcPersona, listing_created_at: Optional[int] = None) -> Optional[str]:
     state = load_state(player_id)
     if count_active_listings(player_id) >= MAX_ACTIVE_LISTINGS_PER_NPC:
         return None
-    stored = [item for item in state.inventory if item.status == "stored"]
+    stored = _npc_listable_stored(state)
     if not stored:
         item = build_npc_item(persona, state)
         state.inventory.append(item)
+        save_state(player_id, state)
         stored = [item]
-    item = random.choice(stored)
-    price = persona_list_price(persona, item)
-    result = list_item(player_id, item.id, price)
-    listing_id = result.get("listing_id")
-    if listing_id and listing_created_at:
-        with get_connection() as conn:
-            conn.execute(
-                "UPDATE market_listings SET created_at = ?, updated_at = ? WHERE id = ?",
-                (listing_created_at, listing_created_at, listing_id),
-            )
-            conn.commit()
-    return listing_id
+    candidates = stored[:]
+    random.shuffle(candidates)
+    for item in candidates[:8]:
+        price = persona_list_price(persona, item)
+        try:
+            result = list_item(player_id, item.id, price)
+        except HTTPException:
+            continue
+        listing_id = result.get("listing_id")
+        if listing_id and listing_created_at:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE market_listings SET created_at = ?, updated_at = ? WHERE id = ?",
+                    (listing_created_at, listing_created_at, listing_id),
+                )
+                conn.commit()
+        return listing_id
+    return None
 
 
 def npc_reprice_listing(player_id: int, persona: NpcPersona) -> bool:

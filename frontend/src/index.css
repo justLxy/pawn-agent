@@ -456,6 +456,30 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   animation: dayLoaderTipFade 2.8s ease forwards;
 }
 
+@keyframes thinkingLineFade {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  86% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.customer-thinking-line {
+  min-height: 22px;
+  animation: thinkingLineFade 2.6s ease forwards;
+}
+
 .shop-sign--sponsor {
   background: linear-gradient(
     90deg,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -605,7 +605,7 @@ export default function App() {
   const [resetting, setResetting] = useState(false);
   const [investigating, setInvestigating] = useState(false);
   const [inventoryAppraisingId, setInventoryAppraisingId] = useState<string | null>(null);
-  const [negotiatingMsg, setNegotiatingMsg] = useState<string | null>(null);
+  const [customerThinking, setCustomerThinking] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -794,7 +794,7 @@ export default function App() {
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [state?.active_customer?.dialogue_history, negotiatingMsg]);
+  }, [state?.active_customer?.dialogue_history, customerThinking]);
 
   useEffect(() => {
     if (!successMsg && !errorMsg) return;
@@ -995,7 +995,7 @@ export default function App() {
       const freshState = await apiGet<GameState>('/api/cloud/state');
       setState(freshState);
       setMessage('');
-      setNegotiatingMsg(null);
+      setCustomerThinking(false);
       setListingPrice({});
       setShowcasePrice({});
       setRepairMethod({});
@@ -1018,7 +1018,7 @@ export default function App() {
     negotiateGenerationRef.current += 1;
     negotiateAbortRef.current?.abort();
     negotiateAbortRef.current = null;
-    setNegotiatingMsg(null);
+    setCustomerThinking(false);
   };
 
   const runStateAction = async (path: string, body: unknown, resultKey: string, fallback: string, sound: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade' = 'click') => {
@@ -1133,7 +1133,7 @@ export default function App() {
     const abortController = new AbortController();
     negotiateAbortRef.current = abortController;
     setLoading(true);
-    setNegotiatingMsg('对方正在思索...');
+    setCustomerThinking(true);
     try {
       const response = await fetch(`${API_BASE_URL}/api/negotiate/stream`, {
         method: 'POST',
@@ -1152,7 +1152,7 @@ export default function App() {
       const updateStreamedDialogue = (content: string) => {
         if (negotiationGeneration !== negotiateGenerationRef.current) return;
         streamedDialogue += content;
-        setNegotiatingMsg(null);
+        setCustomerThinking(false);
         setState((current) => {
           if (!current?.active_customer) return current;
           const history = [...current.active_customer.dialogue_history];
@@ -1190,11 +1190,11 @@ export default function App() {
       const data = streamResult.finalPayload;
       if (data.stale || data.negotiation.stale) {
         setState(data.state);
-        setNegotiatingMsg(null);
+        setCustomerThinking(false);
         return;
       }
       setState(data.state);
-      setNegotiatingMsg(null);
+      setCustomerThinking(false);
       if (data.negotiation.patience_change < 0) playSound('patience_down');
       if (data.deal_completed) {
         playSound('deal');
@@ -1204,12 +1204,12 @@ export default function App() {
     } catch (err) {
       if (negotiationGeneration !== negotiateGenerationRef.current) return;
       if (err instanceof DOMException && err.name === 'AbortError') {
-        setNegotiatingMsg(null);
+        setCustomerThinking(false);
         return;
       }
       setState(previousState);
       setMessage(playerMessage);
-      setNegotiatingMsg(null);
+      setCustomerThinking(false);
       setErrorMsg(err instanceof Error ? err.message : '谈判失败。');
     } finally {
       if (negotiateAbortRef.current === abortController) {
@@ -1401,7 +1401,7 @@ export default function App() {
               loading={loading}
               dayTransition={dayTransition}
               message={message}
-              negotiatingMsg={negotiatingMsg}
+              customerThinking={customerThinking}
               investigating={investigating}
               appraisalMethod={appraisalMethod}
               setMessage={setMessage}
@@ -2033,7 +2033,7 @@ function caseClueTypeLabel(type: string) {
   return labels[type] || type;
 }
 
-function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, loading, message, negotiatingMsg, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; message: string; negotiatingMsg: string | null; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking, dayTransition, loading, message, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; customerThinking: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; message: string; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
   useEffect(() => {
     if (customer?.session_closed) {
@@ -2305,18 +2305,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
             </Chat>
           )
         ))}
-        {negotiatingMsg && (
-          <div className="flex gap-3 max-w-[86%] animate-slide-up">
-            <img src={customer.avatar_url} alt={customer.name} className="w-10 h-10 rounded-full bg-[#14171C] border border-[#2A2D34] object-cover shrink-0 mt-5" referrerPolicy="no-referrer" />
-            <div className="flex flex-col min-w-0 items-start">
-              <span className="text-xs text-[#616161] mb-1">{customer.name}</span>
-              <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] text-[#616161] italic flex gap-2 items-center rounded-sm">
-                <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
-                {negotiatingMsg}
-              </div>
-            </div>
-          </div>
-        )}
+        {customerThinking && <CustomerThinkingBubble customer={customer} />}
         <div ref={chatEndRef} />
       </div>
       <div className="border-t border-[#2A2D34] pt-3 shrink-0">
@@ -2588,6 +2577,54 @@ function ChatScreenshotButton({
         </div>
       )}
     </>
+  );
+}
+
+const CUSTOMER_THINKING_BY_TRAIT: Record<string, string[]> = {
+  强硬: ['指尖敲桌，目光沉沉…', '在心里把底价又盘了一遍…', '冷笑一声，并不急着接话…', '衡量你是不是在虚张声势…'],
+  急切: ['飞快掂量兜里还剩多少…', '眉头一皱，算计能不能快出…', '来回踱了半步，显然等不及…', '嘴里念叨着数目，犹豫片刻…'],
+  犹豫: ['抿了抿嘴，拿不定主意…', '反复看你，又看手里物件…', '低声嘀咕，像是在自我说服…', '沉默良久，仍难下决断…'],
+  欺诈: ['眼神游移，话到嘴边又咽回…', '故作镇定，盘算下一句怎么圆…', '嘴角一牵，似乎在掂量你的深浅…', '把物件往怀里收了收…'],
+  专家: ['眯眼审视，像在默算行情…', '以行家口吻在心里过了一遍…', '不动声色，却已在脑中估价…', '轻哼一声，斟酌该如何开口…']
+};
+
+const CUSTOMER_THINKING_SELLER = ['掂了掂物件的分量…', '琢磨你这话里有几成诚意…', '盘算这件货能不能出手…', '权衡是走是留…'];
+const CUSTOMER_THINKING_BUYER = ['扫视柜面，心算值不值得掏银…', '掂量自己带的钱够不够…', '琢磨还能不能再抬一口…', '犹豫要不要就此作罢…'];
+const CUSTOMER_THINKING_COMMON = ['话语在喉间转了一圈…', '半晌没有接话…', '只闻柜台外街声阵阵…'];
+
+function buildCustomerThinkingLines(customer: Customer): string[] {
+  const traitLines = CUSTOMER_THINKING_BY_TRAIT[customer.trait_cn] || [];
+  const roleLines = customer.role === 'buyer' ? CUSTOMER_THINKING_BUYER : CUSTOMER_THINKING_SELLER;
+  return [...traitLines, ...roleLines, ...CUSTOMER_THINKING_COMMON];
+}
+
+function CustomerThinkingBubble({ customer }: { customer: Customer }) {
+  const lines = useMemo(() => buildCustomerThinkingLines(customer), [customer.trait_cn, customer.role]);
+  const [lineIndex, setLineIndex] = useState(0);
+
+  useEffect(() => {
+    setLineIndex(0);
+    const lineTimer = window.setInterval(() => setLineIndex((index) => (index + 1) % lines.length), 2600);
+    return () => window.clearInterval(lineTimer);
+  }, [lines.length, customer.customer_id]);
+
+  return (
+    <div className="flex gap-3 max-w-[86%] animate-slide-up">
+      <img
+        src={customer.avatar_url}
+        alt={customer.name}
+        className="w-10 h-10 rounded-full bg-[#14171C] border border-[#2A2D34] object-cover shrink-0 mt-5"
+        referrerPolicy="no-referrer"
+      />
+      <div className="flex flex-col min-w-0 items-start">
+        <span className="text-xs text-[#616161] mb-1 font-sans">{customer.name}</span>
+        <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] rounded-sm min-w-[140px] max-w-[min(320px,72vw)]">
+          <p key={lineIndex} className="customer-thinking-line text-sm text-[#616161] italic leading-relaxed m-0">
+            {lines[lineIndex]}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
