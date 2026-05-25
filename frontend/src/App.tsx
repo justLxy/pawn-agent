@@ -995,7 +995,7 @@ export default function App() {
     if (path === '/api/reject' || path === '/api/deal') {
       abortInFlightNegotiation();
     }
-    const transitionMode = path === '/api/end_day' ? 'end_day' : path === '/api/next_day' ? 'next_day' : null;
+    const transitionMode = path === '/api/end_day' ? 'end_day' : null;
     if (transitionMode) setDayTransition(transitionMode);
     setLoading(true);
     try {
@@ -1879,7 +1879,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
           </div>
         )}
         <button onClick={() => onAction('/api/next_day', undefined, 'result', '新的一天开始了。', 'cash')} disabled={loading || !!state.pending_event} className="btn-primary w-full md:w-auto">
-          {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />正在准备…</> : <>开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></>}
+          {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />切换中…</> : <>开启第 {state.day + 1} 天 <ArrowRight className="w-5 h-5 ml-2" /></>}
         </button>
       </div>
     );

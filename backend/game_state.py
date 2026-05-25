@@ -1952,16 +1952,8 @@ class GameStateManager:
             if not result.get("fallback"):
                 return {"success": True, "message": "新的一天开始了。后台预生成的顾客已经在门口等候。", "prewarmed": True}
 
-        if bool(getattr(ai_client, "available", lambda: False)()):
-            init_result = await self.async_initialize_day_with_fallback(ai_client)
-            if init_result.get("fallback"):
-                message = "新的一天开始了。AI 生成超时，已改用本地随机物品开门。"
-            else:
-                message = "新的一天开始了。全新顾客与物品已生成完毕。"
-            return {"success": True, "message": message, "fallback": init_result.get("fallback", True)}
-
         self.initialize_day_fast()
-        return {"success": True, "message": "新的一天开始了。未检测到 AI 配置，已用本地随机物品开门。", "fallback": True}
+        return {"success": True, "message": "新的一天开始了。后台内容尚未就绪，已用本地兜底立即开门。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:
