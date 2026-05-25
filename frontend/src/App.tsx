@@ -1025,7 +1025,7 @@ export default function App() {
     if (path === '/api/reject' || path === '/api/deal') {
       abortInFlightNegotiation();
     }
-    const transitionMode = path === '/api/end_day' ? 'end_day' : null;
+    const transitionMode = path === '/api/end_day' ? 'end_day' : path === '/api/next_day' ? 'next_day' : null;
     if (transitionMode) setDayTransition(transitionMode);
     setLoading(true);
     try {
@@ -1993,7 +1993,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   }, [customer?.session_closed, customer?.dialogue_history.length, chatEndRef]);
-  if (dayTransition === 'next_day' && state.day_ended) {
+  if (dayTransition === 'next_day' && (state.day_ended || loading)) {
     return <DayTransitionLoader mode="next_day" />;
   }
   if (state.day_ended) {
