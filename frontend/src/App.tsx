@@ -2601,70 +2601,156 @@ function ChatScreenshotButton({
 const CUSTOMER_THINKING_CHAINS: Record<string, { seller: string[][]; buyer: string[][] }> = {
   强硬: {
     seller: [
-      ['你这价……听着也不是完全瞎报……', '但我凭什么就这么让了……', '再想想……我要是松口了岂不是很亏……', '不行，还得绷住……'],
-      ['嗯……你话说得挺圆……', '可我心里这关还是过不去……', '卖便宜了回头找谁哭去……', '再拖一拖也无妨……'],
+      [
+        '你这价……听着也不是完全瞎报……', '但我凭什么就这么让了……', '再想想……我要是松口了岂不是很亏……',
+        '不行，还得绷住……', '他要是再抬价我就更被动了……', '先晾他一会儿也无妨……', '反正我不急……', '嗯……再听听他怎么说……',
+      ],
+      [
+        '嗯……你话说得挺圆……', '可我心里这关还是过不去……', '卖便宜了回头找谁哭去……', '再拖一拖也无妨……',
+        '这价……还能不能再往上谈谈……', '不能让他觉得我好说话……', '稳住……别露怯……', '下一句怎么接来着……',
+      ],
     ],
     buyer: [
-      ['行吧……你讲得也算有道理……', '可我就这预算……再多真掏不出……', '要不再磨磨……', '总不能上赶着送钱吧……'],
-      ['听着是挺像那么回事……', '但我也不想当冤大头啊……', '这价……还能不能再往下聊聊……', '急什么，我又不是非买不可……'],
+      [
+        '行吧……你讲得也算有道理……', '可我就这预算……再多真掏不出……', '要不再磨磨……', '总不能上赶着送钱吧……',
+        '这老板……看着不好惹……', '再砍砍试试……', '砍不动就算了……', '反正我不急……',
+      ],
+      [
+        '听着是挺像那么回事……', '但我也不想当冤大头啊……', '这价……还能不能再往下聊聊……', '急什么，我又不是非买不可……',
+        '兜里就这么多……', '多一分都没有……', '要不再看看别的……', '嗯……再想想……',
+      ],
     ],
   },
   急切: {
     seller: [
-      ['你这话……好像也有点道理……', '但我现在就想赶紧出手……', '拖下去夜长梦多……', '要不再让一点点？就一点点……'],
-      ['嗯……是这么个理……', '可我还等着用钱呢……', '再磨下去我怕黄了……', '算了算了……差不多就行了吧……'],
+      [
+        '你这话……好像也有点道理……', '但我现在就想赶紧出手……', '拖下去夜长梦多……', '要不再让一点点？就一点点……',
+        '再磨下去我怕黄了……', '差不多得了吧……', '能成交就行……', '唉……快点定了吧……',
+      ],
+      [
+        '嗯……是这么个理……', '可我还等着用钱呢……', '再磨下去我怕黄了……', '算了算了……差不多就行了吧……',
+        '再拖就耽误事了……', '要不……就这个价？……', '再想想……', '不行……还是得快点……',
+      ],
     ],
     buyer: [
-      ['好像……也不是不能考虑……', '但我兜里就这么多……', '再砍砍行不行……', '再拖我可就走了啊……'],
-      ['你讲得我也有点动心……', '就是手头紧……', '能不能痛快点……', '再犹豫下去店都要关门了……'],
+      [
+        '好像……也不是不能考虑……', '但我兜里就这么多……', '再砍砍行不行……', '再拖我可就走了啊……',
+        '这店看着还行……', '价要是合适就买……', '不合适拉倒……', '嗯……快点吧……',
+      ],
+      [
+        '你讲得我也有点动心……', '就是手头紧……', '能不能痛快点……', '再犹豫下去店都要关门了……',
+        '再砍一刀……', '砍不下来……', '算了……', '要不再看看……',
+      ],
     ],
   },
   犹豫: {
     seller: [
-      ['你刚才说的……好像也有点道理……', '可我要是真答应你……', '回家会不会越想越后悔……', '要不再想想……真的要这样吗……'],
-      ['嗯……听着是挺像那么回事……', '但我心里还是没底……', '卖了会不会亏啊……', '要不……再等等看？'],
+      [
+        '你刚才说的……好像也有点道理……', '可我要是真答应你……', '回家会不会越想越后悔……', '要不再想想……真的要这样吗……',
+        '要不先不急着点头……', '再看看他什么反应……', '卖了会不会亏啊……', '唉……好难拿主意……',
+      ],
+      [
+        '嗯……听着是挺像那么回事……', '但我心里还是没底……', '卖了会不会亏啊……', '要不……再等等看？',
+        '对方说得……好像也有点道理……', '可我又怕后悔……', '要不再琢磨琢磨……', '这价……到底行不行啊……',
+      ],
     ],
     buyer: [
-      ['你说的……似乎有点道理……', '但我想想……真的要买吗……', '不买吧又怕错过……', '买了吧又怕买贵了……'],
-      ['这个价……好像还行……', '又好像不太行……', '要不再看看别家……', '唉……好难决定啊……'],
+      [
+        '你说的……似乎有点道理……', '但我想想……真的要买吗……', '不买吧又怕错过……', '买了吧又怕买贵了……',
+        '要不再逛逛……', '逛完回来还在不在……', '这价……心里还是没底……', '唉……好纠结……',
+      ],
+      [
+        '这个价……好像还行……', '又好像不太行……', '要不再看看别家……', '唉……好难决定啊……',
+        '老板人看着还行……', '货嘛……也还行……', '就是钱包在抗议……', '要不再想想……',
+      ],
     ],
   },
   欺诈: {
     seller: [
-      ['他这表情……应该没看出来吧……', '反正先稳住……', '能蒙过去就蒙过去……', '对对对……就这么圆……'],
-      ['嗯……不能露怯……', '咬死这个价……', '他要是再追问……', '我就再编个理由……'],
+      [
+        '他这表情……应该没看出来吧……', '反正先稳住……', '能蒙过去就蒙过去……', '对对对……就这么圆……',
+        '别慌……别慌……', '咬死这个价……', '他要是再追问……', '我就再编一句……',
+      ],
+      [
+        '嗯……不能露怯……', '咬死这个价……', '他要是再追问……', '我就再编个理由……',
+        '先拖一拖……', '装傻充愣一下……', '反正不能先露馅……', '嗯……下一句怎么说……',
+      ],
     ],
     buyer: [
-      ['这老板……看着挺好忽悠……', '再压压价……', '他要是答应了就赚了……', '不行就换一家呗……'],
-      ['嗯……先装犹豫一下……', '让他觉得我不想买……', '说不定还能再便宜点……', '反正我不急……'],
+      [
+        '这老板……看着挺好忽悠……', '再压压价……', '他要是答应了就赚了……', '不行就换一家呗……',
+        '先装不想要……', '让他急一急……', '说不定还能便宜……', '反正我不急……',
+      ],
+      [
+        '嗯……先装犹豫一下……', '让他觉得我不想买……', '说不定还能再便宜点……', '反正我不急……',
+        '这表情……得绷住……', '再挑挑刺……', '能砍一点是一点……', '嗯……继续磨……',
+      ],
     ],
   },
   专家: {
     seller: [
-      ['这成色……他心里应该有数……', '我报高了怕露馅……', '报低了又亏……', '再掂量掂量怎么开口……'],
-      ['他说的那个点……不算外行……', '我得把话圆回来……', '不能让他觉得我好糊弄……', '嗯……下一句怎么说……'],
+      [
+        '这成色……他心里应该有数……', '我报高了怕露馅……', '报低了又亏……', '再掂量掂量怎么开口……',
+        '他说的那个点……不算外行……', '我得把话圆回来……', '不能露怯……', '嗯……下一句怎么说……',
+      ],
+      [
+        '他说的那个点……不算外行……', '我得把话圆回来……', '不能让他觉得我好糊弄……', '嗯……下一句怎么说……',
+        '这价……是不是还得再抬一点……', '抬多了怕露馅……', '不抬又亏……', '再想想……',
+      ],
     ],
     buyer: [
-      ['这东西……值不值这个价……', '他有没有在唬我……', '再挑挑毛病试试……', '能砍一点是一点……'],
-      ['嗯……细节对得上……', '但总觉得还能再聊聊……', '老板表情有点虚？……', '要不再试探试探……'],
+      [
+        '这东西……值不值这个价……', '他有没有在唬我……', '再挑挑毛病试试……', '能砍一点是一点……',
+        '细节……得再对一对……', '对上了也不代表没坑……', '要不再压压……', '嗯……继续看……',
+      ],
+      [
+        '嗯……细节对得上……', '但总觉得还能再聊聊……', '老板表情有点虚？……', '要不再试探试探……',
+        '这价……心里还是没数……', '再砍砍看……', '砍不动……', '要不再想想……',
+      ],
     ],
   },
 };
 
+const CUSTOMER_THINKING_OVERFLOW: Record<string, { seller: string[]; buyer: string[] }> = {
+  强硬: {
+    seller: ['哼……', '不能急……', '再晾他一下……', '这价……还能不能再磨磨……', '反正我不松口……', '嗯……'],
+    buyer: ['不急……', '再砍砍……', '砍不动拉倒……', '反正还有别家……', '嗯……再听听……', '不能上当……'],
+  },
+  急切: {
+    seller: ['快点吧……', '再拖怕黄了……', '差不多得了……', '能出就行……', '唉……', '要不再让一点点……'],
+    buyer: ['快点定吧……', '价合适就买……', '不合适就走……', '兜里就这些……', '嗯……', '再砍一刀试试……'],
+  },
+  犹豫: {
+    seller: ['要不再想想……', '真的好难决定……', '怕后悔……', '要不先缓缓……', '嗯……', '对方说得……好像也有点道理……'],
+    buyer: ['买吧……不买吧……', '好纠结……', '要不再逛逛……', '怕买贵了……', '怕错过……', '嗯……再想想……'],
+  },
+  欺诈: {
+    seller: ['稳住……', '别露馅……', '嗯……', '就这么说……', '他好像没起疑……', '再编一句……'],
+    buyer: ['装犹豫……', '再压压……', '嗯……', '不急……', '看他急不急……', '能省一点是一点……'],
+  },
+  专家: {
+    seller: ['再掂量掂量……', '不能露怯……', '嗯……', '这价……', '下一句怎么说……', '得圆回来……'],
+    buyer: ['再对对细节……', '有没有坑……', '嗯……', '再砍砍……', '值不值这个价……', '要不再试探……'],
+  },
+};
+
+const CUSTOMER_THINKING_OVERFLOW_COMMON = {
+  seller: ['嗯……', '再想想……', '好像也有点道理……', '但又说不好……', '要不再等等……', '这价……', '唉……', '怎么说呢……'],
+  buyer: ['嗯……', '再想想……', '好像还行……', '又好像不太行……', '要不再看看……', '兜里就这些……', '唉……', '买还是不买……'],
+};
+
 const CUSTOMER_THINKING_FALLBACK: { seller: string[]; buyer: string[] } = {
   seller: [
-    '你刚才那话……',
-    '好像也不是完全没道理……',
-    '但我还得再琢磨琢磨……',
-    '真的要就这样吗……',
+    '你刚才那话……', '好像也不是完全没道理……', '但我还得再琢磨琢磨……', '真的要就这样吗……',
+    '要不再想想……', '卖了会不会后悔……', '唉……', '嗯……',
   ],
   buyer: [
-    '听着是挺诱人的……',
-    '可我钱包不允许啊……',
-    '要不再想想……',
-    '不买又有点不甘心……',
+    '听着是挺诱人的……', '可我钱包不允许啊……', '要不再想想……', '不买又有点不甘心……',
+    '这价……', '好像还行……', '又好像不太行……', '唉……',
   ],
 };
+
+const THINKING_MAX_FRAGMENTS = 16;
 
 function thinkingChainSeed(customerId: string): number {
   let hash = 0;
@@ -2684,46 +2770,63 @@ function buildCustomerThinkingSequence(customer: Customer): string[] {
   return CUSTOMER_THINKING_FALLBACK[roleKey];
 }
 
+function pickThinkingOverflowFragment(customer: Customer, fragmentIndex: number): string {
+  const roleKey = customer.role === 'buyer' ? 'buyer' : 'seller';
+  const pool =
+    CUSTOMER_THINKING_OVERFLOW[customer.trait_cn]?.[roleKey] ?? CUSTOMER_THINKING_OVERFLOW_COMMON[roleKey];
+  const seed = thinkingChainSeed(customer.customer_id);
+  return pool[(fragmentIndex + seed) % pool.length];
+}
+
 const THINKING_CHAR_MS = 52;
 const THINKING_LINE_PAUSE_MS = 380;
 
 function CustomerThinkingBubble({ customer }: { customer: Customer }) {
-  const lines = useMemo(
+  const baseLines = useMemo(
     () => buildCustomerThinkingSequence(customer),
     [customer.trait_cn, customer.role, customer.customer_id]
   );
+  const [fragments, setFragments] = useState(baseLines);
   const [sentenceIndex, setSentenceIndex] = useState(0);
   const [charIndex, setCharIndex] = useState(0);
-  const allDone = sentenceIndex >= lines.length - 1 && charIndex >= (lines[lines.length - 1]?.length ?? 0);
+  const currentFragment = fragments[sentenceIndex] ?? '';
+  const canAppendMore = fragments.length < THINKING_MAX_FRAGMENTS;
 
   useEffect(() => {
+    setFragments(baseLines);
     setSentenceIndex(0);
     setCharIndex(0);
-  }, [customer.customer_id, lines]);
+  }, [customer.customer_id, baseLines]);
 
   useEffect(() => {
-    const current = lines[sentenceIndex];
-    if (!current) return undefined;
+    if (!currentFragment) return undefined;
 
-    if (charIndex < current.length) {
+    if (charIndex < currentFragment.length) {
       const timer = window.setTimeout(() => setCharIndex((index) => index + 1), THINKING_CHAR_MS);
       return () => window.clearTimeout(timer);
     }
 
-    if (sentenceIndex < lines.length - 1) {
-      const timer = window.setTimeout(() => {
-        setSentenceIndex((index) => index + 1);
-        setCharIndex(0);
-      }, THINKING_LINE_PAUSE_MS);
+    const advance = () => {
+      setSentenceIndex((index) => index + 1);
+      setCharIndex(0);
+    };
+
+    if (sentenceIndex < fragments.length - 1) {
+      const timer = window.setTimeout(advance, THINKING_LINE_PAUSE_MS);
       return () => window.clearTimeout(timer);
     }
 
-    return undefined;
-  }, [sentenceIndex, charIndex, lines]);
+    if (!canAppendMore) return undefined;
 
-  const completedText = lines.slice(0, sentenceIndex).join('');
-  const currentLine = lines[sentenceIndex] ?? '';
-  const visibleText = completedText + currentLine.slice(0, charIndex);
+    const timer = window.setTimeout(() => {
+      setFragments((prev) => [...prev, pickThinkingOverflowFragment(customer, prev.length)]);
+      advance();
+    }, THINKING_LINE_PAUSE_MS * 1.4);
+    return () => window.clearTimeout(timer);
+  }, [sentenceIndex, charIndex, fragments, currentFragment, canAppendMore, customer]);
+
+  const completedText = fragments.slice(0, sentenceIndex).join('');
+  const visibleText = completedText + currentFragment.slice(0, charIndex);
 
   return (
     <div className="flex gap-3 max-w-[86%] animate-slide-up">
@@ -2738,7 +2841,7 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
         <div className="px-4 py-3 leading-relaxed rounded-sm border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)]">
           <p className="customer-thinking-text text-sm text-[#616161] italic m-0 min-h-[22px]">
             {visibleText}
-            {!allDone && <span className="customer-thinking-cursor" aria-hidden />}
+            <span className="customer-thinking-cursor" aria-hidden />
           </p>
         </div>
       </div>
