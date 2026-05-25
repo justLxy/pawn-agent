@@ -4,6 +4,9 @@ NPC_MARKET_ENABLED = os.getenv("NPC_MARKET_ENABLED", "1").strip().lower() in ("1
 NPC_MARKET_TICK_HOURS = float(os.getenv("NPC_MARKET_TICK_HOURS", "6"))
 # 必须小于 auth.ONLINE_IDLE_SECONDS(默认300)，否则心跳间隔内会全部显示离线
 NPC_PRESENCE_INTERVAL_SEC = int(os.getenv("NPC_PRESENCE_INTERVAL_SEC", "120"))
+# 同时在线的 NPC 数量区间（6 人时默认 3～5 在线，至少 1 人离线）
+NPC_ONLINE_TARGET_MIN = int(os.getenv("NPC_ONLINE_TARGET_MIN", "3"))
+NPC_ONLINE_TARGET_MAX = int(os.getenv("NPC_ONLINE_TARGET_MAX", "5"))
 NPC_SHOP_COUNT = int(os.getenv("NPC_SHOP_COUNT", "6"))
 
 MAX_ACTIVE_LISTINGS_PER_NPC = 10

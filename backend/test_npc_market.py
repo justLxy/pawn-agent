@@ -16,6 +16,7 @@ from npc_market_service import (
     _presence_refresh_interval_sec,
     apply_npc_leaderboard_drift,
     nudge_npc_display_presence,
+    refresh_all_npc_presence,
     build_npc_game_state,
     clear_npc_market_data,
     count_active_listings,
@@ -70,22 +71,29 @@ class NpcMarketTests(unittest.TestCase):
     def test_presence_interval_fits_online_window(self):
         self.assertLess(_presence_refresh_interval_sec(), ONLINE_IDLE_SECONDS)
 
-    def test_nudge_refreshes_stale_npc_online(self):
+    def test_nudge_does_not_wake_offline_npc(self):
         full_seed_npc_shops(reset=True)
         persona = active_personas()[0]
         player_map = ensure_npc_players()
         player_id = player_map[persona.key]
         now = int(time.time())
+        offline_seen = now - ONLINE_IDLE_SECONDS - 600
         with get_connection() as conn:
-            conn.execute(
-                "UPDATE players SET last_seen = ? WHERE id = ?",
-                (now - ONLINE_IDLE_SECONDS - 600, player_id),
-            )
+            conn.execute("UPDATE players SET last_seen = ? WHERE id = ?", (offline_seen, player_id))
             conn.commit()
         nudge_npc_display_presence()
         with get_connection() as conn:
             row = conn.execute("SELECT last_seen FROM players WHERE id = ?", (player_id,)).fetchone()
-        self.assertTrue(player_is_online(int(row["last_seen"]), now))
+        self.assertFalse(player_is_online(int(row["last_seen"]), now))
+
+    def test_presence_quota_not_all_online(self):
+        player_map = ensure_npc_players()
+        for _ in range(12):
+            presence = refresh_all_npc_presence(player_map, drift_micro=False)
+            online_count = sum(1 for v in presence.values() if v)
+            if 1 <= online_count < len(presence):
+                return
+        self.fail("expected mixed online/offline NPC presence")
 
     def test_leaderboard_drift_changes_assets(self):
         full_seed_npc_shops(reset=True)

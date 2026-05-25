@@ -69,8 +69,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=1,
         showcase_count_max=2,
         showcase_facility_level=0,
-        online_drop_rate=0.1,
-        online_return_rate=0.92,
+        online_drop_rate=0.28,
+        online_return_rate=0.62,
     ),
     NpcPersona(
         key="collector",
@@ -89,8 +89,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=3,
         showcase_count_max=5,
         showcase_facility_level=2,
-        online_drop_rate=0.08,
-        online_return_rate=0.9,
+        online_drop_rate=0.22,
+        online_return_rate=0.58,
     ),
     NpcPersona(
         key="luxury",
@@ -109,8 +109,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=2,
         showcase_count_max=4,
         showcase_facility_level=1,
-        online_drop_rate=0.12,
-        online_return_rate=0.94,
+        online_drop_rate=0.3,
+        online_return_rate=0.65,
     ),
     NpcPersona(
         key="bargain",
@@ -129,8 +129,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=1,
         showcase_count_max=2,
         showcase_facility_level=0,
-        online_drop_rate=0.09,
-        online_return_rate=0.95,
+        online_drop_rate=0.32,
+        online_return_rate=0.68,
     ),
     NpcPersona(
         key="vintage",
@@ -149,8 +149,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=2,
         showcase_count_max=4,
         showcase_facility_level=1,
-        online_drop_rate=0.11,
-        online_return_rate=0.91,
+        online_drop_rate=0.26,
+        online_return_rate=0.6,
     ),
     NpcPersona(
         key="generalist",
@@ -169,8 +169,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         showcase_count_min=2,
         showcase_count_max=3,
         showcase_facility_level=1,
-        online_drop_rate=0.1,
-        online_return_rate=0.93,
+        online_drop_rate=0.27,
+        online_return_rate=0.64,
     ),
 ]
 
