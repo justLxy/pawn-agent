@@ -1935,14 +1935,14 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
     const hooks = customer.role === 'seller' ? sellerHooks : buyerHooks;
     const hook = hooks[Math.floor(Math.random() * hooks.length)];
     const sellerLines = [
-      `${hook}，我出 ${formattedPrice} 元，现金马上给你。`,
-      `${formattedPrice} 元，我现在就能付款，这价不算亏待你。`,
-      `按我看这件货的风险，最多先报 ${formattedPrice} 元。`,
+      `${hook}，我出 $${formattedPrice}，现金马上给你。`,
+      `$${formattedPrice}，我现在就能付款，这价不算亏待你。`,
+      `按我看这件货的风险，最多先报 $${formattedPrice}。`,
     ];
     const buyerLines = [
-      `${hook}，这件货 ${formattedPrice} 元给你。`,
-      `${formattedPrice} 元，你今天带走，来源说明我也一并给你。`,
-      `我开 ${formattedPrice} 元，品相和来历都值这个价。`,
+      `${hook}，这件货 $${formattedPrice} 给你。`,
+      `$${formattedPrice}，你今天带走，来源说明我也一并给你。`,
+      `我开 $${formattedPrice}，品相和来历都值这个价。`,
     ];
     const lines = customer.role === 'seller' ? sellerLines : buyerLines;
     setMessage(lines[Math.floor(Math.random() * lines.length)]);

@@ -571,6 +571,11 @@ class AIClient:
 - patience_change：整数，约 -2 到 +2；报价离谱、态度差则扣耐心，聊得投机可回升
 - dialogue：顾客第一人称回复，80-140 字，有生活细节，不要像系统播报
 
+【价格方向硬性规则 — 违反则视为无效输出】
+- 向顾客收购（你是买方、顾客是 seller）：current_offer 是顾客要价，player_offer 是掌柜收购出价。若 player_offer >= current_offer，必须 accepted=true，new_offer 取 min(player_offer, current_offer)，禁止说「价太低/不够诚意」。
+- 向顾客出售（你是卖方、顾客是 buyer）：current_offer 是顾客出价，player_offer 是掌柜要价。若 player_offer <= current_offer，必须 accepted=true，new_offer 取成交价（通常为顾客出价），禁止说「价太高」。
+- 收购时顾客要价只能往 limit_price 方向降，不应在 player_offer 已高于要价时继续抬价；出售时顾客出价只能往 limit_price 方向升。
+
 输出严格 JSON：{{"dialogue":"...","new_offer":整数,"patience_change":整数,"accepted":布尔,"walk_out":布尔}}"""
             try:
                 result = await self._chat_json(system_prompt, f"历史：\n{history}\n玩家最新发言：{player_message}", timeout=14.0)
