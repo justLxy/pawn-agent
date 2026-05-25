@@ -2609,21 +2609,55 @@ const CUSTOMER_THINKING_SELLER = ['掂了掂物件的分量…', '琢磨你这�
 const CUSTOMER_THINKING_BUYER = ['扫视柜面，心算值不值得掏银…', '掂量自己带的钱够不够…', '琢磨还能不能再抬一口…', '犹豫要不要就此作罢…'];
 const CUSTOMER_THINKING_COMMON = ['话语在喉间转了一圈…', '半晌没有接话…', '只闻柜台外街声阵阵…'];
 
-function buildCustomerThinkingLines(customer: Customer): string[] {
+function buildCustomerThinkingSequence(customer: Customer): string[] {
   const traitLines = CUSTOMER_THINKING_BY_TRAIT[customer.trait_cn] || [];
   const roleLines = customer.role === 'buyer' ? CUSTOMER_THINKING_BUYER : CUSTOMER_THINKING_SELLER;
-  return [...traitLines, ...roleLines, ...CUSTOMER_THINKING_COMMON];
+  const sequence: string[] = [];
+  if (traitLines[0]) sequence.push(traitLines[0]);
+  if (traitLines[1]) sequence.push(traitLines[1]);
+  if (roleLines[0]) sequence.push(roleLines[0]);
+  if (CUSTOMER_THINKING_COMMON[0]) sequence.push(CUSTOMER_THINKING_COMMON[0]);
+  return sequence.length ? sequence : [CUSTOMER_THINKING_COMMON[0]];
 }
 
+const THINKING_CHAR_MS = 52;
+const THINKING_LINE_PAUSE_MS = 380;
+
 function CustomerThinkingBubble({ customer }: { customer: Customer }) {
-  const lines = useMemo(() => buildCustomerThinkingLines(customer), [customer.trait_cn, customer.role]);
-  const [lineIndex, setLineIndex] = useState(0);
+  const lines = useMemo(
+    () => buildCustomerThinkingSequence(customer),
+    [customer.trait_cn, customer.role, customer.customer_id]
+  );
+  const [sentenceIndex, setSentenceIndex] = useState(0);
+  const [charIndex, setCharIndex] = useState(0);
+  const allDone = sentenceIndex >= lines.length - 1 && charIndex >= (lines[lines.length - 1]?.length ?? 0);
 
   useEffect(() => {
-    setLineIndex(0);
-    const lineTimer = window.setInterval(() => setLineIndex((index) => (index + 1) % lines.length), 2600);
-    return () => window.clearInterval(lineTimer);
-  }, [lines.length, customer.customer_id]);
+    setSentenceIndex(0);
+    setCharIndex(0);
+  }, [customer.customer_id, lines]);
+
+  useEffect(() => {
+    const current = lines[sentenceIndex];
+    if (!current) return undefined;
+
+    if (charIndex < current.length) {
+      const timer = window.setTimeout(() => setCharIndex((index) => index + 1), THINKING_CHAR_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (sentenceIndex < lines.length - 1) {
+      const timer = window.setTimeout(() => {
+        setSentenceIndex((index) => index + 1);
+        setCharIndex(0);
+      }, THINKING_LINE_PAUSE_MS);
+      return () => window.clearTimeout(timer);
+    }
+
+    return undefined;
+  }, [sentenceIndex, charIndex, lines]);
+
+  const currentLine = lines[sentenceIndex] ?? '';
 
   return (
     <div className="flex gap-3 max-w-[86%] animate-slide-up">
@@ -2636,9 +2670,19 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
       <div className="flex flex-col min-w-0 items-start">
         <span className="text-xs text-[#616161] mb-1 font-sans">{customer.name}</span>
         <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] rounded-sm min-w-[140px] max-w-[min(320px,72vw)]">
-          <p key={lineIndex} className="customer-thinking-line text-sm text-[#616161] italic leading-relaxed m-0">
-            {lines[lineIndex]}
-          </p>
+          <div className="customer-thinking-stack flex flex-col gap-1.5">
+            {lines.slice(0, sentenceIndex).map((line, index) => (
+              <p key={`done-${index}`} className="text-sm text-[#616161] italic leading-relaxed m-0">
+                {line}
+              </p>
+            ))}
+            {currentLine && (
+              <p className="text-sm text-[#616161] italic leading-relaxed m-0 min-h-[22px]">
+                {currentLine.slice(0, charIndex)}
+                {!allDone && <span className="customer-thinking-cursor" aria-hidden />}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>
