@@ -18,6 +18,8 @@ from npc_market_config import (
     NPC_DRIFT_DAILY_CASH_RATE,
     NPC_DRIFT_DAILY_PROFIT_SPREAD,
     NPC_DRIFT_MICRO_CASH_RATE,
+    NPC_MARKET_ENABLED,
+    NPC_PRESENCE_INTERVAL_SEC,
     NPC_TREASURY_CASH,
     STALE_LISTING_DAYS_MAX,
     STALE_LISTING_DAYS_MIN,
@@ -495,12 +497,24 @@ def npc_rotate_showcase(player_id: int, persona: NpcPersona) -> bool:
     return False
 
 
+def _presence_refresh_interval_sec() -> int:
+    return max(60, min(NPC_PRESENCE_INTERVAL_SEC, ONLINE_IDLE_SECONDS - 45))
+
+
 def _npc_last_seen_for_state(online: bool, now: int) -> int:
     idle_limit = max(60, ONLINE_IDLE_SECONDS)
     if online:
-        return now - random.randint(8, max(12, idle_limit - 20))
-    offline_seconds = random.randint(idle_limit + 45, idle_limit + random.randint(240, 1680))
+        return now - random.randint(2, min(90, idle_limit - 25))
+    offline_seconds = random.randint(idle_limit + 40, idle_limit + random.randint(180, 720))
     return now - offline_seconds
+
+
+def _npc_heartbeat(player_id: int, now: Optional[int] = None) -> None:
+    now = now if now is not None else int(time.time())
+    last_seen = now - random.randint(2, min(75, ONLINE_IDLE_SECONDS - 30))
+    with get_connection() as conn:
+        conn.execute("UPDATE players SET last_seen = ? WHERE id = ?", (last_seen, player_id))
+        conn.commit()
 
 
 def refresh_npc_last_seen(player_id: int, persona: NpcPersona, force_online: Optional[bool] = None) -> bool:
@@ -515,6 +529,9 @@ def refresh_npc_last_seen(player_id: int, persona: NpcPersona, force_online: Opt
         go_online = force_online
     elif currently_online:
         go_online = random.random() >= persona.online_drop_rate
+        if go_online:
+            _npc_heartbeat(player_id, now)
+            return True
     else:
         go_online = random.random() < persona.online_return_rate
 
@@ -525,13 +542,34 @@ def refresh_npc_last_seen(player_id: int, persona: NpcPersona, force_online: Opt
     return go_online
 
 
-def refresh_all_npc_presence(player_map: Dict[str, int]) -> Dict[str, bool]:
-    drift_all_npc_leaderboards(player_map, micro=True)
+def refresh_all_npc_presence(player_map: Dict[str, int], drift_micro: bool = True) -> Dict[str, bool]:
+    if drift_micro:
+        drift_all_npc_leaderboards(player_map, micro=True)
     presence: Dict[str, bool] = {}
     for persona in active_personas():
         player_id = player_map[persona.key]
         presence[persona.key] = refresh_npc_last_seen(player_id, persona)
     return presence
+
+
+def nudge_npc_display_presence() -> int:
+    """排行榜/市场被打开时，为过期 NPC 续在线心跳（不影响数值漂移）。"""
+    if not NPC_MARKET_ENABLED:
+        return 0
+    player_map = ensure_npc_players()
+    now = int(time.time())
+    stale_before = now - max(90, ONLINE_IDLE_SECONDS - 80)
+    refreshed = 0
+    for persona in active_personas():
+        player_id = player_map[persona.key]
+        with get_connection() as conn:
+            row = conn.execute("SELECT last_seen FROM players WHERE id = ?", (player_id,)).fetchone()
+        last_seen = int(row["last_seen"] or 0) if row else 0
+        if last_seen >= stale_before and player_is_online(last_seen, now):
+            continue
+        refresh_npc_last_seen(player_id, persona)
+        refreshed += 1
+    return refreshed
 
 
 def seed_npc_listings(player_id: int, persona: NpcPersona, count: int) -> List[str]:

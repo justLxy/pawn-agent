@@ -2,7 +2,8 @@ import os
 
 NPC_MARKET_ENABLED = os.getenv("NPC_MARKET_ENABLED", "1").strip().lower() in ("1", "true", "yes")
 NPC_MARKET_TICK_HOURS = float(os.getenv("NPC_MARKET_TICK_HOURS", "6"))
-NPC_PRESENCE_INTERVAL_SEC = int(os.getenv("NPC_PRESENCE_INTERVAL_SEC", "480"))
+# 必须小于 auth.ONLINE_IDLE_SECONDS(默认300)，否则心跳间隔内会全部显示离线
+NPC_PRESENCE_INTERVAL_SEC = int(os.getenv("NPC_PRESENCE_INTERVAL_SEC", "120"))
 NPC_SHOP_COUNT = int(os.getenv("NPC_SHOP_COUNT", "6"))
 
 MAX_ACTIVE_LISTINGS_PER_NPC = 10

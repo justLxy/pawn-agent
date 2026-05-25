@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 
 # Isolate DB per test module run
@@ -10,8 +11,11 @@ os.environ["PAWNSHOP_DB_PATH"] = _test_db.name
 from database import get_connection, init_db
 from npc_inventory import build_npc_item, persona_list_price
 from npc_market_config import MAX_ACTIVE_LISTINGS_PER_NPC
+from auth import ONLINE_IDLE_SECONDS, player_is_online
 from npc_market_service import (
+    _presence_refresh_interval_sec,
     apply_npc_leaderboard_drift,
+    nudge_npc_display_presence,
     build_npc_game_state,
     clear_npc_market_data,
     count_active_listings,
@@ -53,6 +57,26 @@ class NpcMarketTests(unittest.TestCase):
                 self.assertGreaterEqual(price, int(ref * 0.85))
             if item.rarity == "common":
                 self.assertLessEqual(price, int(ref * 1.4))
+
+    def test_presence_interval_fits_online_window(self):
+        self.assertLess(_presence_refresh_interval_sec(), ONLINE_IDLE_SECONDS)
+
+    def test_nudge_refreshes_stale_npc_online(self):
+        full_seed_npc_shops(reset=True)
+        persona = active_personas()[0]
+        player_map = ensure_npc_players()
+        player_id = player_map[persona.key]
+        now = int(time.time())
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE players SET last_seen = ? WHERE id = ?",
+                (now - ONLINE_IDLE_SECONDS - 600, player_id),
+            )
+            conn.commit()
+        nudge_npc_display_presence()
+        with get_connection() as conn:
+            row = conn.execute("SELECT last_seen FROM players WHERE id = ?", (player_id,)).fetchone()
+        self.assertTrue(player_is_online(int(row["last_seen"]), now))
 
     def test_leaderboard_drift_changes_assets(self):
         full_seed_npc_shops(reset=True)

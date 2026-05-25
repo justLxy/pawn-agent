@@ -1011,6 +1011,12 @@ def get_market_listings(
     max_price: Optional[int] = None,
     sort: str = "newest",
 ) -> List[Dict[str, Any]]:
+    try:
+        from npc_market_service import nudge_npc_display_presence
+
+        nudge_npc_display_presence()
+    except Exception:
+        pass
     clauses = ["ml.status = 'active'"]
     params: List[Any] = []
     if search:
@@ -1124,6 +1130,12 @@ def _ensure_daily_rewards() -> None:
 def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     if board_type not in ["assets", "reputation", "profit", "collection"]:
         raise HTTPException(status_code=400, detail="未知排行榜类型。")
+    try:
+        from npc_market_service import nudge_npc_display_presence
+
+        nudge_npc_display_presence()
+    except Exception:
+        pass
     _ensure_daily_rewards()
     with get_connection() as conn:
         rows = conn.execute(

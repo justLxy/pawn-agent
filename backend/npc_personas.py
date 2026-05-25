@@ -63,8 +63,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=108,
         day=31,
         cash=58000,
-        online_drop_rate=0.22,
-        online_return_rate=0.86,
+        online_drop_rate=0.1,
+        online_return_rate=0.92,
     ),
     NpcPersona(
         key="collector",
@@ -80,8 +80,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=162,
         day=58,
         cash=112000,
-        online_drop_rate=0.14,
-        online_return_rate=0.78,
+        online_drop_rate=0.08,
+        online_return_rate=0.9,
     ),
     NpcPersona(
         key="luxury",
@@ -97,8 +97,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=148,
         day=49,
         cash=92000,
-        online_drop_rate=0.28,
-        online_return_rate=0.9,
+        online_drop_rate=0.12,
+        online_return_rate=0.94,
     ),
     NpcPersona(
         key="bargain",
@@ -114,8 +114,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=96,
         day=24,
         cash=42000,
-        online_drop_rate=0.18,
-        online_return_rate=0.92,
+        online_drop_rate=0.09,
+        online_return_rate=0.95,
     ),
     NpcPersona(
         key="vintage",
@@ -131,8 +131,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=128,
         day=41,
         cash=72000,
-        online_drop_rate=0.25,
-        online_return_rate=0.84,
+        online_drop_rate=0.11,
+        online_return_rate=0.91,
     ),
     NpcPersona(
         key="generalist",
@@ -148,8 +148,8 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=118,
         day=36,
         cash=61000,
-        online_drop_rate=0.2,
-        online_return_rate=0.88,
+        online_drop_rate=0.1,
+        online_return_rate=0.93,
     ),
 ]
 

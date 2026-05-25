@@ -3,7 +3,7 @@ import logging
 import os
 from typing import Optional
 
-from npc_market_config import NPC_MARKET_ENABLED, NPC_MARKET_TICK_HOURS, NPC_PRESENCE_INTERVAL_SEC
+from npc_market_config import NPC_MARKET_ENABLED, NPC_MARKET_TICK_HOURS
 from npc_market_service import ensure_npc_players, full_seed_npc_shops, refresh_all_npc_presence, run_npc_tick
 
 logger = logging.getLogger("npc_market")
@@ -26,7 +26,9 @@ async def _npc_market_loop() -> None:
 
 async def _npc_presence_loop() -> None:
     """更频繁地刷新 NPC 在线/离线，营造真人挂线节奏。"""
-    interval = max(120, NPC_PRESENCE_INTERVAL_SEC)
+    from npc_market_service import _presence_refresh_interval_sec
+
+    interval = _presence_refresh_interval_sec()
     await asyncio.sleep(45)
     while True:
         try:
