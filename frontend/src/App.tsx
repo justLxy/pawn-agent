@@ -3413,12 +3413,20 @@ function AchievementsTab({ achievements, unlocks }: { achievements: Achievement[
           <h2 className="text-[#C8A97E] font-bold mb-3">{category}</h2>
           {achievements.filter((achievement) => achievement.category === category).map((achievement) => {
             const percent = Math.min(100, Math.round((achievement.progress / Math.max(1, achievement.target)) * 100));
+            const isSecretEgg = Boolean(achievement.hidden) && !achievement.unlocked;
             return (
               <div key={achievement.id} className={`py-3 border-t border-[#2A2D34] ${achievement.unlocked ? 'text-[#E0E0E0]' : 'text-[#9E9E9E]'}`}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <div className="font-bold">{achievement.name} {achievement.unlocked && <span className="text-[#C8A97E] text-xs">已解锁</span>}</div>
-                    <p className="text-xs text-[#9E9E9E] mt-1">{achievement.desc}</p>
+                    <div className="font-bold">
+                      {achievement.name}
+                      {achievement.hidden && achievement.unlocked && (
+                        <span className="text-[#C8A97E] text-xs ml-2 tracking-wide">彩蛋</span>
+                      )}
+                      {achievement.unlocked && <span className="text-[#C8A97E] text-xs ml-2">已解锁</span>}
+                      {isSecretEgg && <span className="text-[#616161] text-xs ml-2">未揭示</span>}
+                    </div>
+                    <p className={`text-xs mt-1 ${isSecretEgg ? 'text-[#616161] italic' : 'text-[#9E9E9E]'}`}>{achievement.desc}</p>
                   </div>
                   <div className="text-xs text-[#616161] sm:text-right shrink-0">
                     <div>{achievement.progress.toLocaleString()} / {achievement.target.toLocaleString()}</div>

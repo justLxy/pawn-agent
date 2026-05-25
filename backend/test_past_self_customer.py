@@ -99,6 +99,29 @@ def test_past_self_skips_registry():
     assert state.achievement_stats.get("past_self_encounters") == 1
 
 
+def test_past_self_meeting_unlocks_easter_egg():
+    state = _state_with_bank()
+    customer = build_past_self_customer(state)
+    state._register_past_self_meeting(customer)
+    assert state.achievement_stats.get("past_self_meetings") == 1
+    achievements = {item["id"]: item for item in state.achievement_list()}
+    egg = achievements["past_self_easter"]
+    assert egg["unlocked"] is True
+    assert egg["name"] == "镜中人"
+    assert "账号相同" in egg["desc"]
+
+
+def test_past_self_easter_hidden_before_meeting():
+    state = _state_with_bank()
+    achievements = {item["id"]: item for item in state.achievement_list()}
+    egg = achievements["past_self_easter"]
+    assert egg["unlocked"] is False
+    assert egg["name"] == "???"
+    assert "亲眼见过" in egg["desc"]
+    assert "镜中人" not in egg["name"]
+    assert "账号" not in egg["desc"]
+
+
 if __name__ == "__main__":
     test_quote_bank_eligible()
     test_record_player_quote_dedupes()
@@ -108,4 +131,6 @@ if __name__ == "__main__":
     test_past_self_style_block_contains_samples()
     test_sample_quotes()
     test_past_self_skips_registry()
+    test_past_self_meeting_unlocks_easter_egg()
+    test_past_self_easter_hidden_before_meeting()
     print("ok")

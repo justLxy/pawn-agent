@@ -634,11 +634,11 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
         add(f"value_gain_{target}", "经济", name, f"靠持有与展示累计增值 ${target:,}。", "value_gain_from_holding", target, {"reputation": 2})
     add("negative_reviews_1", "风险", "第一次差评", "收到一次负面评价。", "negative_reviews", 1, {"skill_xp": {"charm": 20}}, hidden=True)
     add(
-        "past_self_1",
-        "顾客",
-        "镜中对谈",
-        "与镜中人完成一次交涉（成交或婉拒均可）。",
-        "past_self_encounters",
+        "past_self_easter",
+        "彩蛋",
+        "镜中人",
+        "在柜台遇见了名字与你账号相同的客人，谈价口吻竟像许多年前的自己。",
+        "past_self_meetings",
         1,
         {"reputation": 2},
         hidden=True,
@@ -1363,6 +1363,7 @@ class GameStateManager:
             "total_customers_seen": 0,
             "referrals_generated": 0,
             "past_self_encounters": 0,
+            "past_self_meetings": 0,
         }
         self.owner_username: str = ""
         self.player_quote_bank: List[Dict[str, Any]] = []
@@ -1656,6 +1657,7 @@ class GameStateManager:
         self.active_customer = self.daily_customer_queue.pop(0) if self.daily_customer_queue else None
         if self.active_customer:
             self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
+            self._register_past_self_meeting(self.active_customer)
         self._record_daily_customer_codex()
 
     def generate_random_customer(self) -> Customer:
@@ -1921,6 +1923,14 @@ class GameStateManager:
             trade = self.active_customer.role
         record_player_quote(self, text, intent, trade)
 
+    def _register_past_self_meeting(self, customer: Customer) -> None:
+        if not getattr(customer, "is_past_self", False):
+            return
+        if int(self.achievement_stats.get("past_self_meetings", 0)) >= 1:
+            return
+        self.achievement_stats["past_self_meetings"] = 1
+        self._check_achievements("past_self_meet")
+
     def _record_customer_outcome(
         self,
         customer: Customer,
@@ -1985,7 +1995,6 @@ class GameStateManager:
     ):
         if outcome in ("deal", "reject", "walk_out"):
             self.achievement_stats["past_self_encounters"] = int(self.achievement_stats.get("past_self_encounters", 0)) + 1
-            self._check_achievements("past_self", {"outcome": outcome})
         delta = 0
         if outcome == "deal":
             delta = 14 if customer.role == "seller" else 12
@@ -2192,15 +2201,25 @@ class GameStateManager:
             progress = self._achievement_metric(definition["metric"])
             state = self.achievements.get(achievement_id, {})
             unlocked = bool(state.get("unlocked")) or progress >= int(definition["target"])
-            hidden = bool(definition.get("hidden")) and not unlocked
+            masked = bool(definition.get("hidden")) and not unlocked
+            if masked and definition.get("category") == "彩蛋":
+                public_name = "???"
+                public_desc = "据说当铺里还藏着某种少见的见闻，只有亲眼见过才会明白。"
+            elif masked:
+                public_name = "隐藏成就"
+                public_desc = "继续经营以揭开这个目标。"
+            else:
+                public_name = definition["name"]
+                public_desc = definition["desc"]
             items.append(
                 {
                     **definition,
-                    "name": "隐藏成就" if hidden else definition["name"],
-                    "desc": "继续经营以揭开这个目标。" if hidden else definition["desc"],
+                    "name": public_name,
+                    "desc": public_desc,
                     "progress": min(progress, int(definition["target"])),
                     "unlocked": unlocked,
                     "unlocked_day": state.get("unlocked_day"),
+                    "hidden": bool(definition.get("hidden")),
                 }
             )
         return items
@@ -2564,6 +2583,7 @@ class GameStateManager:
                 self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
         if self.active_customer:
             self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
+            self._register_past_self_meeting(self.active_customer)
             self._record_customer_encounter(self.active_customer, "served")
         return bool(self.active_customer)
 
