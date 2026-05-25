@@ -404,18 +404,6 @@ def format_offer_change_narration(role: str, previous_offer: int, new_offer: int
     return f"对方将{price_term}{direction} ${new_offer:,}。"
 
 
-def seller_acceptance_price(current_offer: int, limit_price: int, skill_relief: float) -> int:
-    hidden_floor = int(limit_price * (1 - skill_relief))
-    public_floor = int(current_offer * max(0.88, 0.95 - skill_relief))
-    return max(hidden_floor, public_floor)
-
-
-def buyer_acceptance_price(current_offer: int, limit_price: int, skill_relief: float) -> int:
-    hidden_ceiling = int(limit_price * (1 + skill_relief))
-    public_ceiling = int(current_offer * min(1.16, 1.06 + skill_relief))
-    return min(hidden_ceiling, public_ceiling)
-
-
 def terminal_negotiation_dialogue(customer: Any, accepted: bool, walk_out: bool, new_offer: int) -> str:
     if accepted:
         if customer.role == "seller":
@@ -468,43 +456,46 @@ def normalize_negotiation_dialogue(
     return text
 
 
-def sanitize_negotiation_result(state: GameStateManager, ai_response: Dict[str, Any], player_offer: Optional[int], intent: str) -> Dict[str, Any]:
-    customer = state.active_customer
-    if not customer:
-        return ai_response
-    skill_relief = 0.015 * state.skills["negotiation"]["level"] + 0.01 * state.skills["charm"]["level"]
-    skill_relief += customer.case_negotiation_relief()
-    effective_offer = player_offer
-    if effective_offer is None and intent == "accept":
-        effective_offer = customer.current_offer
-    if effective_offer is not None:
-        effective_offer = int(effective_offer)
-    if customer.role == "seller":
-        acceptable_price = seller_acceptance_price(customer.current_offer, customer.limit_price, skill_relief)
-        upper = max(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
-        if effective_offer is not None and effective_offer >= acceptable_price:
-            accepted = True
-            new_offer = effective_offer
-        else:
-            accepted = False
-            new_offer = min(upper, max(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
-    else:
-        acceptable_price = buyer_acceptance_price(customer.current_offer, customer.limit_price, skill_relief)
-        lower = min(int(customer.initial_offer), int(customer.current_offer), acceptable_price)
-        if effective_offer is not None and effective_offer <= acceptable_price:
-            accepted = True
-            new_offer = effective_offer
-        else:
-            accepted = False
-            new_offer = max(lower, min(acceptable_price, int(ai_response.get("new_offer", customer.current_offer))))
-    return {
-        **ai_response,
-        "dialogue": str(ai_response.get("dialogue", ""))[:480],
-        "new_offer": max(1, int(new_offer)),
-        "accepted": accepted,
-        "walk_out": False if accepted else bool(ai_response.get("walk_out", False)),
-        "parsed_offer": effective_offer,
+async def negotiation_ai_response(
+    state: GameStateManager,
+    customer: Any,
+    player_message: str,
+    player_offer: Optional[int],
+    intent: str,
+) -> Dict[str, Any]:
+    economy_context = {
+        "economy_index": state.economy_index,
+        "economic_pressure": state.economic_pressure,
+        "market_trend": state.market_trends.get(customer.item.category, 1.0),
     }
+    customer_memory = {
+        "relationship_cn": customer.to_dict().get("relationship_cn"),
+        "visit_count": customer.visit_count,
+        "last_deal_summary": customer.last_deal_summary,
+    }
+    return await ai_client.generate_negotiation(
+        customer_name=customer.name,
+        trait=customer.trait,
+        trait_desc=customer.to_dict()["trait_desc"],
+        role=customer.role,
+        item_name=customer.item.name,
+        item_category=customer.item.category,
+        item_condition=customer.item.condition,
+        is_fake=customer.item.is_fake,
+        actual_value=customer.item.actual_value,
+        limit_price=customer.limit_price,
+        current_offer=customer.current_offer,
+        player_message=player_message,
+        player_offer=player_offer,
+        intent=intent,
+        patience=customer.patience,
+        negotiation_level=state.skills["negotiation"]["level"],
+        charm_level=state.skills["charm"]["level"],
+        dialogue_history=customer.dialogue_history,
+        economy_context=economy_context,
+        customer_memory=customer_memory,
+        customer_context=customer.negotiation_context(),
+    )
 
 
 def is_stale_negotiation_finalize(state: GameStateManager, stream_customer_id: str) -> bool:
@@ -810,58 +801,9 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
     if customer.role == "seller" and player_offer is not None and player_offer > state.cash:
         raise HTTPException(status_code=400, detail=f"现金不足，你当前最多只能出 ${state.cash}。")
 
-    customer.dialogue_history.append({"role": "player", "content": req.message.strip()})
-    if intent in ["accept", "reject"]:
-        effective_offer = player_offer if player_offer is not None else customer.current_offer
-        rule_response = ai_client._calculate_algorithmic_fallback(
-            role=customer.role,
-            trait=customer.trait,
-            limit_price=customer.limit_price,
-            current_offer=customer.current_offer,
-            player_offer=effective_offer,
-            patience=customer.patience,
-            intent=intent,
-            negotiation_level=state.skills["negotiation"]["level"],
-            charm_level=state.skills["charm"]["level"],
-        )
-        ai_response = sanitize_negotiation_result(state, rule_response, player_offer, intent)
-        return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
-
-    economy_context = {
-        "economy_index": state.economy_index,
-        "economic_pressure": state.economic_pressure,
-        "market_trend": state.market_trends.get(customer.item.category, 1.0),
-    }
-    customer_memory = {
-        "relationship_cn": customer.to_dict().get("relationship_cn"),
-        "visit_count": customer.visit_count,
-        "last_deal_summary": customer.last_deal_summary,
-    }
-    customer_context = customer.negotiation_context()
-    ai_response = await ai_client.generate_negotiation(
-        customer_name=customer.name,
-        trait=customer.trait,
-        trait_desc=customer.to_dict()["trait_desc"],
-        role=customer.role,
-        item_name=customer.item.name,
-        item_category=customer.item.category,
-        item_condition=customer.item.condition,
-        is_fake=customer.item.is_fake,
-        actual_value=customer.item.actual_value,
-        limit_price=customer.limit_price,
-        current_offer=customer.current_offer,
-        player_message=req.message.strip(),
-        player_offer=player_offer,
-        intent=intent,
-        patience=customer.patience,
-        negotiation_level=state.skills["negotiation"]["level"],
-        charm_level=state.skills["charm"]["level"],
-        dialogue_history=customer.dialogue_history,
-        economy_context=economy_context,
-        customer_memory=customer_memory,
-        customer_context=customer_context,
-    )
-    ai_response = sanitize_negotiation_result(state, ai_response, player_offer, intent)
+    player_message = req.message.strip()
+    customer.dialogue_history.append({"role": "player", "content": player_message})
+    ai_response = await negotiation_ai_response(state, customer, player_message, player_offer, intent)
     return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
 
 
@@ -901,18 +843,7 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
     }
     customer_context = customer.negotiation_context()
     previous_offer = customer.current_offer
-    rule_response = ai_client._calculate_algorithmic_fallback(
-        role=customer.role,
-        trait=customer.trait,
-        limit_price=customer.limit_price,
-        current_offer=customer.current_offer,
-        player_offer=player_offer,
-        patience=customer.patience,
-        intent=intent,
-        negotiation_level=state.skills["negotiation"]["level"],
-        charm_level=state.skills["charm"]["level"],
-    )
-    ai_response = sanitize_negotiation_result(state, rule_response, player_offer, intent)
+    ai_response = await negotiation_ai_response(state, customer, player_message, player_offer, intent)
     stream_customer_id = customer.customer_id
 
     async def stream():
