@@ -10,6 +10,7 @@ def _make_state(total: int = 3) -> GameStateManager:
     state = GameStateManager(initialize=False)
     state.total_customers_today = total
     state.customers_served_today = 0
+    state.customers_finished_ids = []
     state.active_customer = state.generate_random_customer()
     state.daily_customer_queue = [state.generate_random_customer() for _ in range(total - 1)]
     for customer in state.daily_customer_queue:
@@ -37,6 +38,7 @@ def test_select_next_customer_stops_at_daily_total():
 
     assert state.select_next_customer() is True
     assert state.customers_served_today == 1
+    assert len(state.customers_finished_ids) == 1
     assert state.active_customer is not None
 
     state.active_customer.session_closed = "deal"
@@ -46,5 +48,37 @@ def test_select_next_customer_stops_at_daily_total():
     state.active_customer.session_closed = "deal"
     assert state.select_next_customer() is False
     assert state.customers_served_today == 3
+    assert state.active_customer is None
+    assert state.daily_customer_queue == []
+
+
+def test_double_dismiss_same_customer_counts_once():
+    state = _make_state(total=3)
+    departing_id = state.active_customer.customer_id
+    state.active_customer.session_closed = "deal"
+
+    assert state.select_next_customer() is True
+    assert state.customers_served_today == 1
+    assert departing_id in state.customers_finished_ids
+
+    state.active_customer.session_closed = "deal"
+    state.active_customer.customer_id = departing_id
+    assert state.select_next_customer() is True
+    assert state.customers_served_today == 1
+    assert state.active_customer is not None
+
+
+def test_sanitize_legacy_inflated_counter():
+    state = GameStateManager(initialize=False)
+    state.total_customers_today = 9
+    state.customers_served_today = 19
+    state.customers_finished_ids = []
+    state.active_customer = state.generate_random_customer()
+    state.daily_customer_queue = [state.generate_random_customer() for _ in range(5)]
+
+    state._sanitize_daily_traffic()
+
+    assert state.customers_served_today == 9
+    assert state.customers_seen_today() == 9
     assert state.active_customer is None
     assert state.daily_customer_queue == []

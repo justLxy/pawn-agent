@@ -1346,6 +1346,7 @@ class GameStateManager:
         self.ranking_reward_bonus = 0
         self.active_customer: Optional[Customer] = None
         self.daily_customer_queue: List[Customer] = []
+        self.customers_finished_ids: List[str] = []
         self.customers_served_today = 0
         self.total_customers_today = 3
         self.daily_summary: Dict[str, Any] = {}
@@ -1356,6 +1357,7 @@ class GameStateManager:
 
     def initialize_day(self):
         self.day_ended = False
+        self.customers_finished_ids = []
         self.customers_served_today = 0
         self.active_customer = None
         base_traffic = 2 + self.shop_level + self.facilities["storefront"] // 2
@@ -1446,6 +1448,41 @@ class GameStateManager:
         max_waiting = self._max_waiting_customers()
         if len(self.daily_customer_queue) > max_waiting:
             self.daily_customer_queue = self.daily_customer_queue[:max_waiting]
+
+    def _sync_customers_served_count(self) -> None:
+        self.customers_served_today = len(self.customers_finished_ids)
+
+    def customers_seen_today(self) -> int:
+        active = self.active_customer
+        unfinished_active = bool(active and active.customer_id not in self.customers_finished_ids)
+        if self.customers_finished_ids:
+            base = len(self.customers_finished_ids) + (1 if unfinished_active else 0)
+        else:
+            base = self.customers_served_today + (1 if unfinished_active else 0)
+        return min(base, self.total_customers_today)
+
+    def _sanitize_daily_traffic(self) -> None:
+        self.total_customers_today = max(2, int(self.total_customers_today or 3))
+        finished = [str(customer_id) for customer_id in self.customers_finished_ids if customer_id]
+        if finished:
+            self.customers_finished_ids = finished[: self.total_customers_today]
+        else:
+            legacy_served = max(0, int(self.customers_served_today))
+            self.customers_served_today = min(legacy_served, self.total_customers_today)
+            if self.customers_served_today >= self.total_customers_today:
+                self.active_customer = None
+                self.daily_customer_queue.clear()
+                self.customers_finished_ids = []
+                return
+            self.customers_finished_ids = []
+            self._trim_daily_customer_queue()
+            return
+        self._sync_customers_served_count()
+        if len(self.customers_finished_ids) >= self.total_customers_today:
+            self.active_customer = None
+            self.daily_customer_queue.clear()
+        else:
+            self._trim_daily_customer_queue()
 
     def apply_queue_refill(self, ai_customers: List["Customer"]) -> int:
         if not ai_customers:
@@ -2385,23 +2422,49 @@ class GameStateManager:
         customer.generation_source = "ai"
         return customer
 
-    def select_next_customer(self) -> bool:
-        self.customers_served_today += 1
-        if self.customers_served_today >= self.total_customers_today:
+    def select_next_customer(self, *, force: bool = False) -> bool:
+        departing = self.active_customer
+        if not departing:
+            return False
+        if not force and not departing.session_closed:
+            return False
+
+        departing_id = departing.customer_id
+        if departing_id in self.customers_finished_ids:
+            if len(self.customers_finished_ids) >= self.total_customers_today:
+                self.active_customer = None
+                self.daily_customer_queue.clear()
+                return False
+            if self.active_customer and self.active_customer.customer_id == departing_id and self.daily_customer_queue:
+                return self._activate_next_queued_customer()
+            return bool(self.active_customer)
+
+        if len(self.customers_finished_ids) >= self.total_customers_today:
+            self.active_customer = None
+            self.daily_customer_queue.clear()
+            self._sync_customers_served_count()
+            return False
+
+        self.customers_finished_ids.append(departing_id)
+        self._sync_customers_served_count()
+        if len(self.customers_finished_ids) >= self.total_customers_today:
             self.active_customer = None
             self.daily_customer_queue.clear()
             return False
-        if self.daily_customer_queue:
-            self.active_customer = self.daily_customer_queue.pop(0)
-            if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
-                if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
-                    self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
-            if self.active_customer:
-                self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
-                self._record_customer_encounter(self.active_customer, "served")
-            return True
-        self.active_customer = None
-        return False
+        return self._activate_next_queued_customer()
+
+    def _activate_next_queued_customer(self) -> bool:
+        if not self.daily_customer_queue:
+            self.active_customer = None
+            return False
+        self.active_customer = self.daily_customer_queue.pop(0)
+        if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
+            if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
+                self.active_customer = self._generate_local_seller_customer(self.active_customer.name, self.active_customer.trait)
+        if self.active_customer:
+            self.active_customer.ensure_case_state(self.shop_level, self.facilities["appraisal_room"])
+            self._record_customer_encounter(self.active_customer, "served")
+        return bool(self.active_customer)
 
     def _case_investigation_narration(self, customer: Customer, action: str, clue: Optional[Dict[str, Any]], extra: str = "") -> str:
         action_name = CASE_INVESTIGATION_ACTIONS.get(action, {}).get("name_cn", "调查")
@@ -2918,7 +2981,7 @@ class GameStateManager:
             if self._retarget_buyer(self.active_customer, item_id):
                 message += f" {active_buyer_name}看中的货已经售出，但他转而想看看【{self.active_customer.item.name}】，谈判仍可继续。"
             else:
-                self.select_next_customer()
+                self.select_next_customer(force=True)
                 message += f" {active_buyer_name}看中的货已经售出，店里暂无其他可售藏品，只好先离开。"
         self._repair_buyer_queue_after_item_removed(item_id)
         return {"success": True, "message": message, "price": price}
@@ -3629,6 +3692,8 @@ class GameStateManager:
             "active_customer": customer_payload(self.active_customer) if self.active_customer else None,
             "daily_customer_queue": [customer_payload(customer) for customer in self.daily_customer_queue],
             "customers_served_today": self.customers_served_today,
+            "customers_finished_ids": list(self.customers_finished_ids),
+            "customers_seen_today": self.customers_seen_today(),
             "total_customers_today": self.total_customers_today,
             "day_ended": self.day_ended,
             "daily_summary": self.daily_summary,
@@ -3746,8 +3811,10 @@ class GameStateManager:
         state.ranking_reward_bonus = int(data.get("ranking_reward_bonus", 0))
         state.active_customer = Customer.from_dict(data["active_customer"]) if data.get("active_customer") else None
         state.daily_customer_queue = [Customer.from_dict(customer) for customer in data.get("daily_customer_queue", [])]
+        state.customers_finished_ids = [str(customer_id) for customer_id in data.get("customers_finished_ids", []) if customer_id]
         state.customers_served_today = int(data.get("customers_served_today", 0))
         state.total_customers_today = int(data.get("total_customers_today", max(3, len(state.daily_customer_queue))))
+        state._sanitize_daily_traffic()
         state.day_ended = bool(data.get("day_ended", False))
         state.daily_summary = data.get("daily_summary") or {
             "day": state.day,
