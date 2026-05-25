@@ -726,14 +726,18 @@ def apply_negotiation_outcome(
         state, customer, ai_response, player_offer, intent
     )
     dialogue = ai_response["dialogue"]
-    new_offer = int(ai_response["new_offer"])
     patience_change = int(ai_response["patience_change"])
     accepted = bool(ai_response["accepted"])
     walk_out = bool(ai_response["walk_out"])
-    if accepted:
-        patience_change = max(0, patience_change)
-
     previous_offer = customer.current_offer
+    if accepted:
+        from negotiation_economics import negotiation_deal_price
+
+        patience_change = max(0, patience_change)
+        new_offer = negotiation_deal_price(customer.role, player_offer, previous_offer)
+        ai_response["new_offer"] = new_offer
+    else:
+        new_offer = int(ai_response["new_offer"])
     previous_patience = customer.patience
     customer.patience = max(0, customer.patience + patience_change)
     if customer.patience == 0:

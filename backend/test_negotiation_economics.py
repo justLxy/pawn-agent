@@ -93,6 +93,43 @@ def test_should_auto_accept_seller():
     assert not should_auto_accept_negotiation("seller", 5000, 7000, 6000, "offer")
 
 
+def test_ai_accept_with_ask_price_reconciled_to_player_bid():
+    """Regression: player $2500 vs ask $3440 — accepted dialogue must not stay at $3440."""
+    customer = _seller_customer(current_offer=3440, limit_price=2400)
+    ai = {
+        "dialogue": "行，$3,440，这件东西归你。",
+        "new_offer": 3440,
+        "patience_change": 0,
+        "accepted": True,
+        "walk_out": False,
+    }
+    result = reconcile_negotiation_economics(customer, ai, player_offer=2500, intent="offer")
+    assert result["accepted"] is True
+    assert result["new_offer"] == 2500
+
+
+def test_ai_false_accept_below_limit_becomes_counter():
+    customer = _seller_customer(current_offer=3440, limit_price=3200)
+    ai = {
+        "dialogue": "行，成交。",
+        "new_offer": 3440,
+        "patience_change": 0,
+        "accepted": True,
+        "walk_out": False,
+    }
+    result = reconcile_negotiation_economics(customer, ai, player_offer=2500, intent="offer")
+    assert result["accepted"] is False
+    assert result["new_offer"] <= 3440
+    assert result.get("_force_terminal_dialogue") is True
+
+
+def test_accepted_terminal_dialogue_uses_deal_price_not_ask():
+    customer = _seller_customer(current_offer=3440, limit_price=2400)
+    line = terminal_negotiation_dialogue(customer, True, False, 2500, player_offer=2500)
+    assert "$2,500" in line
+    assert "$3,440" not in line
+
+
 if __name__ == "__main__":
     test_seller_auto_accept_when_player_bids_above_ask()
     test_deal_price_is_min_bid_and_ask_for_acquisition()
@@ -101,4 +138,7 @@ if __name__ == "__main__":
     test_narration_includes_player_bid()
     test_terminal_seller_reject_when_bid_already_high()
     test_should_auto_accept_seller()
+    test_ai_accept_with_ask_price_reconciled_to_player_bid()
+    test_ai_false_accept_below_limit_becomes_counter()
+    test_accepted_terminal_dialogue_uses_deal_price_not_ask()
     print("test_negotiation_economics: ok")

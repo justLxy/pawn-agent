@@ -99,9 +99,10 @@ def reconcile_negotiation_economics(
     current_offer = int(customer.current_offer)
     limit_price = int(customer.limit_price)
 
-    if should_auto_accept_negotiation(
+    auto_accept = should_auto_accept_negotiation(
         role, player_offer, current_offer, limit_price, intent, negotiation_level, charm_level
-    ):
+    )
+    if auto_accept:
         deal_price = negotiation_deal_price(role, player_offer, current_offer)
         result["accepted"] = True
         result["walk_out"] = False
@@ -109,7 +110,20 @@ def reconcile_negotiation_economics(
         result["patience_change"] = max(0, int(result.get("patience_change", 0)))
         return result
 
-    if bool(result.get("accepted")) or bool(result.get("walk_out")):
+    if bool(result.get("walk_out")):
+        return result
+
+    # AI may set accepted=true while leaving new_offer at the old ask — reject or fix before deal().
+    if bool(result.get("accepted")):
+        result["accepted"] = False
+        result["new_offer"] = clamp_counter_offer(
+            role,
+            int(result.get("new_offer", current_offer)),
+            current_offer,
+            limit_price,
+            player_offer,
+        )
+        result["_force_terminal_dialogue"] = True
         return result
 
     new_offer = clamp_counter_offer(
