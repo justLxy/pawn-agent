@@ -358,21 +358,98 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   animation: dayLoaderPulse 2.4s ease-in-out infinite;
 }
 
-.day-loader-track {
-  width: min(320px, 72vw);
-  height: 3px;
-  background: rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-  position: relative;
+/* Immersive loader stepper: dots + labels share 4 equal columns */
+.immersive-stepper {
+  width: min(360px, 88vw);
+  margin-left: auto;
+  margin-right: auto;
 }
 
-.day-loader-track::after {
-  content: '';
+.immersive-stepper__dots {
+  position: relative;
+  height: 12px;
+  margin-bottom: 10px;
+}
+
+/* Track spans only between first and last dot centers (12.5% … 87.5%) */
+.immersive-stepper__connector {
+  position: absolute;
+  top: 50%;
+  left: 12.5%;
+  width: 75%;
+  height: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.immersive-stepper__line-bg {
   position: absolute;
   inset: 0;
-  width: 38%;
-  background: linear-gradient(90deg, transparent, rgba(200, 169, 126, 0.25), #C8A97E, rgba(200, 169, 126, 0.25), transparent);
-  animation: dayLoaderShimmer 1.9s ease-in-out infinite;
+  background: #2a2d34;
+  border-radius: 1px;
+}
+
+.immersive-stepper__line-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  min-width: 0;
+  background: linear-gradient(90deg, #a68b5b 0%, #c8a97e 100%);
+  border-radius: 1px;
+  transition: width 0.65s ease-out;
+  overflow: hidden;
+}
+
+.immersive-stepper__line-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 244, 214, 0.4), transparent);
+  animation: immersiveLineShimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes immersiveLineShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.immersive-stepper__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2a2d34;
+  transition: background-color 0.45s ease, box-shadow 0.45s ease, transform 0.45s ease;
+}
+
+.immersive-stepper__dot--active {
+  background: #c8a97e;
+  box-shadow: 0 0 8px rgba(200, 169, 126, 0.45);
+}
+
+.immersive-stepper__dot--current {
+  transform: scale(1.2);
+}
+
+.immersive-stepper__label {
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+  padding: 0 2px;
+  transition: color 0.45s ease, font-weight 0.45s ease;
+}
+
+@media (min-width: 768px) {
+  .immersive-stepper__label {
+    font-size: 12px;
+  }
 }
 
 .day-loader-tip {

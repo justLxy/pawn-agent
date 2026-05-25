@@ -2009,10 +2009,10 @@ class GameStateManager:
         if prewarmed_customers:
             result = self.initialize_day_from_prewarmed(prewarmed_customers)
             if not result.get("fallback"):
-                return {"success": True, "message": "新的一天开始了。后台预生成的顾客已经在门口等候。", "prewarmed": True}
+                return {"success": True, "message": "新的一天开始了。几位熟客已在门外候着，卷帘可起。", "prewarmed": True}
 
         self.initialize_day_fast()
-        return {"success": True, "message": "新的一天开始了。后台内容尚未就绪，已用本地兜底立即开门。", "fallback": True}
+        return {"success": True, "message": "新的一天开始了。伙计已先迎了几位过客，你且开门营业。", "fallback": True}
 
     def _refresh_market_trends(self):
         for category in ITEM_TEMPLATES:

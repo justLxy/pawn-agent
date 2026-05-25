@@ -1647,7 +1647,7 @@ function AuthScreen(props: {
                   : '查询中…'
               : authMode === 'login'
                 ? '进入当铺'
-                : '创建云端当铺'}
+                : '挂牌开业'}
           </button>
           {authMode === 'login' && (
             <button type="button" onClick={() => switchMode('recover')} className="w-full text-center text-sm text-[#9E9E9E] font-sans hover:text-[#C8A97E] transition-colors">
@@ -1844,6 +1844,14 @@ function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () =>
   );
 }
 
+function ImmersiveWaitScreen({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex-1 w-full min-h-[min(72vh,640px)] flex flex-col items-center justify-center px-4 md:px-8 py-10 md:py-14">
+      {children}
+    </div>
+  );
+}
+
 function ImmersiveWaitLoader({
   centerIcon,
   footerHint,
@@ -1861,6 +1869,8 @@ function ImmersiveWaitLoader({
 }) {
   const [tipIndex, setTipIndex] = useState(0);
   const [phaseIndex, setPhaseIndex] = useState(0);
+  const phaseCount = phases.length;
+  const lineFillPercent = phaseCount > 1 ? (phaseIndex / (phaseCount - 1)) * 100 : 0;
   useEffect(() => {
     const tipTimer = window.setInterval(() => setTipIndex((index) => (index + 1) % tips.length), 2600);
     return () => window.clearInterval(tipTimer);
@@ -1873,32 +1883,58 @@ function ImmersiveWaitLoader({
     return () => window.clearInterval(phaseTimer);
   }, [phases.length]);
   return (
-    <div className="w-full max-w-lg flex flex-col items-center justify-center text-center px-6 animate-slide-up">
-      <div className="relative mb-8 flex items-center justify-center">
+    <div className="w-full max-w-xl flex flex-col items-center justify-center text-center animate-slide-up">
+      <div className="relative mb-8 md:mb-10 flex items-center justify-center">
         <div className="day-loader-ring" />
         <div className="absolute day-loader-icon text-[#C8A97E]">{centerIcon}</div>
       </div>
-      <h1 className="text-[26px] md:text-[32px] font-bold text-[#C8A97E] mb-3 font-sans tracking-wide">{title}</h1>
-      <p className="text-[#9E9E9E] text-sm mb-6 max-w-md leading-relaxed font-serif">{subtitle}</p>
-      <div className="flex items-center justify-center gap-2 mb-6 font-sans">
-        {phases.map((phase, index) => (
-          <span
-            key={phase}
-            className={`text-[11px] px-2 py-1 border transition-all duration-500 ${
-              index <= phaseIndex
-                ? 'text-[#C8A97E] border-[#C8A97E]/50 bg-[rgba(200,169,126,0.1)]'
-                : 'text-[#616161] border-[#2A2D34] bg-transparent'
-            }`}
-          >
-            {phase}
-          </span>
-        ))}
+      <h1 className="text-[24px] md:text-[32px] font-bold text-[#C8A97E] mb-3 font-sans tracking-wide">{title}</h1>
+      <p className="text-[#9E9E9E] text-sm md:text-[15px] mb-8 md:mb-10 max-w-md leading-relaxed font-serif px-2">{subtitle}</p>
+
+      <div className="immersive-stepper mb-6 font-sans" aria-hidden>
+        <div className="immersive-stepper__dots">
+          <div className="immersive-stepper__connector" aria-hidden>
+            <div className="immersive-stepper__line-bg" />
+            <div className="immersive-stepper__line-fill" style={{ width: `${lineFillPercent}%` }} />
+          </div>
+          <div className="grid grid-cols-4 relative z-10 h-full">
+            {phases.map((phase, index) => {
+              const active = index <= phaseIndex;
+              const current = index === phaseIndex;
+              return (
+                <div key={`dot-${phase}`} className="flex justify-center items-center">
+                  <span
+                    className={`immersive-stepper__dot ${active ? 'immersive-stepper__dot--active' : ''} ${
+                      current ? 'immersive-stepper__dot--current' : ''
+                    }`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="grid grid-cols-4">
+          {phases.map((phase, index) => {
+            const active = index <= phaseIndex;
+            const current = index === phaseIndex;
+            return (
+              <p
+                key={`label-${phase}`}
+                className={`immersive-stepper__label ${
+                  current ? 'text-[#C8A97E] font-semibold' : active ? 'text-[#9E9E9E]' : 'text-[#616161]'
+                }`}
+              >
+                {phase}
+              </p>
+            );
+          })}
+        </div>
       </div>
-      <div className="day-loader-track mb-6" />
-      <p key={tipIndex} className="text-[#616161] text-xs font-sans day-loader-tip min-h-[20px] max-w-sm">
+
+      <p key={tipIndex} className="text-[#9E9E9E] text-xs md:text-sm font-sans day-loader-tip min-h-[22px] max-w-sm mt-5 px-2">
         {tips[tipIndex]}
       </p>
-      {footerHint ? <p className="text-[#616161]/80 text-[11px] font-sans mt-8">{footerHint}</p> : null}
+      {footerHint ? <p className="text-[#616161] text-[11px] font-sans mt-6 max-w-sm leading-relaxed px-2">{footerHint}</p> : null}
     </div>
   );
 }
@@ -1916,34 +1952,36 @@ function PawnshopBootLoader({ mode, shopName }: { mode: 'register' | 'login'; sh
             '核实开业本金 $10,000 与空白账本…',
             '摆放柜台、秤杆与验光镜…',
             '打通鉴定室与修复工坊的隔间…',
-            '撰写掌柜名讳，登记云端账册…',
-            '联络行会，安排首日客流席位…',
-            '静待奇货与来客自远方生成…',
+            '撰写掌柜名讳，登记行当名册…',
+            '联络行会，安排首日迎客次序…',
+            '听闻已有稀客在街口徘徊…',
             '街角风铃轻响，卷帘即将拉起…'
           ]
         }
       : {
           title: '正在推开当铺门',
-          subtitle: '核对密令，翻开云端账本，今日柜台仍等着你',
+          subtitle: '核对密令，翻开昨夜封存的账本，今日柜台仍等着你',
           phases: ['验明身份', '翻阅账本', '整理柜台', '开门迎客'],
           tips: [
             '核对掌柜名讳与通行密令…',
-            '载入云端存档与经营日志…',
+            '拂去柜台浮尘，翻看经营日志…',
             '清点库存市值与昨日结余…',
             '整理展示柜与待接见的来客…',
-            '刷新经济指数与今日客流…',
+            '嗅一嗅街市风向，掂量今日客流…',
             '擦拭柜台，等待第一声叩门…'
           ]
         };
   return (
-    <ImmersiveWaitLoader
-      centerIcon={mode === 'register' ? <Store className="w-7 h-7" /> : <Clock className="w-7 h-7" />}
-      title={config.title}
-      subtitle={config.subtitle}
-      phases={config.phases}
-      tips={config.tips}
-      footerHint={mode === 'register' ? '首次创办需生成首日客流与货品，约需数十秒，请勿关闭页面' : '正在同步云端账本，请稍候'}
-    />
+    <ImmersiveWaitScreen>
+      <ImmersiveWaitLoader
+        centerIcon={mode === 'register' ? <Store className="w-7 h-7" /> : <Clock className="w-7 h-7" />}
+        title={config.title}
+        subtitle={config.subtitle}
+        phases={config.phases}
+        tips={config.tips}
+        footerHint={mode === 'register' ? '开张筹备颇费时辰，请勿中途离柜' : '账本厚重，请稍候片刻'}
+      />
+    </ImmersiveWaitScreen>
   );
 }
 
@@ -1959,16 +1997,25 @@ function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
         title: '正在开启新的一天',
         subtitle: '卷帘拉起，街声渐近，当铺准备开门迎客',
         phases: ['翻开日志', '刷新行情', '整理库房', '等待叩门'],
-        tips: ['翻开新一页经营日志…', '刷新经济指数与客流预期…', '整理仓库与展示柜…', '留意今日可能上门的顾客…', '擦拭柜台，等待第一声叩门…']
+        tips: [
+          '翻开新一页经营日志…',
+          '打听街坊行情与行市涨跌…',
+          '整理仓库与展示柜…',
+          '巷口已有人影向当铺张望…',
+          '擦拭柜台，等待第一声叩门…'
+        ]
       };
   return (
-    <ImmersiveWaitLoader
-      centerIcon={<Clock className="w-7 h-7" />}
-      title={config.title}
-      subtitle={config.subtitle}
-      phases={config.phases}
-      tips={config.tips}
-    />
+    <ImmersiveWaitScreen>
+      <ImmersiveWaitLoader
+        centerIcon={<Clock className="w-7 h-7" />}
+        title={config.title}
+        subtitle={config.subtitle}
+        phases={config.phases}
+        tips={config.tips}
+        footerHint={mode === 'next_day' ? '客官尚在途中，街市繁忙时须多候片刻' : undefined}
+      />
+    </ImmersiveWaitScreen>
   );
 }
 
@@ -1994,7 +2041,11 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
     }
   }, [customer?.session_closed, customer?.dialogue_history.length, chatEndRef]);
   if (dayTransition === 'next_day' && (state.day_ended || loading)) {
-    return <DayTransitionLoader mode="next_day" />;
+    return (
+      <div className="flex-1 flex flex-col w-full min-h-0">
+        <DayTransitionLoader mode="next_day" />
+      </div>
+    );
   }
   if (state.day_ended) {
     return (
@@ -2045,7 +2096,11 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
   }
   if (!customer) {
     if (dayTransition === 'end_day') {
-      return <DayTransitionLoader mode="end_day" />;
+      return (
+        <div className="flex-1 flex flex-col w-full min-h-0">
+          <DayTransitionLoader mode="end_day" />
+        </div>
+      );
     }
     const seenToday = state.customers_seen_today ?? state.customers_served_today;
     const trafficComplete = state.daily_traffic_complete ?? seenToday >= state.total_customers_today;
