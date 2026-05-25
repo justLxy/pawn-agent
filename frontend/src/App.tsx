@@ -10,6 +10,7 @@ import {
   Crown,
   Copy,
   Gem,
+  GraduationCap,
   Download,
   Heart,
   ImageDown,
@@ -37,6 +38,7 @@ import {
 } from './chatScreenshot';
 import { ShopNameLine, ShowcaseCover, SponsorSubtitle, type PlayerCosmetics } from './cosmetics';
 import { ShopTab } from './shopTab';
+import { TutorialHelpButton, TutorialPanel, isTutorialSeen } from './tutorial';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
@@ -606,6 +608,8 @@ export default function App() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const tutorialAutoOpenedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const negotiateAbortRef = useRef<AbortController | null>(null);
   const negotiateGenerationRef = useRef(0);
@@ -882,6 +886,14 @@ export default function App() {
     loadMarket().catch((err) => setErrorMsg(err.message));
   }, [player, activeTab, marketSort]);
 
+  useEffect(() => {
+    if (!player || !state || tutorialAutoOpenedRef.current) return;
+    if (state.day === 1 && !isTutorialSeen(player.username)) {
+      tutorialAutoOpenedRef.current = true;
+      setTutorialOpen(true);
+    }
+  }, [player, state]);
+
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
@@ -902,13 +914,19 @@ export default function App() {
         return;
       }
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+      const isRegister = authMode === 'register';
       const data = await apiPost<{ token: string; player: Player }>(endpoint, authForm);
       localStorage.setItem(TOKEN_KEY, data.token);
       setPlayer(data.player);
-      if (authMode === 'register') {
+      tutorialAutoOpenedRef.current = false;
+      if (isRegister) {
         setSuccessMsg('账号已创建，正在载入当铺…');
       }
       await loadCloudState();
+      if (isRegister && !isTutorialSeen(data.player.username)) {
+        tutorialAutoOpenedRef.current = true;
+        setTutorialOpen(true);
+      }
       setSuccessMsg(authMode === 'login' ? '欢迎回来。' : '当铺创建成功，可以开始营业了。');
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '操作失败。');
@@ -1284,6 +1302,13 @@ export default function App() {
           setAuthMode={changeAuthMode}
           onSubmit={handleAuth}
           onUseRecoveredUsername={useRecoveredUsername}
+          onOpenTutorial={() => setTutorialOpen(true)}
+        />
+        <TutorialPanel
+          open={tutorialOpen}
+          onClose={() => setTutorialOpen(false)}
+          username={authForm.username || '__guest__'}
+          markSeenOnClose={false}
         />
         <Notifications errorMsg={errorMsg} successMsg={successMsg} setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
       </div>
@@ -1329,6 +1354,7 @@ export default function App() {
               <span>详情</span>
             </button>
           </div>
+          <TutorialHelpButton onClick={() => setTutorialOpen(true)} />
           <button onClick={toggleSound} className="btn-icon !w-9 !h-9" title={soundEnabled ? '关闭音乐' : '开启音乐'}>{soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}</button>
           <button onClick={restart} disabled={resetting} className="btn-icon !w-9 !h-9" title="重置"><RefreshCw className={`w-4 h-4 ${resetting ? 'animate-spin' : ''}`} /></button>
           <button onClick={deleteAccount} disabled={loading} className="btn-icon !w-9 !h-9 hover:!text-[#F44336]" title="注销账号"><Trash2 className="w-4 h-4" /></button>
@@ -1468,6 +1494,14 @@ export default function App() {
       </div>
       {mobileInfoOpen && <MobileInfoDrawer state={state} onClose={() => setMobileInfoOpen(false)} />}
       <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
+
+      {player && (
+        <TutorialPanel
+          open={tutorialOpen}
+          onClose={() => setTutorialOpen(false)}
+          username={player.username}
+        />
+      )}
     </div>
   );
 }
@@ -1481,8 +1515,9 @@ function AuthScreen(props: {
   setAuthMode: (mode: 'login' | 'register' | 'recover') => void;
   onSubmit: (event: React.FormEvent) => void;
   onUseRecoveredUsername: (username: string) => void;
+  onOpenTutorial: () => void;
 }) {
-  const { authForm, authMode, loading, onSubmit, recoveredUsernames, setAuthForm, setAuthMode, onUseRecoveredUsername } = props;
+  const { authForm, authMode, loading, onSubmit, recoveredUsernames, setAuthForm, setAuthMode, onUseRecoveredUsername, onOpenTutorial } = props;
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
 
   const switchMode = (mode: 'login' | 'register' | 'recover') => {
@@ -1523,6 +1558,14 @@ function AuthScreen(props: {
             ) : null}
             联机市场与全服排行已开启
           </p>
+          <button
+            type="button"
+            onClick={onOpenTutorial}
+            className="mt-3 text-sm font-sans text-[#C8A97E] hover:text-[#D4B88A] transition-colors inline-flex items-center gap-1.5"
+          >
+            <GraduationCap className="w-4 h-4" />
+            新手教程 · 机制与术语说明
+          </button>
         </div>
       </div>
       <div className="flex gap-6 md:gap-8 border-b border-[#2A2D34] mb-8 overflow-x-auto custom-scrollbar">

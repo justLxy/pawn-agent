@@ -311,6 +311,10 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   animation: slideUpFade 0.2s ease forwards;
 }
 
+.tutorial-nav-item {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
 @keyframes slideInRightFade {
   from { opacity: 0; transform: translateX(20px); }
   to { opacity: 1; transform: translateX(0); }
