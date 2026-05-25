@@ -2247,9 +2247,7 @@ class GameStateManager:
         if is_fake:
             value = max(15, int(value * random.uniform(0.10, 0.22)))
         market_value = int(value * self.market_trends.get(category, 1.0))
-        template_names = {entry["name"] for entries in ITEM_TEMPLATES.values() for entry in entries}
-        merged_avoid = list(dict.fromkeys((avoid_names or []) + list(template_names)))
-        identity = self._resolve_item_identity(category, condition, ai_item, merged_avoid)
+        identity = self._resolve_item_identity(category, condition, ai_item, avoid_names)
         hidden_attrs = ai_item.get("hidden_attrs") if isinstance(ai_item.get("hidden_attrs"), list) else random.sample(
             ["有隐蔽修补痕迹", "附带可疑来源传闻", "材质检测点较多", "可能存在名人关联", "同类市场近期波动明显"],
             k=random.randint(1, 2),
@@ -2288,26 +2286,24 @@ class GameStateManager:
             preview_condition = random.choice(["Poor", "Good", "Mint"])
             preview_rarity = self._choose_rarity()
             avoid_names = self._recent_item_names()
-            template_names = [entry["name"] for entries in ITEM_TEMPLATES.values() for entry in entries]
-            avoid_for_ai = list(dict.fromkeys(avoid_names + template_names))
             category_cn = ITEM_CATEGORY_CN.get(category, category)
             ai_item = await ai_client.generate_deep_item(
                 category,
                 preview_rarity,
                 preview_condition,
                 template["good_val"],
-                avoid_names=avoid_for_ai,
+                avoid_names=avoid_names,
                 category_cn=category_cn,
             )
             if not str(ai_item.get("name") or "").strip():
-                ai_item = await ai_client.generate_item_details(category, avoid_names=avoid_for_ai, category_cn=category_cn)
+                ai_item = await ai_client.generate_item_details(category, avoid_names=avoid_names, category_cn=category_cn)
             if not str(ai_item.get("name") or "").strip():
                 ai_item = await ai_client.generate_deep_item(
                     category,
                     preview_rarity,
                     preview_condition,
                     template["good_val"],
-                    avoid_names=avoid_for_ai,
+                    avoid_names=avoid_names,
                     category_cn=category_cn,
                 )
             item = self._generate_item_from_template(template, category, ai_item, avoid_names)
