@@ -11,6 +11,7 @@ from database import get_connection, init_db
 from npc_inventory import build_npc_item, persona_list_price
 from npc_market_config import MAX_ACTIVE_LISTINGS_PER_NPC
 from npc_market_service import (
+    apply_npc_leaderboard_drift,
     build_npc_game_state,
     clear_npc_market_data,
     count_active_listings,
@@ -18,6 +19,7 @@ from npc_market_service import (
     full_seed_npc_shops,
     get_system_player_ids,
 )
+from npc_personas import active_personas
 from npc_personas import active_personas
 from online_services import get_leaderboard, reference_price
 from auth import recover_usernames_by_password
@@ -51,6 +53,39 @@ class NpcMarketTests(unittest.TestCase):
                 self.assertGreaterEqual(price, int(ref * 0.85))
             if item.rarity == "common":
                 self.assertLessEqual(price, int(ref * 1.4))
+
+    def test_leaderboard_drift_changes_assets(self):
+        full_seed_npc_shops(reset=True)
+        persona = active_personas()[0]
+        player_map = ensure_npc_players()
+        player_id = player_map[persona.key]
+        with get_connection() as conn:
+            row = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (player_id,)).fetchone()
+        before = json.loads(row["state_json"])
+        before.pop("npc_last_drift_date", None)
+        before.pop("npc_last_micro_drift_at", None)
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE game_saves SET state_json = ? WHERE player_id = ?",
+                (json.dumps(before, ensure_ascii=False), player_id),
+            )
+            conn.commit()
+        assets_before = int(before["cash"]) + sum(int(i["market_value"]) for i in before.get("inventory", []))
+        first = apply_npc_leaderboard_drift(player_id, persona, micro=False)
+        self.assertEqual(first["mode"], "daily")
+        second = apply_npc_leaderboard_drift(player_id, persona, micro=False)
+        self.assertEqual(second["mode"], "none")
+        self.assertNotEqual(first["assets"], assets_before)
+        before["npc_last_micro_drift_at"] = 0
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE game_saves SET state_json = ? WHERE player_id = ?",
+                (json.dumps(before, ensure_ascii=False), player_id),
+            )
+            conn.commit()
+        third = apply_npc_leaderboard_drift(player_id, persona, micro=True)
+        self.assertEqual(third["mode"], "micro")
+        self.assertNotEqual(third["assets"], first["assets"])
 
     def test_npc_has_no_sponsor_or_showcase_cosmetics(self):
         full_seed_npc_shops(reset=True)

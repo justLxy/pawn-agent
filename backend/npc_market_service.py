@@ -2,7 +2,8 @@ import json
 import random
 import secrets
 import time
-from typing import Any, Dict, List, Optional
+from datetime import date
+from typing import Any, Dict, List, Optional, Tuple
 
 from auth import ONLINE_IDLE_SECONDS, _hash_password, player_is_online
 from database import get_connection, transaction
@@ -14,6 +15,9 @@ from npc_market_config import (
     INITIAL_SHOWCASE_COUNT,
     INITIAL_INVENTORY_SIZE,
     MAX_ACTIVE_LISTINGS_PER_NPC,
+    NPC_DRIFT_DAILY_CASH_RATE,
+    NPC_DRIFT_DAILY_PROFIT_SPREAD,
+    NPC_DRIFT_MICRO_CASH_RATE,
     NPC_TREASURY_CASH,
     STALE_LISTING_DAYS_MAX,
     STALE_LISTING_DAYS_MIN,
@@ -55,6 +59,155 @@ def _persona_by_player_id(player_id: int) -> Optional[NpcPersona]:
     return None
 
 
+def _persona_stat_anchors(persona: NpcPersona) -> Dict[str, int]:
+    profit_anchor = max(5000, persona.cash - 10000)
+    return {
+        "cash": persona.cash,
+        "reputation": persona.reputation,
+        "total_profit": profit_anchor,
+        "assets_floor": int(persona.cash * 0.78 + 8000),
+        "assets_cap": int(persona.cash * 1.22 + 32000),
+    }
+
+
+def _inventory_asset_value(state: GameStateManager) -> int:
+    return int(sum(item.market_value for item in state.inventory if item.status != "sold"))
+
+
+def _total_assets(state: GameStateManager) -> int:
+    return int(state.cash) + _inventory_asset_value(state)
+
+
+def _clamp_npc_stats(state: GameStateManager, persona: NpcPersona) -> None:
+    anchors = _persona_stat_anchors(persona)
+    state.cash = max(8000, int(state.cash))
+    state.reputation = max(85, min(240, int(state.reputation)))
+    state.total_profit = max(0, int(state.total_profit))
+    state.day = max(persona.day, int(state.day))
+
+    assets = _total_assets(state)
+    if assets > anchors["assets_cap"]:
+        scale = anchors["assets_cap"] / max(assets, 1)
+        state.cash = max(8000, int(state.cash * scale))
+        for item in state.inventory:
+            if item.status != "sold":
+                item.market_value = max(10, int(item.market_value * scale))
+    elif assets < anchors["assets_floor"]:
+        boost = anchors["assets_floor"] - assets
+        state.cash += int(boost * 0.55)
+        for item in state.inventory:
+            if item.status != "sold" and random.random() < 0.35:
+                item.market_value = max(10, int(item.market_value * 1.01))
+
+
+def _load_state_payload(player_id: int) -> Tuple[GameStateManager, Dict[str, Any]]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT state_json FROM game_saves WHERE player_id = ?", (player_id,)).fetchone()
+    if not row:
+        raise ValueError(f"missing save for player {player_id}")
+    payload = json.loads(row["state_json"])
+    return GameStateManager.from_dict(payload), payload
+
+
+def _save_state_payload(player_id: int, state: GameStateManager, payload: Dict[str, Any]) -> None:
+    merged = state.to_dict(for_client=False)
+    merged["npc_last_drift_date"] = payload.get("npc_last_drift_date")
+    merged["npc_last_micro_drift_at"] = payload.get("npc_last_micro_drift_at")
+    now = int(time.time())
+    body = json.dumps(merged, ensure_ascii=False)
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO game_saves (player_id, state_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(player_id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at
+            """,
+            (player_id, body, now),
+        )
+        conn.execute("UPDATE players SET reputation = ?, last_seen = last_seen WHERE id = ?", (state.reputation, player_id))
+        conn.commit()
+
+
+def _archetype_daily_bias(persona: NpcPersona) -> Tuple[float, float]:
+    """(现金倾向, 盈利倾向) 略偏向人设。"""
+    if persona.archetype == "clearance":
+        return (-0.012, -0.2)
+    if persona.archetype == "luxury":
+        return (0.01, 0.25)
+    if persona.archetype == "bargain":
+        return (-0.006, 0.05)
+    if persona.archetype == "collector":
+        return (0.006, 0.15)
+    return (0.0, 0.0)
+
+
+def apply_npc_leaderboard_drift(player_id: int, persona: NpcPersona, micro: bool = False) -> Dict[str, Any]:
+    """让人设排行榜数值每日可见变化，并锚定在配置附近，避免碾压真人。"""
+    state, payload = _load_state_payload(player_id)
+    today = date.today().isoformat()
+    now = int(time.time())
+    cash_bias, profit_bias = _archetype_daily_bias(persona)
+    changed = False
+    mode = "none"
+
+    if not micro and payload.get("npc_last_drift_date") != today:
+        mode = "daily"
+        cash_rate = random.uniform(-NPC_DRIFT_DAILY_CASH_RATE, NPC_DRIFT_DAILY_CASH_RATE) + cash_bias
+        state.cash = int(state.cash * (1 + cash_rate))
+        profit_delta = int(NPC_DRIFT_DAILY_PROFIT_SPREAD * random.uniform(-0.55 + profit_bias, 0.85 + profit_bias))
+        state.total_profit = max(0, state.total_profit + profit_delta)
+        state.reputation += random.randint(-2, 4)
+        if random.random() < 0.35:
+            state.successful_trades += 1
+        if random.random() < 0.28:
+            state.positive_reviews += 1
+        state.day += 1
+        for item in state.inventory:
+            if item.status in ("sold", "listed"):
+                continue
+            if random.random() < 0.72:
+                item.market_value = max(10, int(item.market_value * random.uniform(0.985, 1.018)))
+        payload["npc_last_drift_date"] = today
+        changed = True
+
+    last_micro = int(payload.get("npc_last_micro_drift_at") or 0)
+    if micro and now - last_micro >= 240:
+        mode = "daily+micro" if changed else "micro"
+        micro_rate = random.uniform(-NPC_DRIFT_MICRO_CASH_RATE, NPC_DRIFT_MICRO_CASH_RATE)
+        state.cash = int(state.cash * (1 + micro_rate))
+        candidates = [item for item in state.inventory if item.status not in ("sold", "listed")]
+        touched = random.sample(candidates, k=min(3, len(candidates))) if candidates else []
+        for item in touched:
+            item.market_value = max(10, int(item.market_value * random.uniform(0.996, 1.006)))
+        if random.random() < 0.08:
+            state.total_profit += random.randint(80, 420)
+        payload["npc_last_micro_drift_at"] = now
+        changed = True
+
+    if not changed:
+        return {"player_id": player_id, "mode": "none", "assets": _total_assets(state)}
+
+    _clamp_npc_stats(state, persona)
+    _save_state_payload(player_id, state, payload)
+    return {
+        "player_id": player_id,
+        "mode": mode,
+        "assets": _total_assets(state),
+        "cash": state.cash,
+        "profit": state.total_profit,
+        "reputation": state.reputation,
+        "day": state.day,
+    }
+
+
+def drift_all_npc_leaderboards(player_map: Dict[str, int], micro: bool = True) -> List[Dict[str, Any]]:
+    results: List[Dict[str, Any]] = []
+    for persona in active_personas():
+        player_id = player_map[persona.key]
+        results.append(apply_npc_leaderboard_drift(player_id, persona, micro=micro))
+    return results
+
+
 def build_npc_game_state(persona: NpcPersona) -> GameStateManager:
     state = GameStateManager(initialize=False)
     state.shop_name = persona.shop_name
@@ -68,6 +221,7 @@ def build_npc_game_state(persona: NpcPersona) -> GameStateManager:
     state.economy_index = 1.0
     state.market_trends = {category: round(random.uniform(0.92, 1.08), 2) for category in state.market_trends}
     seed_npc_inventory(persona, state, INITIAL_INVENTORY_SIZE, INITIAL_SHOWCASE_COUNT)
+    _clamp_npc_stats(state, persona)
     return state
 
 
@@ -372,6 +526,7 @@ def refresh_npc_last_seen(player_id: int, persona: NpcPersona, force_online: Opt
 
 
 def refresh_all_npc_presence(player_map: Dict[str, int]) -> Dict[str, bool]:
+    drift_all_npc_leaderboards(player_map, micro=True)
     presence: Dict[str, bool] = {}
     for persona in active_personas():
         player_id = player_map[persona.key]
@@ -459,6 +614,7 @@ def full_seed_npc_shops(reset: bool = False) -> Dict[str, Any]:
         seed_npc_showcase_prices(player_id, persona)
         refresh_npc_last_seen(player_id, persona, force_online=random.random() < 0.88)
         summary["listings"][persona.key] = ids
+    drift_all_npc_leaderboards(player_map, micro=False)
     summary["presence"] = refresh_all_npc_presence(player_map)
     return summary
 
@@ -525,6 +681,7 @@ def run_npc_tick() -> Dict[str, Any]:
             actions_log.append(f"{persona.key}:{action}")
         refresh_npc_last_seen(player_id, persona)
 
+    drift_all_npc_leaderboards(player_map, micro=False)
     presence = refresh_all_npc_presence(player_map)
     online_count = sum(1 for online in presence.values() if online)
     return {"actions": actions_log, "budget": budget, "online_npcs": online_count, "presence": presence}
