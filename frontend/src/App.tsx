@@ -599,6 +599,8 @@ export default function App() {
   const [recoveredUsernames, setRecoveredUsernames] = useState<string[]>([]);
   const [authForm, setAuthForm] = useState({ username: '', password: '', shop_name: '' });
   const [loading, setLoading] = useState(false);
+  const [authBusy, setAuthBusy] = useState<'register' | 'login' | null>(null);
+  const [sessionBooting, setSessionBooting] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
   const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
   const [resetting, setResetting] = useState(false);
   const [investigating, setInvestigating] = useState(false);
@@ -770,13 +772,18 @@ export default function App() {
 
   const boot = async () => {
     const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
+    if (!token) {
+      setSessionBooting(false);
+      return;
+    }
     try {
       const me = await apiGet<{ player: Player }>('/api/auth/me');
       setPlayer(me.player);
       await loadCloudState();
     } catch {
       localStorage.removeItem(TOKEN_KEY);
+    } finally {
+      setSessionBooting(false);
     }
   };
 
@@ -898,6 +905,8 @@ export default function App() {
     event.preventDefault();
     setLoading(true);
     setRecoveredUsernames([]);
+    const busyMode = authMode === 'register' ? 'register' : authMode === 'login' ? 'login' : null;
+    if (busyMode) setAuthBusy(busyMode);
     try {
       if (authMode === 'recover') {
         const data = await apiPost<{ usernames: string[]; count: number; message: string }>('/api/auth/recover_username', {
@@ -932,6 +941,7 @@ export default function App() {
       setErrorMsg(err instanceof Error ? err.message : '操作失败。');
     } finally {
       setLoading(false);
+      setAuthBusy(null);
     }
   };
 
@@ -1291,19 +1301,24 @@ export default function App() {
   };
 
   if (!player || !state) {
+    const bootMode = authBusy || (sessionBooting ? 'login' : null);
     return (
-      <div className="h-screen w-screen bg-[#0D0F12] text-[#E0E0E0] flex items-center justify-center px-6">
-        <AuthScreen
-          authForm={authForm}
-          authMode={authMode}
-          loading={loading}
-          recoveredUsernames={recoveredUsernames}
-          setAuthForm={setAuthForm}
-          setAuthMode={changeAuthMode}
-          onSubmit={handleAuth}
-          onUseRecoveredUsername={useRecoveredUsername}
-          onOpenTutorial={() => setTutorialOpen(true)}
-        />
+      <div className="h-screen w-screen bg-[#0D0F12] text-[#E0E0E0] flex items-center justify-center px-6 relative overflow-hidden">
+        {bootMode ? (
+          <PawnshopBootLoader mode={bootMode} shopName={authForm.shop_name.trim() || undefined} />
+        ) : (
+          <AuthScreen
+            authForm={authForm}
+            authMode={authMode}
+            loading={loading}
+            recoveredUsernames={recoveredUsernames}
+            setAuthForm={setAuthForm}
+            setAuthMode={changeAuthMode}
+            onSubmit={handleAuth}
+            onUseRecoveredUsername={useRecoveredUsername}
+            onOpenTutorial={() => setTutorialOpen(true)}
+          />
+        )}
         <TutorialPanel
           open={tutorialOpen}
           onClose={() => setTutorialOpen(false)}
@@ -1545,9 +1560,9 @@ function AuthScreen(props: {
 
   return (
     <div className="w-full max-w-[520px]">
-      <div className="flex items-center gap-3 mb-10">
-        <Store className="w-9 h-9 text-[#C8A97E]" />
-        <div>
+      <div className="flex items-center gap-3 mb-8">
+        <Store className="w-9 h-9 text-[#C8A97E] shrink-0" />
+        <div className="min-w-0">
           <h1 className="text-[28px] font-bold text-[#C8A97E] tracking-widest">当铺代理人</h1>
           <p className="text-[#616161] text-sm font-sans leading-relaxed">
             {onlineCount !== null ? (
@@ -1558,31 +1573,33 @@ function AuthScreen(props: {
             ) : null}
             联机市场与全服排行已开启
           </p>
-          <button
-            type="button"
-            onClick={onOpenTutorial}
-            className="mt-3 text-sm font-sans text-[#C8A97E] hover:text-[#D4B88A] transition-colors inline-flex items-center gap-1.5"
-          >
-            <GraduationCap className="w-4 h-4" />
-            新手教程 · 机制与术语说明
-          </button>
         </div>
       </div>
-      <div className="flex gap-6 md:gap-8 border-b border-[#2A2D34] mb-8 overflow-x-auto custom-scrollbar">
-        {([
-          ['login', '登录账号'],
-          ['register', '注册当铺'],
-          ['recover', '找回账号']
-        ] as const).map(([mode, label]) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => switchMode(mode)}
-            className={`pb-3 font-sans shrink-0 whitespace-nowrap ${authMode === mode ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b border-[#2A2D34] mb-8">
+        <div className="flex gap-6 md:gap-8 overflow-x-auto custom-scrollbar min-w-0">
+          {([
+            ['login', '登录账号'],
+            ['register', '注册当铺'],
+            ['recover', '找回账号']
+          ] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => switchMode(mode)}
+              className={`pb-3 font-sans shrink-0 whitespace-nowrap ${authMode === mode ? 'text-[#C8A97E] border-b border-[#C8A97E]' : 'text-[#616161]'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onOpenTutorial}
+          className="pb-3 shrink-0 text-sm font-sans text-[#C8A97E] hover:text-[#D4B88A] transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+        >
+          <GraduationCap className="w-4 h-4 shrink-0" />
+          新手教程
+        </button>
       </div>
       {authMode === 'recover' ? (
         <form onSubmit={onSubmit} className="space-y-4">
@@ -1827,34 +1844,131 @@ function MobileInfoDrawer({ onClose, state }: { state: GameState; onClose: () =>
   );
 }
 
+function ImmersiveWaitLoader({
+  centerIcon,
+  footerHint,
+  phases,
+  subtitle,
+  tips,
+  title
+}: {
+  centerIcon: React.ReactNode;
+  footerHint?: string;
+  phases: string[];
+  subtitle: string;
+  tips: string[];
+  title: string;
+}) {
+  const [tipIndex, setTipIndex] = useState(0);
+  const [phaseIndex, setPhaseIndex] = useState(0);
+  useEffect(() => {
+    const tipTimer = window.setInterval(() => setTipIndex((index) => (index + 1) % tips.length), 2600);
+    return () => window.clearInterval(tipTimer);
+  }, [tips.length]);
+  useEffect(() => {
+    const phaseTimer = window.setInterval(
+      () => setPhaseIndex((index) => (index < phases.length - 1 ? index + 1 : index)),
+      4200
+    );
+    return () => window.clearInterval(phaseTimer);
+  }, [phases.length]);
+  return (
+    <div className="w-full max-w-lg flex flex-col items-center justify-center text-center px-6 animate-slide-up">
+      <div className="relative mb-8 flex items-center justify-center">
+        <div className="day-loader-ring" />
+        <div className="absolute day-loader-icon text-[#C8A97E]">{centerIcon}</div>
+      </div>
+      <h1 className="text-[26px] md:text-[32px] font-bold text-[#C8A97E] mb-3 font-sans tracking-wide">{title}</h1>
+      <p className="text-[#9E9E9E] text-sm mb-6 max-w-md leading-relaxed font-serif">{subtitle}</p>
+      <div className="flex items-center justify-center gap-2 mb-6 font-sans">
+        {phases.map((phase, index) => (
+          <span
+            key={phase}
+            className={`text-[11px] px-2 py-1 border transition-all duration-500 ${
+              index <= phaseIndex
+                ? 'text-[#C8A97E] border-[#C8A97E]/50 bg-[rgba(200,169,126,0.1)]'
+                : 'text-[#616161] border-[#2A2D34] bg-transparent'
+            }`}
+          >
+            {phase}
+          </span>
+        ))}
+      </div>
+      <div className="day-loader-track mb-6" />
+      <p key={tipIndex} className="text-[#616161] text-xs font-sans day-loader-tip min-h-[20px] max-w-sm">
+        {tips[tipIndex]}
+      </p>
+      {footerHint ? <p className="text-[#616161]/80 text-[11px] font-sans mt-8">{footerHint}</p> : null}
+    </div>
+  );
+}
+
+function PawnshopBootLoader({ mode, shopName }: { mode: 'register' | 'login'; shopName?: string }) {
+  const shopLabel = shopName || '你的当铺';
+  const config =
+    mode === 'register'
+      ? {
+          title: '正在创办当铺',
+          subtitle: `「${shopLabel}」即将挂牌开业，街角已有路人驻足张望`,
+          phases: ['揭牌立项', '整顿门面', '备齐本金', '恭迎首日'],
+          tips: [
+            `擦拭「${shopLabel}」金字匾额…`,
+            '核实开业本金 $10,000 与空白账本…',
+            '摆放柜台、秤杆与验光镜…',
+            '打通鉴定室与修复工坊的隔间…',
+            '撰写掌柜名讳，登记云端账册…',
+            '联络行会，安排首日客流席位…',
+            '静待奇货与来客自远方生成…',
+            '街角风铃轻响，卷帘即将拉起…'
+          ]
+        }
+      : {
+          title: '正在推开当铺门',
+          subtitle: '核对密令，翻开云端账本，今日柜台仍等着你',
+          phases: ['验明身份', '翻阅账本', '整理柜台', '开门迎客'],
+          tips: [
+            '核对掌柜名讳与通行密令…',
+            '载入云端存档与经营日志…',
+            '清点库存市值与昨日结余…',
+            '整理展示柜与待接见的来客…',
+            '刷新经济指数与今日客流…',
+            '擦拭柜台，等待第一声叩门…'
+          ]
+        };
+  return (
+    <ImmersiveWaitLoader
+      centerIcon={mode === 'register' ? <Store className="w-7 h-7" /> : <Clock className="w-7 h-7" />}
+      title={config.title}
+      subtitle={config.subtitle}
+      phases={config.phases}
+      tips={config.tips}
+      footerHint={mode === 'register' ? '首次创办需生成首日客流与货品，约需数十秒，请勿关闭页面' : '正在同步云端账本，请稍候'}
+    />
+  );
+}
+
 function DayTransitionLoader({ mode }: { mode: 'end_day' | 'next_day' }) {
   const config = mode === 'end_day'
     ? {
         title: '正在结算今日经营',
         subtitle: '账本合上，街灯渐暗，当铺进入打烊时分',
+        phases: ['核对流水', '结算开销', '清点库存', '打烊收工'],
         tips: ['核对今日交易流水…', '结算员工薪水与运营成本…', '清点库存持有与市场行情…', '整理今日坊间轶事与往来账目…', '留意是否还有未了之事…']
       }
     : {
         title: '正在开启新的一天',
         subtitle: '卷帘拉起，街声渐近，当铺准备开门迎客',
+        phases: ['翻开日志', '刷新行情', '整理库房', '等待叩门'],
         tips: ['翻开新一页经营日志…', '刷新经济指数与客流预期…', '整理仓库与展示柜…', '留意今日可能上门的顾客…', '擦拭柜台，等待第一声叩门…']
       };
-  const [tipIndex, setTipIndex] = useState(0);
-  useEffect(() => {
-    const timer = window.setInterval(() => setTipIndex((index) => (index + 1) % config.tips.length), 2800);
-    return () => window.clearInterval(timer);
-  }, [config.tips.length]);
   return (
-    <div className="flex-1 flex flex-col items-center justify-center text-center px-6 animate-slide-up">
-      <div className="relative mb-8 flex items-center justify-center">
-        <div className="day-loader-ring" />
-        <Clock className="w-7 h-7 text-[#C8A97E] absolute day-loader-icon" />
-      </div>
-      <h1 className="text-[28px] md:text-[32px] font-bold text-[#C8A97E] mb-3">{config.title}</h1>
-      <p className="text-[#9E9E9E] text-sm mb-8 max-w-md">{config.subtitle}</p>
-      <div className="day-loader-track mb-6" />
-      <p key={tipIndex} className="text-[#616161] text-xs font-sans day-loader-tip min-h-[20px]">{config.tips[tipIndex]}</p>
-    </div>
+    <ImmersiveWaitLoader
+      centerIcon={<Clock className="w-7 h-7" />}
+      title={config.title}
+      subtitle={config.subtitle}
+      phases={config.phases}
+      tips={config.tips}
+    />
   );
 }
 
