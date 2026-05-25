@@ -2735,8 +2735,8 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
       />
       <div className="flex flex-col min-w-0 items-start">
         <span className="text-xs text-[#616161] mb-1 font-sans">{customer.name}</span>
-        <div className="px-4 py-3 border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] rounded-sm min-w-[140px] max-w-[min(320px,72vw)]">
-          <p className="customer-thinking-text text-sm text-[#616161] italic leading-relaxed m-0 min-h-[22px]">
+        <div className="px-4 py-3 leading-relaxed rounded-sm border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)]">
+          <p className="customer-thinking-text text-sm text-[#616161] italic m-0 min-h-[22px]">
             {visibleText}
             {!allDone && <span className="customer-thinking-cursor" aria-hidden />}
           </p>
