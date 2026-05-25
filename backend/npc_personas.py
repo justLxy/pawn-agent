@@ -29,6 +29,9 @@ class NpcPersona:
     reputation: int
     day: int
     cash: int
+    showcase_count_min: int = 1
+    showcase_count_max: int = 4
+    showcase_facility_level: int = 1
     # 在线时本 tick 变离线的概率 / 离线时本 tick 变在线的概率（人人不同，整体多数时间在线）
     online_drop_rate: float = 0.2
     online_return_rate: float = 0.85
@@ -63,6 +66,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=108,
         day=31,
         cash=58000,
+        showcase_count_min=1,
+        showcase_count_max=2,
+        showcase_facility_level=0,
         online_drop_rate=0.1,
         online_return_rate=0.92,
     ),
@@ -80,6 +86,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=162,
         day=58,
         cash=112000,
+        showcase_count_min=3,
+        showcase_count_max=5,
+        showcase_facility_level=2,
         online_drop_rate=0.08,
         online_return_rate=0.9,
     ),
@@ -97,6 +106,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=148,
         day=49,
         cash=92000,
+        showcase_count_min=2,
+        showcase_count_max=4,
+        showcase_facility_level=1,
         online_drop_rate=0.12,
         online_return_rate=0.94,
     ),
@@ -114,6 +126,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=96,
         day=24,
         cash=42000,
+        showcase_count_min=1,
+        showcase_count_max=2,
+        showcase_facility_level=0,
         online_drop_rate=0.09,
         online_return_rate=0.95,
     ),
@@ -131,6 +146,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=128,
         day=41,
         cash=72000,
+        showcase_count_min=2,
+        showcase_count_max=4,
+        showcase_facility_level=1,
         online_drop_rate=0.11,
         online_return_rate=0.91,
     ),
@@ -148,6 +166,9 @@ NPC_PERSONAS: List[NpcPersona] = [
         reputation=118,
         day=36,
         cash=61000,
+        showcase_count_min=2,
+        showcase_count_max=3,
+        showcase_facility_level=1,
         online_drop_rate=0.1,
         online_return_rate=0.93,
     ),

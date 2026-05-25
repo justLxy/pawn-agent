@@ -58,6 +58,14 @@ class NpcMarketTests(unittest.TestCase):
             if item.rarity == "common":
                 self.assertLessEqual(price, int(ref * 1.4))
 
+    def test_showcase_counts_vary_by_persona(self):
+        counts = []
+        for persona in active_personas():
+            state = build_npc_game_state(persona)
+            counts.append(len([i for i in state.inventory if i.status == "displayed"]))
+        self.assertEqual(len(set(counts)), len(counts))
+        self.assertTrue(all(1 <= c <= 5 for c in counts))
+
     def test_presence_interval_fits_online_window(self):
         self.assertLess(_presence_refresh_interval_sec(), ONLINE_IDLE_SECONDS)
 

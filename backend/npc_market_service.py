@@ -8,11 +8,16 @@ from typing import Any, Dict, List, Optional, Tuple
 from auth import ONLINE_IDLE_SECONDS, _hash_password, player_is_online
 from database import get_connection, transaction
 from game_state import GameStateManager, Item
-from npc_inventory import build_npc_item, persona_list_price, seed_npc_inventory
+from npc_inventory import (
+    apply_npc_showcase_layout,
+    build_npc_item,
+    persona_list_price,
+    persona_showcase_target,
+    seed_npc_inventory,
+)
 from npc_market_config import (
     INITIAL_LISTINGS_MAX,
     INITIAL_LISTINGS_MIN,
-    INITIAL_SHOWCASE_COUNT,
     INITIAL_INVENTORY_SIZE,
     MAX_ACTIVE_LISTINGS_PER_NPC,
     NPC_DRIFT_DAILY_CASH_RATE,
@@ -222,7 +227,8 @@ def build_npc_game_state(persona: NpcPersona) -> GameStateManager:
     state.positive_reviews = random.randint(8, 36)
     state.economy_index = 1.0
     state.market_trends = {category: round(random.uniform(0.92, 1.08), 2) for category in state.market_trends}
-    seed_npc_inventory(persona, state, INITIAL_INVENTORY_SIZE, INITIAL_SHOWCASE_COUNT)
+    state.facilities["showcase"] = max(0, min(2, persona.showcase_facility_level))
+    seed_npc_inventory(persona, state, INITIAL_INVENTORY_SIZE)
     _clamp_npc_stats(state, persona)
     return state
 
@@ -284,6 +290,19 @@ def _sync_npc_profile(player_id: int, persona: NpcPersona) -> None:
         changed = True
     if changed:
         save_state(player_id, state)
+    _maybe_refresh_npc_showcase(player_id, persona, state)
+
+
+def _maybe_refresh_npc_showcase(player_id: int, persona: NpcPersona, state: Optional[GameStateManager] = None) -> None:
+    state = state or load_state(player_id)
+    displayed = [i for i in state.inventory if i.status == "displayed"]
+    lo = max(1, persona.showcase_count_min)
+    hi = max(lo, min(persona.showcase_count_max, state.display_capacity()))
+    if len(displayed) == hi == lo or (lo <= len(displayed) <= hi and random.random() > 0.22):
+        return
+    apply_npc_showcase_layout(state, persona)
+    seed_npc_showcase_prices(player_id, persona, state=state)
+    save_state(player_id, state)
 
 
 def _find_npc_player_id(persona: NpcPersona) -> Optional[int]:
@@ -471,6 +490,12 @@ def npc_simulate_sale(listing_id: str) -> bool:
 
 def npc_rotate_showcase(player_id: int, persona: NpcPersona) -> bool:
     state = load_state(player_id)
+    if random.random() < 0.18:
+        target = persona_showcase_target(persona, state)
+        apply_npc_showcase_layout(state, persona, target=target)
+        save_state(player_id, state)
+        seed_npc_showcase_prices(player_id, persona, state=state)
+        return True
     displayed = [item for item in state.inventory if item.status == "displayed"]
     stored = [item for item in state.inventory if item.status == "stored"]
     if stored and (not displayed or random.random() < 0.5):
@@ -583,14 +608,15 @@ def seed_npc_listings(player_id: int, persona: NpcPersona, count: int) -> List[s
     return listing_ids
 
 
-def seed_npc_showcase_prices(player_id: int, persona: NpcPersona) -> None:
-    state = load_state(player_id)
+def seed_npc_showcase_prices(player_id: int, persona: NpcPersona, state: Optional[GameStateManager] = None) -> None:
+    state = state or load_state(player_id)
+    changed = False
     for item in state.inventory:
         if item.status == "displayed" and not item.showcase_price:
-            price = persona_list_price(persona, item, jitter=random.uniform(0.88, 1.12))
-            save_state(player_id, state)
-            set_showcase_price(player_id, item.id, price)
-            state = load_state(player_id)
+            item.showcase_price = persona_list_price(persona, item, jitter=random.uniform(0.88, 1.12))
+            changed = True
+    if changed:
+        save_state(player_id, state)
 
 
 def clear_npc_market_data() -> None:
@@ -645,6 +671,12 @@ def full_seed_npc_shops(reset: bool = False) -> Dict[str, Any]:
         if reset:
             persona_obj = persona
             save_state(player_id, build_npc_game_state(persona_obj))
+        else:
+            state = load_state(player_id)
+            state.facilities["showcase"] = max(0, min(2, persona.showcase_facility_level))
+            apply_npc_showcase_layout(state, persona)
+            save_state(player_id, state)
+            seed_npc_showcase_prices(player_id, persona, state=state)
         active = count_active_listings(player_id)
         target = random.randint(INITIAL_LISTINGS_MIN, INITIAL_LISTINGS_MAX)
         needed = max(0, target - active)

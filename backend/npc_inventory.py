@@ -76,14 +76,34 @@ def build_npc_item(
     return item
 
 
-def seed_npc_inventory(persona: NpcPersona, state: GameStateManager, size: int, showcase_count: int) -> None:
+def persona_showcase_target(persona: NpcPersona, state: GameStateManager) -> int:
+    capacity = state.display_capacity()
+    lo = max(1, persona.showcase_count_min)
+    hi = max(lo, min(persona.showcase_count_max, capacity))
+    return random.randint(lo, hi)
+
+
+def apply_npc_showcase_layout(state: GameStateManager, persona: NpcPersona, target: Optional[int] = None) -> int:
+    """重新摆放橱窗：每人陈列件数不同，且不超过展示柜容量。"""
+    target = target if target is not None else persona_showcase_target(persona, state)
+    for item in state.inventory:
+        if item.status == "displayed":
+            item.status = "stored"
+            item.display_slot = None
+            item.showcase_price = None
+    stored = [i for i in state.inventory if i.status == "stored"]
+    random.shuffle(stored)
+    picked = stored[:target]
+    for idx, item in enumerate(picked):
+        item.status = "displayed"
+        item.display_slot = idx
+    return len(picked)
+
+
+def seed_npc_inventory(persona: NpcPersona, state: GameStateManager, size: int) -> int:
     names: List[str] = []
     for _ in range(size):
         item = build_npc_item(persona, state, avoid_names=names)
         names.append(item.name)
         state.inventory.append(item)
-    stored = [i for i in state.inventory if i.status == "stored"]
-    random.shuffle(stored)
-    for idx, item in enumerate(stored[:showcase_count]):
-        item.status = "displayed"
-        item.display_slot = idx
+    return apply_npc_showcase_layout(state, persona)
