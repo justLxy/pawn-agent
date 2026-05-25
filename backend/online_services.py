@@ -54,9 +54,20 @@ def save_state(player_id: int, state: GameStateManager) -> None:
 
 
 def bootstrap_new_player_state(player_id: int, shop_name: str) -> GameStateManager:
-    """新账号立即用本地顾客开局，AI 补货由后台队列完成，避免注册/登录长时间阻塞。"""
+    """无 AI 时同步开局（本地占位）。"""
     state = create_initial_state(shop_name)
     state.initialize_day_fast()
+    save_state(player_id, state)
+    return state
+
+
+async def bootstrap_new_player_state_async(player_id: int, shop_name: str, ai_client: Any) -> GameStateManager:
+    """新账号优先等待 AI 生成当日顾客；失败再退回本地占位。"""
+    state = create_initial_state(shop_name)
+    if bool(getattr(ai_client, "available", lambda: False)()):
+        await state.async_initialize_day_with_fallback(ai_client)
+    else:
+        state.initialize_day_fast()
     save_state(player_id, state)
     return state
 
@@ -66,7 +77,7 @@ async def ensure_player_state(player: Dict[str, Any], ai_client: Any) -> GameSta
         exists = conn.execute("SELECT 1 FROM game_saves WHERE player_id = ?", (player["id"],)).fetchone()
     if exists:
         return load_state(player["id"])
-    return bootstrap_new_player_state(player["id"], player["shop_name"])
+    return await bootstrap_new_player_state_async(player["id"], player["shop_name"], ai_client)
 
 
 def import_state(player_id: int, state_dict: Dict[str, Any], shop_name: Optional[str] = None) -> GameStateManager:

@@ -37,7 +37,7 @@ from online_services import (
     buyer_respond_offer,
     create_offer,
     delete_guestbook,
-    bootstrap_new_player_state,
+    bootstrap_new_player_state_async,
     ensure_player_state,
     get_hot_showcases,
     get_leaderboard,
@@ -613,7 +613,7 @@ def online_count():
 @app.post("/api/auth/register")
 async def register(req: AuthRequest):
     auth = register_player(req.username, req.password, req.shop_name or req.username)
-    state = bootstrap_new_player_state(auth["player"]["id"], auth["player"]["shop_name"])
+    state = await bootstrap_new_player_state_async(auth["player"]["id"], auth["player"]["shop_name"], ai_client)
     schedule_queue_refill(auth["player"], state)
     schedule_next_day_prewarm(auth["player"], state)
     return auth

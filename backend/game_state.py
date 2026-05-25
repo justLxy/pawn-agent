@@ -428,8 +428,9 @@ CONDITION_VALUE_DRIFT = {
     "Mint": 0.002,
 }
 
-AI_DAY_GENERATION_TIMEOUT = 90.0
-AI_CUSTOMER_GENERATION_TIMEOUT = 12.0
+AI_DAY_GENERATION_TIMEOUT = 180.0
+AI_CUSTOMER_GENERATION_TIMEOUT = 60.0
+AI_ITEM_GENERATION_ATTEMPTS = 4
 SELLER_CUSTOMER_RATIO = 0.62
 EVENT_BASE_CHANCE = 0.62
 EVENT_GUARANTEE_AFTER_QUIET_DAYS = 1
@@ -696,9 +697,11 @@ class Item:
         damage_report: Optional[str] = None,
         special_effects: Optional[List[str]] = None,
         authentication_tips: Optional[List[str]] = None,
+        content_source: str = "local",
     ):
         self.id = item_id or str(uuid.uuid4())[:8]
         self.name = name
+        self.content_source = content_source if content_source in ("ai", "local") else "local"
         self.category = category
         self.condition = condition
         self.is_fake = is_fake
@@ -778,6 +781,7 @@ class Item:
             "value_trend_note": self.value_trend_note,
             "last_trade_at": self.last_trade_at,
             "showcase_price": self.showcase_price,
+            "content_source": self.content_source,
         }
         if for_player_view:
             data.pop("is_fake", None)
@@ -814,6 +818,7 @@ class Item:
             damage_report=data.get("damage_report"),
             special_effects=list(data.get("special_effects", [])),
             authentication_tips=list(data.get("authentication_tips", [])),
+            content_source=str(data.get("content_source") or "local"),
         )
         item.appraised_value = data.get("appraised_value")
         item.appraised_value_low = data.get("appraised_value_low")
@@ -1381,12 +1386,14 @@ class GameStateManager:
 
         ai_available = bool(getattr(ai_client, "available", lambda: False)())
         if ai_available:
-            try:
-                customer = await asyncio.wait_for(self.generate_random_customer_async(ai_client), timeout=timeout)
-                customer.generation_source = "ai"
-                return customer
-            except Exception:
-                pass
+            for _ in range(2):
+                try:
+                    customer = await asyncio.wait_for(self.generate_random_customer_async(ai_client), timeout=timeout)
+                    if customer.role != "seller" or customer.item.content_source == "ai":
+                        customer.generation_source = "ai"
+                        return customer
+                except Exception:
+                    continue
         customer = self.generate_random_customer()
         customer.generation_source = "local"
         if ai_available:
@@ -2162,6 +2169,49 @@ class GameStateManager:
         }
         return random.choices(list(weights.keys()), weights=list(weights.values()), k=1)[0]
 
+    @staticmethod
+    def _ai_item_payload_valid(ai_item: Optional[Dict[str, Any]]) -> bool:
+        if not ai_item:
+            return False
+        name = str(ai_item.get("name") or "").strip()
+        desc = str(ai_item.get("desc") or "").strip()
+        story = str(ai_item.get("story") or "").strip()
+        return len(name) >= 4 and len(desc) >= 8 and len(story) >= 12
+
+    async def _fetch_ai_seller_item(
+        self,
+        ai_client: Any,
+        category: str,
+        template: Dict[str, Any],
+        avoid_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        if not bool(getattr(ai_client, "available", lambda: False)()):
+            return {}
+        preview_condition = random.choice(["Poor", "Good", "Mint"])
+        preview_rarity = self._choose_rarity()
+        category_cn = ITEM_CATEGORY_CN.get(category, category)
+        avoid_names = avoid_names or []
+        generators = (
+            lambda: ai_client.generate_deep_item(
+                category,
+                preview_rarity,
+                preview_condition,
+                template["good_val"],
+                avoid_names=avoid_names,
+                category_cn=category_cn,
+            ),
+            lambda: ai_client.generate_item_details(category, avoid_names=avoid_names, category_cn=category_cn),
+        )
+        for _ in range(AI_ITEM_GENERATION_ATTEMPTS):
+            for generator in generators:
+                try:
+                    ai_item = await generator()
+                    if self._ai_item_payload_valid(ai_item):
+                        return ai_item
+                except Exception:
+                    continue
+        return {}
+
     def _recent_item_names(self, limit: int = 24) -> List[str]:
         names: List[str] = []
         seen = set()
@@ -2248,6 +2298,7 @@ class GameStateManager:
             value = max(15, int(value * random.uniform(0.10, 0.22)))
         market_value = int(value * self.market_trends.get(category, 1.0))
         identity = self._resolve_item_identity(category, condition, ai_item, avoid_names)
+        content_source = "ai" if self._ai_item_payload_valid(ai_item) else "local"
         hidden_attrs = ai_item.get("hidden_attrs") if isinstance(ai_item.get("hidden_attrs"), list) else random.sample(
             ["有隐蔽修补痕迹", "附带可疑来源传闻", "材质检测点较多", "可能存在名人关联", "同类市场近期波动明显"],
             k=random.randint(1, 2),
@@ -2271,9 +2322,13 @@ class GameStateManager:
             acquired_day=self.day,
             last_value_update_day=self.day,
             base_value_at_purchase=market_value,
+            content_source=content_source,
         )
 
     async def generate_random_customer_async(self, ai_client) -> Customer:
+        if not bool(getattr(ai_client, "available", lambda: False)()):
+            raise RuntimeError("ai_unavailable")
+
         name = await ai_client.generate_random_content("customer_name") or random.choice(CUSTOMER_NAMES)
         trait = random.choice(list(CUSTOMER_TRAITS.keys()))
 
@@ -2283,29 +2338,10 @@ class GameStateManager:
         if role == "seller":
             category = random.choice(list(ITEM_TEMPLATES.keys()))
             template = random.choice(ITEM_TEMPLATES[category])
-            preview_condition = random.choice(["Poor", "Good", "Mint"])
-            preview_rarity = self._choose_rarity()
             avoid_names = self._recent_item_names()
-            category_cn = ITEM_CATEGORY_CN.get(category, category)
-            ai_item = await ai_client.generate_deep_item(
-                category,
-                preview_rarity,
-                preview_condition,
-                template["good_val"],
-                avoid_names=avoid_names,
-                category_cn=category_cn,
-            )
-            if not str(ai_item.get("name") or "").strip():
-                ai_item = await ai_client.generate_item_details(category, avoid_names=avoid_names, category_cn=category_cn)
-            if not str(ai_item.get("name") or "").strip():
-                ai_item = await ai_client.generate_deep_item(
-                    category,
-                    preview_rarity,
-                    preview_condition,
-                    template["good_val"],
-                    avoid_names=avoid_names,
-                    category_cn=category_cn,
-                )
+            ai_item = await self._fetch_ai_seller_item(ai_client, category, template, avoid_names)
+            if not self._ai_item_payload_valid(ai_item):
+                raise RuntimeError("ai_item_incomplete")
             item = self._generate_item_from_template(template, category, ai_item, avoid_names)
         else:
             displayed = [i for i in saleable_items if i.status == "displayed"]
@@ -2348,6 +2384,8 @@ class GameStateManager:
         charm_bonus = self.skills["charm"]["level"] // 2
         customer.patience = clamp(customer.patience + charm_bonus, 1, 8)
         await self.apply_customer_opening_greeting(customer, ai_client)
+        if role == "seller" and customer.item.content_source != "ai":
+            raise RuntimeError("ai_item_incomplete")
         customer.generation_source = "ai"
         return customer
 

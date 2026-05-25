@@ -222,7 +222,7 @@ class AIClient:
         else:
             return ""
         try:
-            timeout = 6.0 if prompt_type == "customer_name" else 15.0
+            timeout = 12.0 if prompt_type == "customer_name" else 28.0
             payload = {
                 "model": self.model,
                 "messages": [{"role": "system", "content": system_prompt}],
@@ -291,12 +291,10 @@ class AIClient:
         system_prompt = f"""你是《当铺代理人》的物品生成器。生成一件当铺交易物品，分类 {category_label}，稀有度 {rarity}，成色 {condition}，价值约 {value_hint}。
 创作要求：
 - 物品必须独特、有想象力，可以是荒诞离奇、冷门古怪、令人捧腹或细思极恐的东西
-- 不要总是球星卡、名画仿作、名表珠宝、乾隆瓷器等常见套路
-- 可以天马行空：例如「会录音的核桃」「据说是外星残骸的金属片」「写着未知语言的旧护照」「沾猫毛的真空管收音机」
-- 名称要具体、有画面感，30字以内{avoid_block}
+- 可以天马行空。名称要具体、有画面感，30字以内{avoid_block}
 严格输出 JSON：{{"name":"物品名","desc":"30字内描述","story":"80字内历史故事","era":"年代/时期","damage_report":"损坏情况","hidden_attrs":["隐藏属性"],"special_effects":["经营影响或收藏亮点"],"authentication_tips":["真伪鉴别要点"]}}。"""
         try:
-            result = await self._chat_json(system_prompt, "生成一件从未出现过的独特物品。", timeout=15.0, temperature=0.95)
+            result = await self._chat_json(system_prompt, "生成一件从未出现过的独特物品。", timeout=28.0, temperature=0.95)
             return result if isinstance(result, dict) else {}
         except Exception as exc:
             logger.warning("AI deep item generation failed: %s", exc)
