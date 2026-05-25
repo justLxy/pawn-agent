@@ -1,10 +1,11 @@
 """Stale negotiation finalize guard (reject while stream in flight)."""
 import os
 import sys
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app import build_stale_negotiation_payload, is_stale_negotiation_finalize
+from app import apply_negotiation_outcome, build_stale_negotiation_payload, is_stale_negotiation_finalize
 from game_state import Customer, GameStateManager, Item
 
 
@@ -55,9 +56,30 @@ def test_stale_payload_marks_stale():
     assert payload["deal_completed"] is False
 
 
+def test_apply_skips_when_disk_session_closed():
+    memory_state = GameStateManager()
+    memory_state.active_customer = _customer()
+    disk_state = GameStateManager()
+    disk_state.active_customer = _customer(session_closed="walk_out")
+    player = {"id": 42, "shop_name": "测试当铺"}
+    ai_response = {
+        "dialogue": "再想想。",
+        "patience_change": 0,
+        "accepted": False,
+        "walk_out": False,
+        "new_offer": 500,
+    }
+    with mock.patch("online_services.load_state", return_value=disk_state):
+        with mock.patch("app.commit_state", side_effect=lambda _player, state: state.to_dict()):
+            payload = apply_negotiation_outcome(player, memory_state, ai_response, None, "persuade")
+    assert payload["stale"] is True
+    assert memory_state.active_customer.session_closed is None
+
+
 if __name__ == "__main__":
     test_stale_when_session_closed()
     test_stale_when_customer_changed()
     test_not_stale_during_active_negotiation()
     test_stale_payload_marks_stale()
+    test_apply_skips_when_disk_session_closed()
     print("ok")

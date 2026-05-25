@@ -503,6 +503,23 @@ function extractOffer(text: string): number | null {
   return parseInt(allMatches[0][0].replaceAll(',', ''), 10);
 }
 
+/** 流式谈判晚到的结算不应覆盖玩家已拒绝/成交后的 session_closed。 */
+function preserveClosedCustomerState(incoming: GameState, current: GameState | null): GameState {
+  const cur = current?.active_customer;
+  const next = incoming.active_customer;
+  if (!cur?.session_closed || !next || cur.customer_id !== next.customer_id || next.session_closed) {
+    return incoming;
+  }
+  return {
+    ...incoming,
+    active_customer: {
+      ...next,
+      session_closed: cur.session_closed,
+      deal_summary: cur.deal_summary ?? next.deal_summary,
+    },
+  };
+}
+
 function tokenHeader(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY);
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -1189,11 +1206,11 @@ export default function App() {
 
       const data = streamResult.finalPayload;
       if (data.stale || data.negotiation.stale) {
-        setState(data.state);
+        setState((current) => preserveClosedCustomerState(data.state, current));
         setCustomerThinking(false);
         return;
       }
-      setState(data.state);
+      setState((current) => preserveClosedCustomerState(data.state, current));
       setCustomerThinking(false);
       if (data.negotiation.patience_change < 0) playSound('patience_down');
       if (data.deal_completed) {

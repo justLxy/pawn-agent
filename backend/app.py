@@ -51,6 +51,7 @@ from online_services import (
     post_guestbook,
     reset_player_data,
     respond_offer,
+    load_state,
     save_state,
     set_showcase_price,
     toggle_showcase_like,
@@ -744,6 +745,9 @@ def apply_negotiation_outcome(
     customer = state.active_customer
     if not customer:
         raise HTTPException(status_code=400, detail="现在没有正在谈判的顾客。")
+    disk_state = load_state(int(player["id"]))
+    if is_stale_negotiation_finalize(disk_state, customer.customer_id):
+        return build_stale_negotiation_payload(player, disk_state)
     ai_response, force_terminal = prepare_negotiation_ai_response(
         state, customer, ai_response, player_offer, intent
     )
