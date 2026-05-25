@@ -68,6 +68,32 @@ def test_double_dismiss_same_customer_counts_once():
     assert state.active_customer is not None
 
 
+def test_reconcile_spawns_missing_customer():
+    state = _make_state(total=7)
+    state.customers_finished_ids = [state.generate_random_customer().customer_id for _ in range(5)]
+    state._sync_customers_served_count()
+    state.active_customer = None
+    state.daily_customer_queue = []
+
+    assert state.reconcile_daily_traffic() is True
+    assert state.active_customer is not None
+    assert state.customers_seen_today() == 6
+
+
+def test_is_daily_traffic_complete_requires_full_roster():
+    state = _make_state(total=7)
+    state.customers_finished_ids = [state.generate_random_customer().customer_id for _ in range(5)]
+    state._sync_customers_served_count()
+    state.active_customer = None
+    state.daily_customer_queue = []
+
+    assert state.is_daily_traffic_complete() is False
+
+    state.customers_finished_ids = [state.generate_random_customer().customer_id for _ in range(7)]
+    state._sync_customers_served_count()
+    assert state.is_daily_traffic_complete() is True
+
+
 def test_sanitize_legacy_inflated_counter():
     state = GameStateManager(initialize=False)
     state.total_customers_today = 9

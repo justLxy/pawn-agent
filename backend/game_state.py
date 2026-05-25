@@ -1442,7 +1442,25 @@ class GameStateManager:
 
     def _max_waiting_customers(self) -> int:
         """Remaining queue slots for today (active customer already counts toward daily total)."""
-        return max(0, self.total_customers_today - 1 - self.customers_served_today)
+        finished = len(self.customers_finished_ids)
+        return max(0, self.total_customers_today - 1 - finished)
+
+    def is_daily_traffic_complete(self) -> bool:
+        if self.active_customer or self.daily_customer_queue:
+            return False
+        return len(self.customers_finished_ids) >= self.total_customers_today
+
+    def reconcile_daily_traffic(self) -> bool:
+        """Fill missing scheduled customers when the queue ran out early."""
+        if self.day_ended or self.pending_event:
+            return False
+        if self.is_daily_traffic_complete():
+            return False
+        if self.active_customer:
+            return False
+        if self.daily_customer_queue:
+            return self._activate_next_queued_customer()
+        return self._activate_next_queued_customer()
 
     def _trim_daily_customer_queue(self) -> None:
         max_waiting = self._max_waiting_customers()
@@ -2455,8 +2473,15 @@ class GameStateManager:
 
     def _activate_next_queued_customer(self) -> bool:
         if not self.daily_customer_queue:
-            self.active_customer = None
-            return False
+            if len(self.customers_finished_ids) < self.total_customers_today:
+                filler = self.generate_random_customer()
+                filler.generation_source = "local"
+                if not filler.dialogue_history:
+                    filler.ensure_opening_greeting()
+                self.daily_customer_queue.append(filler)
+            else:
+                self.active_customer = None
+                return False
         self.active_customer = self.daily_customer_queue.pop(0)
         if self.active_customer.role == "buyer" and not self._is_saleable_item(self.active_customer.item.id):
             if not self._retarget_buyer(self.active_customer, self.active_customer.item.id):
@@ -3087,13 +3112,22 @@ class GameStateManager:
 
     def dismiss_customer(self) -> Dict[str, Any]:
         if not self.active_customer:
-            return {"error": "当前没有顾客。"}
+            if self.reconcile_daily_traffic():
+                return {"success": True, "message": "下一位顾客已上前。"}
+            if self.is_daily_traffic_complete():
+                return {"error": "今日客流已满，可以打烊结算。"}
+            return {"error": "下一位顾客尚未就绪，请稍后再试。"}
         if not self.active_customer.session_closed:
             return {"error": "请先完成与当前顾客的交涉。"}
         self.select_next_customer()
+        if not self.active_customer:
+            self.reconcile_daily_traffic()
         if self.active_customer:
             return {"success": True, "message": "下一位顾客已上前。"}
-        return {"success": True, "message": "最后一位顾客已离去，今日可以打烊了。"}
+        if self.is_daily_traffic_complete():
+            return {"success": True, "message": "最后一位顾客已离去，今日可以打烊了。"}
+        remaining = self.total_customers_today - self.customers_seen_today()
+        return {"success": True, "message": f"还有 {remaining} 位预约顾客即将上门，请稍候。"}
 
     def hire_staff(self, staff_type: str) -> Dict[str, Any]:
         if staff_type not in STAFF_TYPES:
@@ -3694,6 +3728,7 @@ class GameStateManager:
             "customers_served_today": self.customers_served_today,
             "customers_finished_ids": list(self.customers_finished_ids),
             "customers_seen_today": self.customers_seen_today(),
+            "daily_traffic_complete": self.is_daily_traffic_complete(),
             "total_customers_today": self.total_customers_today,
             "day_ended": self.day_ended,
             "daily_summary": self.daily_summary,
@@ -3815,6 +3850,7 @@ class GameStateManager:
         state.customers_served_today = int(data.get("customers_served_today", 0))
         state.total_customers_today = int(data.get("total_customers_today", max(3, len(state.daily_customer_queue))))
         state._sanitize_daily_traffic()
+        state.reconcile_daily_traffic()
         state.day_ended = bool(data.get("day_ended", False))
         state.daily_summary = data.get("daily_summary") or {
             "day": state.day,

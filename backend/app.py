@@ -501,12 +501,17 @@ class ShowcaseGuestbookRequest(BaseModel):
 
 
 async def get_engine(player: Dict[str, Any]) -> GameStateManager:
-    return await ensure_player_state(player, ai_client)
+    state = await ensure_player_state(player, ai_client)
+    apply_pending_queue_refill(int(player["id"]), state)
+    if state.reconcile_daily_traffic():
+        save_state(player["id"], state)
+    return state
 
 
 def commit_state(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
     state.shop_name = state.shop_name or player["shop_name"]
     apply_pending_queue_refill(int(player["id"]), state)
+    state.reconcile_daily_traffic()
     save_state(player["id"], state)
     schedule_queue_refill(player, state)
     schedule_next_day_prewarm(player, state)

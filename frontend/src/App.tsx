@@ -266,6 +266,7 @@ interface GameState {
   active_customer: Customer | null;
   customers_served_today: number;
   customers_seen_today?: number;
+  daily_traffic_complete?: boolean;
   total_customers_today: number;
   day_ended: boolean;
   daily_summary: {
@@ -1889,10 +1890,32 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, dayTransition, l
     if (dayTransition === 'end_day') {
       return <DayTransitionLoader mode="end_day" />;
     }
+    const seenToday = state.customers_seen_today ?? state.customers_served_today;
+    const trafficComplete = state.daily_traffic_complete ?? seenToday >= state.total_customers_today;
+    if (!trafficComplete) {
+      const remaining = Math.max(0, state.total_customers_today - seenToday);
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
+          <Users className="w-12 h-12 text-[#C8A97E] mb-6" />
+          <h1 className="text-[28px] font-bold mb-3">还有顾客在路上</h1>
+          <p className="text-[#9E9E9E] mb-6 max-w-md">
+            今日客流 {seenToday}/{state.total_customers_today}，预计还有 {remaining} 位预约顾客即将上门。
+          </p>
+          <button
+            onClick={() => onAction('/api/dismiss_customer', undefined, 'result', '下一位顾客已上前。', 'click')}
+            disabled={loading}
+            className="btn-primary"
+          >
+            {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />请稍候…</> : '迎接下一位顾客'}
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center">
         <Clock className="w-12 h-12 text-[#616161] mb-6" />
         <h1 className="text-[32px] font-bold mb-4">今日打烊</h1>
+        <p className="text-[#9E9E9E] mb-6">今日 {state.total_customers_today} 位顾客已全部接待完毕。</p>
         <button onClick={() => onAction('/api/end_day', undefined, 'summary', '结算完成。', 'deal')} disabled={loading} className="btn-primary">
           {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />结算中…</> : '营业结算'}
         </button>
