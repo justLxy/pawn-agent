@@ -317,6 +317,10 @@ const SECTIONS: TutorialSection[] = [
         <Term title="图鉴">
           「经营图鉴」记录见过的顾客与物品，纯收集向，与成就统计联动。
         </Term>
+        <Term title="镜影（彩蛋）">
+          据说偶尔会有来客报的名字与<strong className="font-sans">你的账号一字不差</strong>，谈价口吻还像许多年前的自己。
+          多在积累一定谈判话术之后、隔若干日才可能遇见；对话区会标「镜影」。与镜中人完成一次交涉可解锁隐藏成就。
+        </Term>
       </>
     )
   },

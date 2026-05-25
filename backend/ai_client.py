@@ -75,9 +75,18 @@ class AIClient:
         }
         return guides.get(intent, "保持第一人称，像真实当铺交易一样自然对话。")
 
+    def _past_self_style_block(self, customer_context: Dict[str, Any]) -> str:
+        if not customer_context.get("is_past_self"):
+            return ""
+        from past_self_service import past_self_style_prompt_block
+
+        return past_self_style_prompt_block(customer_context.get("past_self_quote_samples") or [])
+
     async def generate_customer_greeting(self, customer_context: Dict[str, Any]) -> str:
         if not self.available():
             return ""
+        if customer_context.get("is_past_self"):
+            return await self._generate_past_self_greeting(customer_context)
         role = customer_context.get("role", "seller")
         role_cn = "买家，想从掌柜手里买走店里这件货" if role == "buyer" else "卖家，带着货来出手"
         item_desc = str(customer_context.get("item_desc") or "").strip()
@@ -110,6 +119,26 @@ class AIClient:
             return text[:480]
         except Exception as exc:
             logger.warning("AI customer greeting failed: %s", exc)
+            return ""
+
+    async def _generate_past_self_greeting(self, customer_context: Dict[str, Any]) -> str:
+        if not self.available():
+            return ""
+        name = customer_context.get("name") or "来客"
+        past_self_block = self._past_self_style_block(customer_context)
+        role = customer_context.get("role", "seller")
+        role_cn = "买家" if role == "buyer" else "卖家"
+        system_prompt = f"""你是文字经营游戏《当铺代理人》中的特殊来客：镜中人（曾经的自己）。
+{self._format_persona_block(customer_context)}
+{past_self_block}
+你名叫【{name}】，与掌柜账号同名。你是{role_cn}，带着【{customer_context.get("item_name")}】进门。
+写一段第一人称开场白，120-160字：像许多年前的掌柜在谈价，口吻须贴近上列话术样本；可含环境细节（风铃、柜台等）。
+不要承认穿越或 AI；不要照搬样本里的具体价格数字。只输出台词正文。"""
+        try:
+            text = (await self._chat_text(system_prompt, "生成镜中人开场白。", timeout=12.0)).strip()
+            return text[:480]
+        except Exception as exc:
+            logger.warning("AI past-self greeting failed: %s", exc)
             return ""
 
     async def generate_appraisal_reaction(
@@ -551,8 +580,10 @@ class AIClient:
         if self.available():
             merged_ctx = {**customer_context, **customer_memory, "role": role}
             persona = self._format_persona_block(merged_ctx)
+            past_self_block = self._past_self_style_block(merged_ctx)
             system_prompt = f"""你是文字经营游戏《当铺代理人》中的 AI 顾客。
 {persona}
+{past_self_block}
 赝品状态（仅你知，勿直接说破）：{is_fake}
 你的心理底线/上限价：{limit_price}
 当前报价：{current_offer}
@@ -582,6 +613,23 @@ class AIClient:
                 return self._normalize_negotiation_result(result, current_offer, player_offer)
             except Exception as exc:
                 logger.warning("AI negotiation failed, using fallback: %s", exc)
+
+        if customer_context.get("is_past_self"):
+            from past_self_service import past_self_fallback_dialogue
+
+            dialogue = past_self_fallback_dialogue(
+                customer_context.get("past_self_quote_samples") or [],
+                current_offer,
+                role,
+            )
+            return {
+                "dialogue": dialogue,
+                "new_offer": current_offer,
+                "patience_change": 0,
+                "accepted": False,
+                "walk_out": False,
+                "parsed_offer": player_offer,
+            }
 
         return self._calculate_algorithmic_fallback(
             role=role,
@@ -622,7 +670,9 @@ class AIClient:
         economy_context = economy_context or {}
         customer_memory = customer_memory or {}
         customer_context = customer_context or {}
-        persona = self._format_persona_block({**customer_context, **customer_memory, "role": role})
+        merged_ctx = {**customer_context, **customer_memory, "role": role}
+        persona = self._format_persona_block(merged_ctx)
+        past_self_block = self._past_self_style_block(merged_ctx)
         if accepted:
             outcome = "成交"
         elif walk_out:
@@ -637,6 +687,7 @@ class AIClient:
             outcome += f"，耐心回升 {patience_change}"
         system_prompt = f"""你是文字经营游戏《当铺代理人》中的顾客 {customer_name}。
 {persona}
+{past_self_block}
 经济环境：{economy_context.get("economic_pressure", "stable")}，指数 {economy_context.get("economy_index", 1.0)}
 本轮你已决定的谈判结果：{outcome}
 对话要求：{self._intent_guide(intent)}

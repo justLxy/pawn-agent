@@ -148,6 +148,7 @@ interface Customer {
   dialogue_history: Array<{ role: 'player' | 'customer' | 'narrator'; content: string }>;
   session_closed?: 'deal' | 'walk_out' | null;
   deal_summary?: string | null;
+  is_past_self?: boolean;
 }
 
 interface Achievement {
@@ -1799,7 +1800,7 @@ function MobileNegotiationBrief({ customer }: { customer: Customer }) {
   const condition = CONDITION_MAP[item.condition] || item.condition;
   const appraisal = item.is_appraised_fake !== null ? appraisalVerdict(item) : null;
   const range = appraisalRange(item);
-  const customerLine = `${customer.name}·${customer.trait_cn}·耐${customer.patience}${customer.is_returning ? `·${customer.relationship_cn}` : ''}`;
+  const customerLine = `${customer.name}·${customer.trait_cn}·耐${customer.patience}${customer.is_past_self ? '·镜影' : customer.is_returning ? `·${customer.relationship_cn}` : ''}`;
   const appraisalLine = appraisal
     ? `${appraisal}${item.appraisal_confidence !== null ? `/${item.appraisal_confidence}%` : ''}`
     : null;
@@ -2240,7 +2241,8 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
             <div className="flex items-center gap-3 mb-1">
               <span className="text-[#C8A97E] text-sm tracking-[0.25em]">{tradeMode.label}</span>
               <span className="text-[#616161] text-xs">{customer.trait_cn} / 耐心 {customer.patience}</span>
-              {customer.is_returning && <span className="text-[#C8A97E] text-xs border-l border-[#2A2D34] pl-3">{customer.relationship_cn} · 第 {customer.visit_count} 次</span>}
+              {customer.is_past_self && <span className="text-[#C8A97E] text-xs border-l border-[#2A2D34] pl-3 tracking-wide">镜影</span>}
+              {customer.is_returning && !customer.is_past_self && <span className="text-[#C8A97E] text-xs border-l border-[#2A2D34] pl-3">{customer.relationship_cn} · 第 {customer.visit_count} 次</span>}
             </div>
             <p className="text-[#9E9E9E] text-xs leading-relaxed">{customer.age} 岁 · {customer.appearance}</p>
             <p className="text-[#616161] text-xs leading-relaxed mt-1">{customer.backstory}</p>
@@ -2739,6 +2741,11 @@ const CUSTOMER_THINKING_OVERFLOW_COMMON = {
   buyer: ['嗯……', '再想想……', '好像还行……', '又好像不太行……', '要不再看看……', '兜里就这些……', '唉……', '买还是不买……'],
 };
 
+const PAST_SELF_THINKING: string[] = [
+  '这说法怎么耳熟……', '好像……我也说过类似的……', '要是按当年的口气……', '这价……',
+  '嗯……', '有点意思……', '再想想……', '像在哪听过……',
+];
+
 const CUSTOMER_THINKING_FALLBACK: { seller: string[]; buyer: string[] } = {
   seller: [
     '你刚才那话……', '好像也不是完全没道理……', '但我还得再琢磨琢磨……', '真的要就这样吗……',
@@ -2761,6 +2768,9 @@ function thinkingChainSeed(customerId: string): number {
 }
 
 function buildCustomerThinkingSequence(customer: Customer): string[] {
+  if (customer.is_past_self) {
+    return PAST_SELF_THINKING;
+  }
   const roleKey = customer.role === 'buyer' ? 'buyer' : 'seller';
   const traitChains = CUSTOMER_THINKING_CHAINS[customer.trait_cn]?.[roleKey];
   if (traitChains?.length) {

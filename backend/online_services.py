@@ -76,8 +76,11 @@ async def ensure_player_state(player: Dict[str, Any], ai_client: Any) -> GameSta
     with get_connection() as conn:
         exists = conn.execute("SELECT 1 FROM game_saves WHERE player_id = ?", (player["id"],)).fetchone()
     if exists:
-        return load_state(player["id"])
-    return await bootstrap_new_player_state_async(player["id"], player["shop_name"], ai_client)
+        state = load_state(player["id"])
+    else:
+        state = await bootstrap_new_player_state_async(player["id"], player["shop_name"], ai_client)
+    state.owner_username = str(player.get("username") or state.owner_username or "").strip()
+    return state
 
 
 def import_state(player_id: int, state_dict: Dict[str, Any], shop_name: Optional[str] = None) -> GameStateManager:

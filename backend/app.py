@@ -1026,6 +1026,7 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
 
     player_message = req.message.strip()
     customer.dialogue_history.append({"role": "player", "content": player_message})
+    state.record_player_quote(player_message, intent, customer.role)
     ai_response = await negotiation_ai_response(state, customer, player_message, player_offer, intent)
     return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
 
@@ -1054,6 +1055,7 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
 
     player_message = req.message.strip()
     customer.dialogue_history.append({"role": "player", "content": player_message})
+    state.record_player_quote(player_message, intent, customer.role)
     economy_context = {
         "economy_index": state.economy_index,
         "economic_pressure": state.economic_pressure,

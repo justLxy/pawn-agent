@@ -633,6 +633,16 @@ def _achievement_defs() -> Dict[str, Dict[str, Any]]:
     for target, name in [(1000, "等到涨价"), (25000, "价值投资")]:
         add(f"value_gain_{target}", "经济", name, f"靠持有与展示累计增值 ${target:,}。", "value_gain_from_holding", target, {"reputation": 2})
     add("negative_reviews_1", "风险", "第一次差评", "收到一次负面评价。", "negative_reviews", 1, {"skill_xp": {"charm": 20}}, hidden=True)
+    add(
+        "past_self_1",
+        "顾客",
+        "镜中对谈",
+        "与镜中人完成一次交涉（成交或婉拒均可）。",
+        "past_self_encounters",
+        1,
+        {"reputation": 2},
+        hidden=True,
+    )
 
     return definitions
 
@@ -868,13 +878,19 @@ class Customer:
         case_state: Optional[Dict[str, Any]] = None,
         shop_level_for_case: int = 1,
         appraisal_room_for_case: int = 1,
+        is_past_self: bool = False,
+        past_self_quote_samples: Optional[List[str]] = None,
     ):
         self.customer_id = customer_id or str(uuid.uuid4())[:10]
         self.name = name
         self.trait = trait if trait in CUSTOMER_TRAITS else "hesitant"
         self.role = role if role in ["seller", "buyer"] else "seller"
         self.item = item
-        self.generation_source = generation_source if generation_source in ("ai", "local", "prewarm") else "local"
+        self.generation_source = (
+            generation_source if generation_source in ("ai", "local", "prewarm", "past_self") else "local"
+        )
+        self.is_past_self = bool(is_past_self)
+        self.past_self_quote_samples = list(past_self_quote_samples or [])
         self.is_returning = bool(is_returning)
         self.visit_count = max(1, int(visit_count or 1))
         self.satisfaction = clamp(int(satisfaction), 0, 100)
@@ -1054,6 +1070,8 @@ class Customer:
             }.get(self.relationship_level, "新客"),
             "visit_count": self.visit_count,
             "last_deal_summary": self.last_deal_summary,
+            "is_past_self": self.is_past_self,
+            "past_self_quote_samples": self.past_self_quote_samples[:8],
             "item_name": self.item.name,
             "item_category": self.item.category,
             "item_condition": self.item.condition,
@@ -1239,6 +1257,7 @@ class Customer:
             "session_closed": self.session_closed,
             "deal_summary": self.deal_summary,
             "generation_source": self.generation_source,
+            "is_past_self": self.is_past_self,
         }
 
     @classmethod
@@ -1281,6 +1300,8 @@ class Customer:
             customer.case_state = stored
         customer.session_closed = data.get("session_closed")
         customer.deal_summary = data.get("deal_summary")
+        customer.is_past_self = bool(data.get("is_past_self", False))
+        customer.past_self_quote_samples = list(data.get("past_self_quote_samples") or [])
         customer.backstory = normalize_customer_backstory(
             customer.role,
             customer.name,
@@ -1341,7 +1362,11 @@ class GameStateManager:
             "highest_inventory_value": 0,
             "total_customers_seen": 0,
             "referrals_generated": 0,
+            "past_self_encounters": 0,
         }
+        self.owner_username: str = ""
+        self.player_quote_bank: List[Dict[str, Any]] = []
+        self.past_self_meta: Dict[str, int] = {"last_trigger_day": 0, "total_triggers": 0}
         self.ranking_badge: Optional[str] = None
         self.ranking_reward_bonus = 0
         self.active_customer: Optional[Customer] = None
@@ -1542,6 +1567,9 @@ class GameStateManager:
                     self.daily_customer_queue.append(fallback)
 
         self._inject_relationship_customers()
+        from past_self_service import maybe_inject_past_self_customer
+
+        await maybe_inject_past_self_customer(self, ai_client)
         self._open_day_customer_queue()
 
     async def async_initialize_day_with_fallback(self, ai_client, timeout: float = AI_DAY_GENERATION_TIMEOUT) -> Dict[str, Any]:
@@ -1579,6 +1607,9 @@ class GameStateManager:
         for customer in self.daily_customer_queue:
             customer.generation_source = "local"
         self._inject_relationship_customers()
+        from past_self_service import inject_past_self_customer_sync
+
+        inject_past_self_customer_sync(self)
         self._open_day_customer_queue()
 
     def initialize_day_from_prewarmed(self, customers: List[Any]) -> Dict[str, Any]:
@@ -1882,6 +1913,14 @@ class GameStateManager:
             source["referrals_generated"] = int(source.get("referrals_generated", 0)) + 1
             self.achievement_stats["referrals_generated"] = int(self.achievement_stats.get("referrals_generated", 0)) + 1
 
+    def record_player_quote(self, text: str, intent: str, trade_role: Optional[str] = None) -> None:
+        from past_self_service import record_player_quote
+
+        trade = trade_role
+        if not trade and self.active_customer:
+            trade = self.active_customer.role
+        record_player_quote(self, text, intent, trade)
+
     def _record_customer_outcome(
         self,
         customer: Customer,
@@ -1890,6 +1929,9 @@ class GameStateManager:
         item: Optional[Item] = None,
         skip_reputation_penalty: bool = False,
     ):
+        if getattr(customer, "is_past_self", False):
+            self._record_past_self_outcome(customer, outcome, price, item, skip_reputation_penalty)
+            return
         record = self.customer_registry.get(customer.customer_id) or self._customer_record(customer)
         record["visit_count"] = max(int(record.get("visit_count", 0)), customer.visit_count)
         record["last_visit_day"] = self.day
@@ -1921,6 +1963,40 @@ class GameStateManager:
         customer.satisfaction = satisfaction
         customer.relationship_level = record["relationship_level"]
         customer.last_deal_summary = record.get("last_deal_summary")
+        self._record_customer_encounter(customer, outcome)
+        if outcome == "reject" and not skip_reputation_penalty:
+            self.reputation -= 1
+            self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
+            if self.daily_summary:
+                self.daily_summary["events"].append(f"你拒绝了 {customer.name} 的交易，声誉 -1。")
+        elif outcome == "walk_out":
+            self.reputation -= 2
+            self.achievement_stats["negative_reviews"] = int(self.achievement_stats.get("negative_reviews", 0)) + 1
+            if self.daily_summary:
+                self.daily_summary["events"].append(f"与 {customer.name} 谈判谈崩，声誉 -2。")
+
+    def _record_past_self_outcome(
+        self,
+        customer: Customer,
+        outcome: str,
+        price: Optional[int] = None,
+        item: Optional[Item] = None,
+        skip_reputation_penalty: bool = False,
+    ):
+        if outcome in ("deal", "reject", "walk_out"):
+            self.achievement_stats["past_self_encounters"] = int(self.achievement_stats.get("past_self_encounters", 0)) + 1
+            self._check_achievements("past_self", {"outcome": outcome})
+        delta = 0
+        if outcome == "deal":
+            delta = 14 if customer.role == "seller" else 12
+        elif outcome == "reject":
+            delta = -8
+        elif outcome == "walk_out":
+            delta = -14
+        customer.satisfaction = clamp(int(customer.satisfaction) + delta, 0, 100)
+        if price is not None and item is not None:
+            verb = "卖给你" if customer.role == "seller" else "从你这里买走"
+            customer.last_deal_summary = f"第 {self.day} 天以 ${price} {verb}【{item.name}】"
         self._record_customer_encounter(customer, outcome)
         if outcome == "reject" and not skip_reputation_penalty:
             self.reputation -= 1
@@ -3689,7 +3765,7 @@ class GameStateManager:
             if for_client
             else (lambda customer: customer.to_dict(for_client=False))
         )
-        return {
+        payload = {
             "cash": self.cash,
             "day": self.day,
             "shop_level": self.shop_level,
@@ -3745,6 +3821,11 @@ class GameStateManager:
                 for key, value in CASE_INVESTIGATION_ACTIONS.items()
             },
         }
+        if not for_client:
+            payload["owner_username"] = self.owner_username
+            payload["player_quote_bank"] = list(self.player_quote_bank)[-40:]
+            payload["past_self_meta"] = dict(self.past_self_meta)
+        return payload
 
     def facility_info_for_state(self) -> Dict[str, Dict[str, Any]]:
         info = deepcopy(FACILITY_INFO)
@@ -3841,6 +3922,17 @@ class GameStateManager:
         state.achievement_stats = {
             **state.achievement_stats,
             **{key: int(value) for key, value in (data.get("achievement_stats") or {}).items() if isinstance(value, (int, float))},
+        }
+        state.owner_username = str(data.get("owner_username") or state.owner_username or "")
+        state.player_quote_bank = [
+            dict(entry)
+            for entry in (data.get("player_quote_bank") or [])
+            if isinstance(entry, dict) and entry.get("text")
+        ][-40:]
+        raw_meta = data.get("past_self_meta") or {}
+        state.past_self_meta = {
+            "last_trigger_day": int(raw_meta.get("last_trigger_day", 0)),
+            "total_triggers": int(raw_meta.get("total_triggers", 0)),
         }
         state.ranking_badge = data.get("ranking_badge")
         state.ranking_reward_bonus = int(data.get("ranking_reward_bonus", 0))
