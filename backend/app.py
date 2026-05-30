@@ -901,6 +901,11 @@ class ShopFulfillRequest(BaseModel):
 class ProfileCosmeticsRequest(BaseModel):
     shop_emblem: Optional[str] = None
     showcase_tagline: Optional[str] = None
+    plaque_title: Optional[str] = None
+    shop_sign_style: Optional[str] = None
+    showcase_mood: Optional[str] = None
+    showcase_seal_line: Optional[str] = None
+    chat_accent: Optional[str] = None
 
 
 @app.get("/api/shop/catalog")
@@ -946,7 +951,16 @@ def shop_admin_fulfill(
 
 @app.patch("/api/profile/cosmetics")
 def profile_cosmetics(req: ProfileCosmeticsRequest, player: Dict[str, Any] = Depends(current_player)):
-    cosmetics = update_profile_cosmetics(player["id"], req.shop_emblem, req.showcase_tagline)
+    cosmetics = update_profile_cosmetics(
+        player["id"],
+        req.shop_emblem,
+        req.showcase_tagline,
+        req.plaque_title,
+        req.shop_sign_style,
+        req.showcase_mood,
+        req.showcase_seal_line,
+        req.chat_accent,
+    )
     from database import get_connection
 
     with get_connection() as conn:

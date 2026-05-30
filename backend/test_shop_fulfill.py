@@ -5,6 +5,7 @@ import unittest
 
 import database
 from database import get_connection, init_db
+from player_cosmetics import cosmetics_from_row
 from shop_service import create_manual_order, fulfill_order, list_public_sponsors, submit_payment, update_profile_cosmetics
 
 
@@ -50,12 +51,73 @@ class ShopFulfillTest(unittest.TestCase):
         sponsors = list_public_sponsors()
         self.assertTrue(any(item["player_id"] == self.player_id for item in sponsors))
 
+    def test_plaque_fulfill_sets_defaults(self) -> None:
+        order = create_manual_order(self.player_id, "plaque_permanent")
+        fulfill_order(order_id=order["order_id"])
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM players WHERE id = ?", (self.player_id,)).fetchone()
+        cosmetics = cosmetics_from_row(row)
+        self.assertEqual(cosmetics["shop_emblem"], "plaque")
+        self.assertEqual(cosmetics["plaque_title"], "heritage")
+        self.assertEqual(cosmetics["plaque_title_label"], "传世掌柜")
+        self.assertEqual(cosmetics["shop_sign_style"], "classic")
+        self.assertEqual(cosmetics["showcase_mood"], "plain")
+        self.assertEqual(cosmetics["chat_accent"], "default")
+        self.assertTrue(cosmetics["has_plaque"])
+
     def test_plaque_and_profile(self) -> None:
         order = create_manual_order(self.player_id, "plaque_permanent")
         fulfill_order(order_id=order["order_id"])
-        cosmetics = update_profile_cosmetics(self.player_id, shop_emblem="seal", showcase_tagline="欢迎光临")
-        self.assertEqual(cosmetics["shop_emblem"], "seal")
+        cosmetics = update_profile_cosmetics(
+            self.player_id,
+            shop_emblem="ding",
+            showcase_tagline="欢迎光临",
+            plaque_title="gilded",
+            shop_sign_style="carved",
+            showcase_mood="couplet",
+            showcase_seal_line="童叟无欺",
+            chat_accent="jade",
+        )
+        self.assertEqual(cosmetics["shop_emblem"], "ding")
+        self.assertEqual(cosmetics["shop_emblem_label"], "鼎")
         self.assertEqual(cosmetics["showcase_tagline"], "欢迎光临")
+        self.assertEqual(cosmetics["plaque_title_label"], "金字招牌")
+        self.assertEqual(cosmetics["shop_sign_style"], "carved")
+        self.assertEqual(cosmetics["showcase_mood"], "couplet")
+        self.assertEqual(cosmetics["showcase_seal_line"], "童叟无欺")
+        self.assertEqual(cosmetics["chat_accent"], "jade")
+
+    def test_plaque_profile_rejects_invalid_fields(self) -> None:
+        order = create_manual_order(self.player_id, "plaque_permanent")
+        fulfill_order(order_id=order["order_id"])
+        with self.assertRaises(Exception):
+            update_profile_cosmetics(self.player_id, shop_emblem="invalid")
+        with self.assertRaises(Exception):
+            update_profile_cosmetics(self.player_id, plaque_title="bogus")
+        with self.assertRaises(Exception):
+            update_profile_cosmetics(self.player_id, showcase_seal_line="x" * 20)
+
+    def test_monthly_and_plaque_stack(self) -> None:
+        monthly = create_manual_order(self.player_id, "monthly_card")
+        plaque = create_manual_order(self.player_id, "plaque_permanent")
+        fulfill_order(order_id=monthly["order_id"])
+        fulfill_order(order_id=plaque["order_id"])
+        with get_connection() as conn:
+            row = conn.execute("SELECT * FROM players WHERE id = ?", (self.player_id,)).fetchone()
+        cosmetics = cosmetics_from_row(row)
+        self.assertTrue(cosmetics["is_sponsor"])
+        self.assertTrue(cosmetics["has_plaque"])
+        self.assertEqual(cosmetics["sponsor_title"], "赞助掌柜")
+        self.assertEqual(cosmetics["plaque_title_label"], "传世掌柜")
+
+    def test_sponsor_wall_includes_plaque_title(self) -> None:
+        order = create_manual_order(self.player_id, "plaque_permanent")
+        fulfill_order(order_id=order["order_id"])
+        update_profile_cosmetics(self.player_id, plaque_title="veteran")
+        sponsors = list_public_sponsors()
+        entry = next(item for item in sponsors if item["player_id"] == self.player_id)
+        self.assertTrue(entry["has_plaque"])
+        self.assertEqual(entry["plaque_title_label"], "名匾老铺")
 
 
 if __name__ == "__main__":

@@ -270,7 +270,12 @@ def _clear_npc_cosmetics(player_id: int, shop_name: str) -> None:
                 shop_name = ?,
                 showcase_tagline = NULL,
                 shop_emblem = NULL,
-                monthly_expires_at = NULL
+                monthly_expires_at = NULL,
+                plaque_title = NULL,
+                shop_sign_style = NULL,
+                showcase_mood = NULL,
+                showcase_seal_line = NULL,
+                chat_accent = NULL
             WHERE id = ?
             """,
             (shop_name, player_id),

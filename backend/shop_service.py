@@ -7,7 +7,22 @@ from fastapi import HTTPException
 
 from database import get_connection, transaction
 from player_cosmetics import cosmetics_from_row
-from shop_catalog import MONTHLY_SECONDS, PRODUCTS, SPONSOR_TITLE, TAGLINE_MAX_LEN, VALID_EMBLEMS
+from shop_catalog import (
+    DEFAULT_CHAT_ACCENT,
+    DEFAULT_PLAQUE_TITLE,
+    DEFAULT_SHOWCASE_MOOD,
+    DEFAULT_SIGN_STYLE,
+    MONTHLY_SECONDS,
+    PRODUCTS,
+    SEAL_LINE_MAX_LEN,
+    SPONSOR_TITLE,
+    TAGLINE_MAX_LEN,
+    VALID_CHAT_ACCENTS,
+    VALID_EMBLEMS,
+    VALID_PLAQUE_TITLES,
+    VALID_SHOWCASE_MOODS,
+    VALID_SIGN_STYLES,
+)
 
 
 def _now() -> int:
@@ -194,8 +209,16 @@ def fulfill_order(order_id: Optional[str] = None, order_no: Optional[str] = None
             )
         elif row["product_id"] == "plaque_permanent":
             conn.execute(
-                "UPDATE players SET shop_emblem = COALESCE(shop_emblem, 'plaque') WHERE id = ?",
-                (player_id,),
+                """
+                UPDATE players SET
+                    shop_emblem = COALESCE(shop_emblem, 'plaque'),
+                    plaque_title = COALESCE(plaque_title, ?),
+                    shop_sign_style = COALESCE(shop_sign_style, ?),
+                    showcase_mood = COALESCE(showcase_mood, ?),
+                    chat_accent = COALESCE(chat_accent, ?)
+                WHERE id = ?
+                """,
+                (DEFAULT_PLAQUE_TITLE, DEFAULT_SIGN_STYLE, DEFAULT_SHOWCASE_MOOD, DEFAULT_CHAT_ACCENT, player_id),
             )
         conn.execute(
             "UPDATE shop_orders SET status = 'fulfilled', fulfilled_at = ? WHERE id = ?",
@@ -210,7 +233,16 @@ def fulfill_order(order_id: Optional[str] = None, order_no: Optional[str] = None
     }
 
 
-def update_profile_cosmetics(player_id: int, shop_emblem: Optional[str] = None, showcase_tagline: Optional[str] = None) -> Dict[str, Any]:
+def update_profile_cosmetics(
+    player_id: int,
+    shop_emblem: Optional[str] = None,
+    showcase_tagline: Optional[str] = None,
+    plaque_title: Optional[str] = None,
+    shop_sign_style: Optional[str] = None,
+    showcase_mood: Optional[str] = None,
+    showcase_seal_line: Optional[str] = None,
+    chat_accent: Optional[str] = None,
+) -> Dict[str, Any]:
     with get_connection() as conn:
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player_id,)).fetchone()
         if not player:
@@ -231,6 +263,36 @@ def update_profile_cosmetics(player_id: int, shop_emblem: Optional[str] = None, 
                 raise HTTPException(status_code=400, detail=f"橱窗文案不能超过 {TAGLINE_MAX_LEN} 字。")
             updates.append("showcase_tagline = ?")
             params.append(tagline or None)
+        if plaque_title is not None:
+            title = plaque_title.strip()
+            if title and title not in VALID_PLAQUE_TITLES:
+                raise HTTPException(status_code=400, detail="无效永久称号。")
+            updates.append("plaque_title = ?")
+            params.append(title or DEFAULT_PLAQUE_TITLE)
+        if shop_sign_style is not None:
+            style = shop_sign_style.strip()
+            if style and style not in VALID_SIGN_STYLES:
+                raise HTTPException(status_code=400, detail="无效店招主题。")
+            updates.append("shop_sign_style = ?")
+            params.append(style or DEFAULT_SIGN_STYLE)
+        if showcase_mood is not None:
+            mood = showcase_mood.strip()
+            if mood and mood not in VALID_SHOWCASE_MOODS:
+                raise HTTPException(status_code=400, detail="无效橱窗气质。")
+            updates.append("showcase_mood = ?")
+            params.append(mood or DEFAULT_SHOWCASE_MOOD)
+        if showcase_seal_line is not None:
+            seal = showcase_seal_line.strip()
+            if len(seal) > SEAL_LINE_MAX_LEN:
+                raise HTTPException(status_code=400, detail=f"落款不能超过 {SEAL_LINE_MAX_LEN} 字。")
+            updates.append("showcase_seal_line = ?")
+            params.append(seal or None)
+        if chat_accent is not None:
+            accent = chat_accent.strip()
+            if accent and accent not in VALID_CHAT_ACCENTS:
+                raise HTTPException(status_code=400, detail="无效对话气泡皮肤。")
+            updates.append("chat_accent = ?")
+            params.append(accent or DEFAULT_CHAT_ACCENT)
         if not updates:
             raise HTTPException(status_code=400, detail="没有可更新的内容。")
         params.append(player_id)
@@ -300,7 +362,7 @@ def list_public_sponsors(limit: int = 200) -> List[Dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT p.id, p.shop_name, p.username, p.monthly_expires_at, p.shop_emblem
+            SELECT p.id, p.shop_name, p.username, p.monthly_expires_at, p.shop_emblem, p.plaque_title
             FROM players p
             WHERE COALESCE(p.is_system_player, 0) = 0
               AND (
@@ -330,6 +392,7 @@ def list_public_sponsors(limit: int = 200) -> List[Dict[str, Any]]:
                 "has_plaque": cosmetics["has_plaque"],
                 "shop_emblem_label": cosmetics["shop_emblem_label"],
                 "sponsor_title": SPONSOR_TITLE if cosmetics["is_sponsor"] else None,
+                "plaque_title_label": cosmetics.get("plaque_title_label"),
             }
         )
     return sponsors

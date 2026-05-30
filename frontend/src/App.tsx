@@ -38,7 +38,7 @@ import {
   renderChatScreenshot,
   shareChatScreenshot,
 } from './chatScreenshot';
-import { ShopNameLine, ShowcaseCover, SponsorSubtitle, type PlayerCosmetics } from './cosmetics';
+import { ShopNameLine, ShowcaseCover, SponsorSubtitle, playerChatBubbleClass, type PlayerCosmetics } from './cosmetics';
 import { ShopTab } from './shopTab';
 import { TutorialHelpButton, TutorialPanel, isTutorialSeen } from './tutorial';
 import { useMobileViewport } from './useMobileViewport';
@@ -1367,7 +1367,11 @@ export default function App() {
               <ShopNameLine name={state.shop_name || player.shop_name} cosmetics={player} />
             </h1>
             <div className="hidden md:block text-[11px] text-[#616161] font-sans">
-              <SponsorSubtitle rankingBadge={player.ranking_badge || state.ranking_badge} sponsorTitle={player.sponsor_title} />
+              <SponsorSubtitle
+                rankingBadge={player.ranking_badge || state.ranking_badge}
+                sponsorTitle={player.sponsor_title}
+                plaqueTitle={player.plaque_title_label}
+              />
             </div>
           </div>
         </div>
@@ -1432,6 +1436,7 @@ export default function App() {
               customerThinking={customerThinking}
               investigating={investigating}
               appraisalMethod={appraisalMethod}
+              chatAccent={player.chat_accent}
               setMessage={setMessage}
               setAppraisalMethod={setAppraisalMethod}
               onNegotiate={negotiate}
@@ -2141,7 +2146,7 @@ function caseClueTypeLabel(type: string) {
   return labels[type] || type;
 }
 
-function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking, dayTransition, loading, message, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; customerThinking: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; message: string; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
+function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, customerThinking, dayTransition, loading, message, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; customerThinking: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; chatAccent?: string | null; message: string; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
   const negotiateInputRef = useRef<HTMLInputElement>(null);
   const scrollChatToEnd = () => {
@@ -2428,7 +2433,13 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
           turn.role === 'narrator' ? (
             <Chat key={idx} narrator>{turn.content}</Chat>
           ) : (
-            <Chat key={idx} speaker={turn.role === 'player' ? '你' : customer.name} right={turn.role === 'player'} avatarUrl={turn.role === 'customer' ? customer.avatar_url : undefined}>
+            <Chat
+              key={idx}
+              speaker={turn.role === 'player' ? '你' : customer.name}
+              right={turn.role === 'player'}
+              chatAccent={turn.role === 'player' ? chatAccent : undefined}
+              avatarUrl={turn.role === 'customer' ? customer.avatar_url : undefined}
+            >
               {turn.content}
             </Chat>
           )
@@ -2994,7 +3005,7 @@ function CustomerThinkingBubble({ customer }: { customer: Customer }) {
   );
 }
 
-function Chat({ avatarUrl, children, right, speaker, narrator }: { avatarUrl?: string; children: React.ReactNode; right?: boolean; speaker?: string; narrator?: boolean }) {
+function Chat({ avatarUrl, chatAccent, children, right, speaker, narrator }: { avatarUrl?: string; chatAccent?: string | null; children: React.ReactNode; right?: boolean; speaker?: string; narrator?: boolean }) {
   if (narrator) {
     return (
       <div className="max-w-[92%] mx-auto text-center animate-slide-up">
@@ -3014,7 +3025,7 @@ function Chat({ avatarUrl, children, right, speaker, narrator }: { avatarUrl?: s
       )}
       <div className={`flex flex-col min-w-0 ${right ? 'items-end' : 'items-start'}`}>
         <span className="text-xs text-[#616161] mb-1">{speaker}</span>
-        <div className={`px-4 py-3 leading-relaxed rounded-sm whitespace-pre-wrap ${right ? 'border-r border-[#C8A97E] text-right bg-[rgba(200,169,126,0.06)] text-[#D4B88A]' : 'border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] text-[#E0E0E0]'}`}>{children}</div>
+        <div className={`px-4 py-3 leading-relaxed rounded-sm whitespace-pre-wrap ${right ? playerChatBubbleClass(chatAccent) : 'border-l border-[#2A2D34] bg-[rgba(255,255,255,0.03)] text-[#E0E0E0]'}`}>{children}</div>
       </div>
     </div>
   );
@@ -3698,13 +3709,18 @@ function ShowcaseTab({ back, buy, onDeleteGuestbook, onLike, onPostGuestbook, sh
       <div className="mb-4 text-xl font-bold font-sans">
         <ShopNameLine name={showcase.owner.shop_name} cosmetics={showcase.owner} />
       </div>
-      <ShowcaseCover tagline={showcase.owner.showcase_tagline} />
+      <ShowcaseCover
+        tagline={showcase.owner.showcase_tagline}
+        mood={showcase.owner.showcase_mood}
+        sealLine={showcase.owner.showcase_seal_line}
+      />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#2A2D34] pb-4 mb-2">
         <div className="text-sm text-[#9E9E9E]">
           <span className={showcase.owner.online ? 'text-[#4CAF50]' : 'text-[#616161]'}>{showcase.owner.online ? '在线' : '离线'}</span>
           <span className="mx-3">声誉 {showcase.owner.reputation}</span>
           {showcase.owner.ranking_badge && <span className="text-[#C8A97E]">{showcase.owner.ranking_badge}</span>}
           {showcase.owner.sponsor_title && <span className="ml-3 text-[#C8A97E]">{showcase.owner.sponsor_title}</span>}
+          {showcase.owner.plaque_title_label && <span className="ml-3 text-[#C8A97E]">{showcase.owner.plaque_title_label}</span>}
           {showcase.hot_rank ? <span className="ml-3 text-[#C8A97E]">热门榜 #{showcase.hot_rank}</span> : null}
         </div>
         <div className="flex items-center gap-3">

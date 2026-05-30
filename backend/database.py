@@ -187,5 +187,15 @@ def _migrate_shop_schema(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE players ADD COLUMN shop_emblem TEXT")
     if "showcase_tagline" not in columns:
         conn.execute("ALTER TABLE players ADD COLUMN showcase_tagline TEXT")
+    if "plaque_title" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN plaque_title TEXT")
+    if "shop_sign_style" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN shop_sign_style TEXT")
+    if "showcase_mood" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN showcase_mood TEXT")
+    if "showcase_seal_line" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN showcase_seal_line TEXT")
+    if "chat_accent" not in columns:
+        conn.execute("ALTER TABLE players ADD COLUMN chat_accent TEXT")
     if "is_system_player" not in columns:
         conn.execute("ALTER TABLE players ADD COLUMN is_system_player INTEGER NOT NULL DEFAULT 0")

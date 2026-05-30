@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import wechatPayQr from './assets/IMG_8915.JPG';
-import { formatMonthlyExpiry, type PlayerCosmetics, SponsorSubtitle } from './cosmetics';
+import {
+  CHAT_ACCENT_OPTIONS,
+  EMBLEM_OPTIONS,
+  formatMonthlyExpiry,
+  PLAQUE_TITLE_OPTIONS,
+  SHOWCASE_MOOD_OPTIONS,
+  SIGN_STYLE_OPTIONS,
+  type PlayerCosmetics,
+  SponsorSubtitle,
+} from './cosmetics';
 
 type ShopPlayer = PlayerCosmetics & {
   id: number;
@@ -45,6 +54,7 @@ export interface ShopSponsor {
   has_plaque: boolean;
   shop_emblem_label?: string | null;
   sponsor_title?: string | null;
+  plaque_title_label?: string | null;
 }
 
 interface ShopTabProps {
@@ -77,7 +87,8 @@ const FALLBACK_PRODUCTS: ShopProduct[] = [
     name: '当铺匾额（永久）',
     price_fen: 1000,
     price_label: '¥10',
-    description: '店名旁匾额装饰；橱窗封面文案（最多 80 字）。',
+    description:
+      '永久称号、店招静光主题、8 种匾额样式、橱窗品牌封面（气质+落款）、谈判气泡皮肤；与月卡可叠加，月卡流光与「赞助」铭牌仍仅月卡享有。',
   },
 ];
 
@@ -90,8 +101,31 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
   const [payerNote, setPayerNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [taglineDraft, setTaglineDraft] = useState(player.showcase_tagline || '');
+  const [sealLineDraft, setSealLineDraft] = useState(player.showcase_seal_line || '');
   const [emblemDraft, setEmblemDraft] = useState(player.shop_emblem || 'plaque');
+  const [plaqueTitleDraft, setPlaqueTitleDraft] = useState(player.plaque_title || 'heritage');
+  const [signStyleDraft, setSignStyleDraft] = useState(player.shop_sign_style || 'classic');
+  const [moodDraft, setMoodDraft] = useState(player.showcase_mood || 'plain');
+  const [chatAccentDraft, setChatAccentDraft] = useState(player.chat_accent || 'default');
   const isAdmin = Boolean(player.is_shop_admin);
+
+  useEffect(() => {
+    setTaglineDraft(player.showcase_tagline || '');
+    setSealLineDraft(player.showcase_seal_line || '');
+    setEmblemDraft(player.shop_emblem || 'plaque');
+    setPlaqueTitleDraft(player.plaque_title || 'heritage');
+    setSignStyleDraft(player.shop_sign_style || 'classic');
+    setMoodDraft(player.showcase_mood || 'plain');
+    setChatAccentDraft(player.chat_accent || 'default');
+  }, [
+    player.showcase_tagline,
+    player.showcase_seal_line,
+    player.shop_emblem,
+    player.plaque_title,
+    player.shop_sign_style,
+    player.showcase_mood,
+    player.chat_accent,
+  ]);
 
   const refresh = useCallback(async () => {
     const tasks: Promise<void>[] = [
@@ -191,9 +225,14 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
       const data = await apiPatch<{ player: ShopPlayer }>('/api/profile/cosmetics', {
         shop_emblem: emblemDraft,
         showcase_tagline: taglineDraft,
+        showcase_seal_line: sealLineDraft,
+        plaque_title: plaqueTitleDraft,
+        shop_sign_style: signStyleDraft,
+        showcase_mood: moodDraft,
+        chat_accent: chatAccentDraft,
       });
       onPlayerUpdate(data.player);
-      onSuccess('匾额与橱窗文案已保存。');
+      onSuccess('匾额装扮已保存。');
     } catch (err) {
       onError(err instanceof Error ? err.message : '保存失败。');
     } finally {
@@ -243,8 +282,9 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
                 ) : null}
                 <span className="text-[#E0E0E0] font-semibold">{sponsor.shop_name}</span>
                 {sponsor.is_sponsor ? <span className="sponsor-plate ml-1.5">月卡</span> : null}
-                {!sponsor.is_sponsor && sponsor.has_plaque ? (
-                  <span className="text-[10px] text-[#616161] ml-1.5">匾额</span>
+                {sponsor.has_plaque ? <span className="plaque-plate ml-1.5">匾额</span> : null}
+                {sponsor.plaque_title_label ? (
+                  <span className="text-[10px] text-[#9E9E9E] ml-1.5">{sponsor.plaque_title_label}</span>
                 ) : null}
               </li>
             ))}
@@ -296,7 +336,11 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
           </span>
         </span>
         <span className="text-xs text-[#616161] w-full sm:w-auto">
-          <SponsorSubtitle rankingBadge={player.ranking_badge} sponsorTitle={cosmetics.sponsor_title} />
+          <SponsorSubtitle
+            rankingBadge={player.ranking_badge}
+            sponsorTitle={cosmetics.sponsor_title}
+            plaqueTitle={cosmetics.plaque_title_label}
+          />
         </span>
       </div>
 
@@ -368,20 +412,74 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
       )}
 
       {cosmetics.has_plaque && (
-        <section className="border-b border-[#2A2D34] pb-5 space-y-3">
-          <h3 className="text-[#C8A97E] font-bold text-sm font-sans">匾额设置</h3>
-          <div className="flex gap-3 font-sans text-sm">
-            {(['plaque', 'seal', 'lantern'] as const).map((key) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setEmblemDraft(key)}
-                className={`px-3 py-1.5 border ${emblemDraft === key ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
-              >
-                {key === 'plaque' ? '匾' : key === 'seal' ? '印' : '灯'}
-              </button>
-            ))}
+        <section className="border-b border-[#2A2D34] pb-5 space-y-4">
+          <h3 className="text-[#C8A97E] font-bold text-sm font-sans">匾额装扮</h3>
+          <p className="text-xs text-[#616161] font-sans">月卡有效时顶栏仍显示流光店招；以下为永久装扮，可随时调整。</p>
+
+          <div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-2">永久称号</p>
+            <div className="flex flex-wrap gap-2 font-sans text-sm">
+              {PLAQUE_TITLE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setPlaqueTitleDraft(opt.id)}
+                  className={`px-3 py-1.5 border ${plaqueTitleDraft === opt.id ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-2">店招静光（无月卡时顶栏生效）</p>
+            <div className="flex flex-wrap gap-2 font-sans text-sm">
+              {SIGN_STYLE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSignStyleDraft(opt.id)}
+                  className={`px-3 py-1.5 border ${signStyleDraft === opt.id ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-2">匾额样式</p>
+            <div className="flex flex-wrap gap-2 font-sans text-sm">
+              {EMBLEM_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setEmblemDraft(opt.id)}
+                  className={`px-3 py-1.5 border min-w-[2.5rem] ${emblemDraft === opt.id ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-2">橱窗气质</p>
+            <div className="flex flex-wrap gap-2 font-sans text-sm">
+              {SHOWCASE_MOOD_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setMoodDraft(opt.id)}
+                  className={`px-3 py-1.5 border ${moodDraft === opt.id ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <textarea
             className="w-full min-h-[88px] bg-[rgba(255,255,255,0.05)] rounded px-3 py-2.5 text-[#E0E0E0] placeholder-[#616161] border-0 focus:bg-[rgba(255,255,255,0.08)] focus:outline-none focus:ring-1 focus:ring-[#C8A97E]/40 font-serif text-sm"
             maxLength={80}
@@ -389,8 +487,32 @@ export function ShopTab({ player, apiGet, apiPost, apiPatch, onPlayerUpdate, onS
             value={taglineDraft}
             onChange={(e) => setTaglineDraft(e.target.value)}
           />
+          <input
+            className="w-full bg-[rgba(255,255,255,0.05)] rounded px-3 py-2.5 text-[#E0E0E0] placeholder-[#616161] border-0 focus:bg-[rgba(255,255,255,0.08)] focus:outline-none focus:ring-1 focus:ring-[#C8A97E]/40 font-serif text-sm"
+            maxLength={16}
+            placeholder="落款（最多 16 字，如「童叟无欺」）"
+            value={sealLineDraft}
+            onChange={(e) => setSealLineDraft(e.target.value)}
+          />
+
+          <div>
+            <p className="text-xs text-[#9E9E9E] font-sans mb-2">谈判气泡皮肤</p>
+            <div className="flex flex-wrap gap-2 font-sans text-sm">
+              {CHAT_ACCENT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setChatAccentDraft(opt.id)}
+                  className={`px-3 py-1.5 border ${chatAccentDraft === opt.id ? 'border-[#C8A97E] text-[#C8A97E] bg-[rgba(200,169,126,0.1)]' : 'border-[#2A2D34] text-[#9E9E9E]'}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button type="button" disabled={loading} onClick={savePlaqueProfile} className="btn-secondary !h-9">
-            保存
+            保存装扮
           </button>
         </section>
       )}

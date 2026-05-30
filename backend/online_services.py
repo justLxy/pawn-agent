@@ -374,7 +374,9 @@ def get_player_showcase(viewer_id: int, owner_id: int) -> Dict[str, Any]:
         owner = conn.execute(
             """
             SELECT id, shop_name, last_seen, reputation, ranking_badge,
-                   monthly_expires_at, shop_emblem, showcase_tagline, is_system_player
+                   monthly_expires_at, shop_emblem, showcase_tagline,
+                   plaque_title, shop_sign_style, showcase_mood, showcase_seal_line, chat_accent,
+                   is_system_player
             FROM players WHERE id = ?
             """,
             (owner_id,),
@@ -948,6 +950,7 @@ def get_hot_showcases(limit: int = 20) -> List[Dict[str, Any]]:
                    COUNT(*) AS total_likes,
                    p.shop_name, p.last_seen, p.ranking_badge,
                    p.monthly_expires_at, p.shop_emblem, p.showcase_tagline,
+                   p.plaque_title, p.shop_sign_style, p.showcase_mood, p.showcase_seal_line, p.chat_accent,
                    p.is_system_player, gs.state_json
             FROM showcase_likes sl
             JOIN players p ON p.id = sl.owner_id
@@ -1161,6 +1164,7 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
             """
             SELECT p.id, p.username, p.shop_name, p.last_seen, p.ranking_badge,
                    p.monthly_expires_at, p.shop_emblem, p.showcase_tagline,
+                   p.plaque_title, p.shop_sign_style, p.showcase_mood, p.showcase_seal_line, p.chat_accent,
                    p.is_system_player, gs.state_json
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """

@@ -607,10 +607,63 @@ h1, h2, h3, h4, h5, h6, .font-sans, button, input, .ui-text {
   border-radius: 2px;
 }
 
+.shop-sign--plaque-classic {
+  color: #c8a97e;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.shop-sign--plaque-carved {
+  color: #a68b5b;
+  letter-spacing: 0.1em;
+  text-decoration: underline;
+  text-decoration-color: rgba(200, 169, 126, 0.45);
+  text-underline-offset: 0.35em;
+  text-decoration-thickness: 1px;
+}
+
+.shop-sign--plaque-gilded {
+  color: #d4b88a;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 12px rgba(200, 169, 126, 0.35), 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
 .showcase-cover {
   border-left: 3px solid #C8A97E;
   padding-left: 1rem;
   background: rgba(200, 169, 126, 0.06);
+}
+
+.showcase-cover--letter {
+  border-left-width: 2px;
+  border-left-style: dashed;
+  background: rgba(255, 255, 255, 0.03);
+  padding-top: 1.25rem;
+  padding-bottom: 1.25rem;
+}
+
+.showcase-cover--couplet {
+  border-left: 4px double #C8A97E;
+  background: linear-gradient(90deg, rgba(200, 169, 126, 0.08) 0%, transparent 72%);
+}
+
+.showcase-cover--couplet p:first-child {
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+
+.plaque-plate {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.35rem;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: 'Inter', system-ui, sans-serif;
+  letter-spacing: 0.05em;
+  color: #d4b88a;
+  background: rgba(200, 169, 126, 0.15);
+  border: 1px solid rgba(200, 169, 126, 0.35);
+  border-radius: 2px;
 }
 
 .shop-appeal-box {
