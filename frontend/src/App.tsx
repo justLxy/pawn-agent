@@ -8,6 +8,8 @@ import {
   CheckCircle,
   Clock,
   Crown,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Gem,
   GraduationCap,
@@ -39,6 +41,7 @@ import {
 import { ShopNameLine, ShowcaseCover, SponsorSubtitle, type PlayerCosmetics } from './cosmetics';
 import { ShopTab } from './shopTab';
 import { TutorialHelpButton, TutorialPanel, isTutorialSeen } from './tutorial';
+import { useMobileViewport } from './useMobileViewport';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 const TOKEN_KEY = 'pawnshop-agent-token-v1';
@@ -629,6 +632,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const { keyboardOpen } = useMobileViewport();
   const tutorialAutoOpenedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const negotiateAbortRef = useRef<AbortController | null>(null);
@@ -1352,10 +1356,10 @@ export default function App() {
   const displayedCount = state.inventory.filter((item) => item.status === 'displayed').length;
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0D0F12] text-[#E0E0E0] overflow-hidden">
+    <div className={`h-screen h-[100dvh] w-screen flex flex-col bg-[#0D0F12] text-[#E0E0E0] overflow-hidden ${keyboardOpen ? 'keyboard-open' : ''}`}>
       <Notifications errorMsg={errorMsg} successMsg={successMsg} setErrorMsg={setErrorMsg} setSuccessMsg={setSuccessMsg} />
 
-      <header className="h-[64px] shrink-0 bg-[#0D0F12]/80 backdrop-blur-[20px] border-b border-[#2A2D34] flex items-center justify-between px-4 md:px-6 z-40">
+      <header className="h-[52px] md:h-[64px] shrink-0 bg-[#0D0F12]/80 backdrop-blur-[20px] border-b border-[#2A2D34] flex items-center justify-between px-3 md:px-6 z-40">
         <div className="flex items-center gap-3 min-w-0">
           <Store className="w-6 h-6 text-[#C8A97E] shrink-0" />
           <div className="min-w-0">
@@ -1395,7 +1399,7 @@ export default function App() {
         </div>
       </header>
 
-      <MobileStatusBar state={state} displayedCount={displayedCount} hasActiveCustomer={Boolean(activeCustomer)} />
+      <MobileStatusBar state={state} displayedCount={displayedCount} hasActiveCustomer={Boolean(activeCustomer)} hidden={keyboardOpen} />
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="hidden md:flex w-[64px] xl:w-[240px] shrink-0 bg-[#14171C] border-r border-[#2A2D34] flex-col py-6 overflow-y-auto custom-scrollbar z-30 transition-all duration-300">
@@ -1412,7 +1416,13 @@ export default function App() {
           <NavButton tab="shop" activeTab={activeTab} setActiveTab={setActiveTab} icon={<Gem className="w-5 h-5" />} label="赞助支持" />
         </aside>
 
-        <main className="flex-1 bg-[#0D0F12] p-4 pb-28 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col">
+        <main className={`flex-1 bg-[#0D0F12] p-3 md:p-8 overflow-y-auto custom-scrollbar relative flex flex-col min-h-0 ${
+          activeTab === 'lobby' && activeCustomer
+            ? activeCustomer.session_closed
+              ? 'max-lg:pb-[calc(8.5rem+var(--mobile-nav-h))] lg:pb-8'
+              : 'max-lg:pb-[calc(var(--mobile-lobby-dock-h)+var(--mobile-nav-h))] lg:pb-8'
+            : 'pb-[calc(var(--mobile-nav-h)+env(safe-area-inset-bottom))] md:pb-8'
+        }`}>
           {activeTab === 'lobby' && (
             <LobbyTab
               state={state}
@@ -1526,7 +1536,7 @@ export default function App() {
         </aside>
       </div>
       {mobileInfoOpen && <MobileInfoDrawer state={state} onClose={() => setMobileInfoOpen(false)} />}
-      <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      {!keyboardOpen && <MobileNav activeTab={activeTab} setActiveTab={setActiveTab} />}
 
       {player && (
         <TutorialPanel
@@ -1723,13 +1733,13 @@ function MobileNav({ activeTab, setActiveTab }: { activeTab: ActiveTab; setActiv
     { tab: 'shop', label: '赞助', icon: <Gem className="w-5 h-5" /> }
   ];
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#14171C]/95 backdrop-blur border-t border-[#2A2D34] px-2 pt-2 pb-[calc(8px+env(safe-area-inset-bottom))]">
-      <div className="flex gap-2 overflow-x-auto custom-scrollbar">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#14171C]/95 backdrop-blur border-t border-[#2A2D34] px-1.5 pt-1.5 pb-[calc(6px+env(safe-area-inset-bottom))]">
+      <div className="flex gap-1 overflow-x-auto custom-scrollbar">
         {items.map((item) => (
           <button
             key={item.tab}
             onClick={() => setActiveTab(item.tab)}
-            className={`min-w-[72px] h-[58px] flex flex-col items-center justify-center gap-1 border-b font-sans text-xs transition-colors ${activeTab === item.tab ? 'text-[#C8A97E] border-[#C8A97E] bg-[rgba(200,169,126,0.08)]' : 'text-[#9E9E9E] border-transparent'}`}
+            className={`min-w-[64px] h-[52px] flex flex-col items-center justify-center gap-0.5 border-b font-sans text-[11px] transition-colors touch-manipulation ${activeTab === item.tab ? 'text-[#C8A97E] border-[#C8A97E] bg-[rgba(200,169,126,0.08)]' : 'text-[#9E9E9E] border-transparent'}`}
           >
             {item.icon}
             <span>{item.label}</span>
@@ -1746,30 +1756,21 @@ function getTradeMode(customer: Customer) {
     : { label: '向顾客出售', tone: '顾客想从你的库存买走这件物品，报价越高利润越大。', priceLabel: '对方出价', itemSource: '店内库存出货' };
 }
 
-function MobileStatusBar({ state, displayedCount, hasActiveCustomer }: { state: GameState; displayedCount: number; hasActiveCustomer: boolean }) {
+function MobileStatusBar({ state, displayedCount, hasActiveCustomer, hidden }: { state: GameState; displayedCount: number; hasActiveCustomer: boolean; hidden?: boolean }) {
+  if (hidden) return null;
   const served = state.customers_seen_today ?? state.customers_served_today + (hasActiveCustomer ? 1 : 0);
-  const pills = [
-    { label: '天数', value: `第 ${state.day} 天`, accent: false },
-    { label: '现金', value: `$${state.cash.toLocaleString()}`, accent: true },
-    { label: '声誉', value: String(state.reputation), accent: false },
-    { label: '经济', value: `${(state.economy_index || 1).toFixed(2)}x`, accent: false },
-    { label: '客流', value: `${served}/${state.total_customers_today}`, accent: false },
-    { label: '展示', value: `${displayedCount}/${state.display_capacity}`, accent: false },
-  ];
   return (
     <div className="md:hidden shrink-0 border-b border-[#2A2D34] bg-[#14171C]/95 backdrop-blur-[12px] z-30">
-      <div className="px-3 py-2 overflow-x-auto custom-scrollbar">
-        <div className="flex gap-2 min-w-max font-sans">
-          {pills.map((pill) => (
-            <div
-              key={pill.label}
-              className={`px-3 py-1.5 border rounded-sm shrink-0 ${pill.accent ? 'border-[#C8A97E]/50 bg-[rgba(200,169,126,0.12)]' : 'border-[#2A2D34] bg-[rgba(255,255,255,0.03)]'}`}
-            >
-              <div className="text-[10px] tracking-[0.12em] text-[#616161]">{pill.label}</div>
-              <div className={`text-xs font-semibold mt-0.5 ${pill.accent ? 'text-[#C8A97E]' : 'text-[#E0E0E0]'}`}>{pill.value}</div>
-            </div>
-          ))}
-        </div>
+      <div className="px-3 py-1.5 font-sans text-[11px] text-[#9E9E9E] truncate">
+        <span className="text-[#C8A97E] font-semibold">第 {state.day} 天</span>
+        <span className="mx-1.5 text-[#2A2D34]">·</span>
+        <span className="text-[#C8A97E] font-semibold">${state.cash.toLocaleString()}</span>
+        <span className="mx-1.5 text-[#2A2D34]">·</span>
+        <span>声誉 {state.reputation}</span>
+        <span className="mx-1.5 text-[#2A2D34]">·</span>
+        <span>客流 {served}/{state.total_customers_today}</span>
+        <span className="mx-1.5 text-[#2A2D34]">·</span>
+        <span>展示 {displayedCount}/{state.display_capacity}</span>
       </div>
     </div>
   );
@@ -1795,6 +1796,7 @@ function MobileBriefCell({
 }
 
 function MobileNegotiationBrief({ customer }: { customer: Customer }) {
+  const [expanded, setExpanded] = useState(false);
   const tradeMode = getTradeMode(customer);
   const item = customer.item;
   const condition = CONDITION_MAP[item.condition] || item.condition;
@@ -1805,43 +1807,131 @@ function MobileNegotiationBrief({ customer }: { customer: Customer }) {
     ? `${appraisal}${item.appraisal_confidence !== null ? `/${item.appraisal_confidence}%` : ''}`
     : null;
   return (
-    <div className="md:hidden sticky top-0 z-20 -mx-4 mb-3 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] shadow-[0_8px_20px_rgba(0,0,0,0.32)]">
-      <div className="px-3 py-2 border-b border-[#2A2D34]/70 flex items-start justify-between gap-2">
+    <div className="lg:hidden shrink-0 -mx-3 mb-2 border-y border-[#2A2D34] bg-[#0D0F12]/97 backdrop-blur-[16px] z-20">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-3 py-2 flex items-start justify-between gap-2 text-left touch-manipulation"
+        aria-expanded={expanded}
+      >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className="text-[#C8A97E] text-[10px] font-bold tracking-[0.12em] shrink-0">{tradeMode.label}</span>
-            <span className="text-[9px] text-[#616161] shrink-0">{tradeMode.itemSource}</span>
+            <span className="text-[9px] text-[#616161] truncate">{item.rarity_cn} · {condition}</span>
           </div>
-          <h3 className="text-[13px] font-bold text-[#E0E0E0] leading-snug">{item.name}</h3>
+          <h3 className="text-[13px] font-bold text-[#E0E0E0] leading-snug truncate">{item.name}</h3>
         </div>
-        <div className="text-right shrink-0 pl-1">
-          <div className="text-[9px] text-[#616161]">{tradeMode.priceLabel}</div>
-          <div className="text-[#C8A97E] text-[17px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="text-right">
+            <div className="text-[9px] text-[#616161]">{tradeMode.priceLabel}</div>
+            <div className="text-[#C8A97E] text-[16px] font-bold leading-tight">${customer.current_offer.toLocaleString()}</div>
+          </div>
+          {expanded ? <ChevronUp className="w-4 h-4 text-[#616161] mt-1" /> : <ChevronDown className="w-4 h-4 text-[#616161] mt-1" />}
         </div>
-      </div>
-      <div className="px-3 py-1.5 grid grid-cols-2 gap-x-2.5 gap-y-1 text-[10px] font-sans">
-        <MobileBriefCell label="顾客" value={customerLine} />
-        <MobileBriefCell label="稀有" value={item.rarity_cn} valueClassName={RARITY_COLOR[item.rarity] || 'text-[#9E9E9E]'} />
-        <MobileBriefCell label="成色" value={condition} valueClassName="text-[#C8A97E]" />
-        <MobileBriefCell label="年代" value={item.era} />
-        <MobileBriefCell label="市价" value={`$${item.market_value.toLocaleString()}`} />
-        {range ? <MobileBriefCell label="鉴定" value={range} /> : <div />}
-        {appraisalLine ? (
-          <MobileBriefCell label="结论" value={appraisalLine} valueClassName="text-[#E0E0E0]" span={range ? 1 : 2} />
-        ) : (
-          <div />
-        )}
-        {customer.transaction_prefs?.[0] && (
-          <MobileBriefCell label="偏好" value={customer.transaction_prefs[0]} span={2} />
-        )}
-        {customer.persuasion_points?.[0] && (
-          <MobileBriefCell label="突破" value={customer.persuasion_points[0]} valueClassName="text-[#C8A97E]/90" span={2} />
-        )}
-        {item.authentication_tips?.[0] && <MobileBriefCell label="鉴别" value={item.authentication_tips[0]} span={2} />}
-        {customer.last_deal_summary && (
-          <MobileBriefCell label="往来" value={customer.last_deal_summary} valueClassName="text-[#616161]" span={2} />
-        )}
-      </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 pt-0 grid grid-cols-2 gap-x-2.5 gap-y-1 text-[10px] font-sans border-t border-[#2A2D34]/70">
+          <MobileBriefCell label="顾客" value={customerLine} span={2} />
+          <MobileBriefCell label="年代" value={item.era} />
+          {range ? <MobileBriefCell label="鉴定" value={range} span={2} /> : null}
+          {appraisalLine ? (
+            <MobileBriefCell label="结论" value={appraisalLine} valueClassName="text-[#E0E0E0]" span={2} />
+          ) : null}
+          {customer.transaction_prefs?.[0] && (
+            <MobileBriefCell label="偏好" value={customer.transaction_prefs[0]} span={2} />
+          )}
+          {customer.persuasion_points?.[0] && (
+            <MobileBriefCell label="突破" value={customer.persuasion_points[0]} valueClassName="text-[#C8A97E]/90" span={2} />
+          )}
+          {item.authentication_tips?.[0] && <MobileBriefCell label="鉴别" value={item.authentication_tips[0]} span={2} />}
+          {customer.last_deal_summary && (
+            <MobileBriefCell label="往来" value={customer.last_deal_summary} valueClassName="text-[#616161]" span={2} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileCaseFilePanel({
+  canCaseInvestigate,
+  caseActions,
+  casePointsLeft,
+  caseState,
+  caseUsed,
+  hasAppraiser,
+  investigating,
+  onInvestigate,
+}: {
+  caseState: NonNullable<Customer['case_state']>;
+  casePointsLeft: number;
+  caseUsed: string[];
+  caseActions: NonNullable<GameState['case_investigation_actions']>;
+  canCaseInvestigate: (action: string) => boolean;
+  hasAppraiser: boolean;
+  investigating: boolean;
+  onInvestigate: (action: string) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const clueCount = caseState.clues.length;
+  return (
+    <div className="lg:hidden shrink-0 -mx-3 mb-2 border-y border-[#2A2D34] bg-[#14171C]/80">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left touch-manipulation font-sans"
+        aria-expanded={expanded}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Search className="w-3.5 h-3.5 text-[#C8A97E] shrink-0" />
+          <span className="text-[#C8A97E] text-xs font-semibold tracking-wide shrink-0">案件簿</span>
+          <span className="text-[10px] text-[#616161] truncate">
+            调查点 {casePointsLeft}/{caseState.points_max}
+            {clueCount > 0 ? ` · ${clueCount} 条线索` : ''}
+            {caseState.flags.knows_fake_risk ? ' · 真伪疑点' : ''}
+          </span>
+        </div>
+        {expanded ? <ChevronUp className="w-4 h-4 text-[#616161] shrink-0" /> : <ChevronDown className="w-4 h-4 text-[#616161] shrink-0" />}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2 border-t border-[#2A2D34]/70 animate-slide-up">
+          {clueCount > 0 ? (
+            <ul className="space-y-0 mb-2 max-h-[28vh] overflow-y-auto custom-scrollbar">
+              {caseState.clues.map((clue) => (
+                <li key={clue.id} className="py-2 border-b border-[#2A2D34] last:border-b-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="text-[#C8A97E] text-xs font-semibold">{clue.title}</span>
+                    <span className="text-[#616161] text-[10px]">{caseClueTypeLabel(clue.type)} · {Math.round(clue.reliability * 100)}%</span>
+                  </div>
+                  <p className="text-[#9E9E9E] text-[10px] leading-relaxed mt-0.5">{clue.detail}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[#616161] text-[10px] mb-2 py-1">尚未取得线索。可先套话、查档；专业鉴定用下方「鉴定」按钮。</p>
+          )}
+          <div className="mobile-lobby-dock__actions pb-0.5">
+            {CASE_ACTION_ORDER.map((action) => {
+              const meta = caseActions[action];
+              if (!meta) return null;
+              const disabled = !canCaseInvestigate(action);
+              const used = caseUsed.includes(action);
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onInvestigate(action)}
+                  className={`btn-secondary !h-8 !px-2.5 !text-xs shrink-0 touch-manipulation ${used ? 'opacity-40' : ''}`}
+                  title={meta.requires_staff === 'appraiser' && !hasAppraiser ? '需雇佣鉴定师' : undefined}
+                >
+                  {investigating ? '…' : used ? `已${meta.name_cn}` : meta.name_cn}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2053,6 +2143,12 @@ function caseClueTypeLabel(type: string) {
 
 function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking, dayTransition, loading, message, onAction, onInvestigate, onDismissCustomer, onNegotiate, onScreenshotError, onScreenshotSuccess, setAppraisalMethod, setMessage, state }: { state: GameState; loading: boolean; customerThinking: boolean; dayTransition: 'end_day' | 'next_day' | null; investigating: boolean; appraisalMethod: string; message: string; setMessage: (value: string) => void; setAppraisalMethod: (value: string) => void; onNegotiate: (event: React.FormEvent) => void; onInvestigate: (action: string) => Promise<void>; onDismissCustomer: () => Promise<void>; onScreenshotSuccess: (message: string) => void; onScreenshotError: (message: string) => void; chatEndRef: React.RefObject<HTMLDivElement | null>; onAction: (path: string, body: unknown, resultKey: string, fallback: string, sound?: 'deal' | 'cash' | 'reject' | 'appraise' | 'click' | 'upgrade') => Promise<void> }) {
   const customer = state.active_customer;
+  const negotiateInputRef = useRef<HTMLInputElement>(null);
+  const scrollChatToEnd = () => {
+    requestAnimationFrame(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+  };
   useEffect(() => {
     if (customer?.session_closed) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -2233,9 +2329,9 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
     return true;
   };
   return (
-    <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col">
+    <div className="max-w-3xl mx-auto w-full flex-1 flex flex-col min-h-0">
       <MobileNegotiationBrief customer={customer} />
-      <div className="mb-10 border-b border-[#2A2D34] pb-4 pt-2 md:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 hidden md:block">
+      <div className="mb-10 border-b border-[#2A2D34] pb-4 pt-2 lg:-mt-8 sticky top-0 bg-[#0D0F12]/95 backdrop-blur z-10 hidden lg:block">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 font-sans">
           <div>
             <div className="flex items-center gap-3 mb-1">
@@ -2256,56 +2352,69 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
         </div>
       </div>
       {!sessionClosed && caseState && (
-        <div className="mb-5 border-l-2 border-[#C8A97E] pl-4 pr-1 animate-slide-up">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3 font-sans">
-            <div className="flex items-center gap-2">
-              <Search className="w-4 h-4 text-[#C8A97E]" />
-              <span className="text-[#C8A97E] text-sm tracking-[0.2em]">案件簿</span>
+        <>
+          <MobileCaseFilePanel
+            caseState={caseState}
+            casePointsLeft={casePointsLeft}
+            caseUsed={caseUsed}
+            caseActions={caseActions || {}}
+            canCaseInvestigate={canCaseInvestigate}
+            hasAppraiser={Boolean(state.staff.appraiser)}
+            investigating={investigating}
+            onInvestigate={onInvestigate}
+          />
+          <div className="mb-3 border-l-2 border-[#C8A97E] pl-3 pr-1 animate-slide-up hidden lg:block">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2 font-sans">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Search className="w-3.5 h-3.5 text-[#C8A97E]" />
+                <span className="text-[#C8A97E] text-xs font-semibold tracking-[0.15em]">案件簿</span>
+              </div>
+              <span className="text-[11px] text-[#616161] shrink-0">
+                调查点 {casePointsLeft}/{caseState.points_max}
+                {caseState.flags.knows_fake_risk && <span className="text-[#FF9800] ml-1.5">真伪疑点</span>}
+                {caseState.flags.graceful_reject && <span className="text-[#4CAF50] ml-1.5">可无损拒收</span>}
+              </span>
+              {caseState.clues.length === 0 && (
+                <span className="text-[11px] text-[#616161] min-w-0">尚无线索 · 套话/查档，或下方「鉴定」</span>
+              )}
+              <div className="flex flex-wrap gap-1 ml-auto">
+                {CASE_ACTION_ORDER.map((action) => {
+                  const meta = caseActions[action];
+                  if (!meta) return null;
+                  const disabled = !canCaseInvestigate(action);
+                  const used = caseUsed.includes(action);
+                  return (
+                    <button
+                      key={action}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => onInvestigate(action)}
+                      className={`btn-secondary !h-7 !px-2 !text-[11px] ${used ? 'opacity-40' : ''}`}
+                      title={meta.requires_staff === 'appraiser' && !state.staff.appraiser ? '需雇佣鉴定师' : undefined}
+                    >
+                      {investigating ? '…' : used ? `已${meta.name_cn}` : meta.name_cn}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <span className="text-xs text-[#616161]">
-              调查点 {casePointsLeft}/{caseState.points_max}
-              {caseState.flags.knows_fake_risk && <span className="text-[#FF9800] ml-2">已掌握真伪疑点</span>}
-              {caseState.flags.graceful_reject && <span className="text-[#4CAF50] ml-2">可无损拒收</span>}
-            </span>
+            {caseState.clues.length > 0 && (
+              <ul className="mt-2 max-h-[88px] overflow-y-auto custom-scrollbar space-y-0 border-t border-[#2A2D34]/60 pt-1.5">
+                {caseState.clues.map((clue) => (
+                  <li key={clue.id} className="py-1.5 border-b border-[#2A2D34]/50 last:border-b-0">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="text-[#C8A97E] text-xs font-semibold">{clue.title}</span>
+                      <span className="text-[#616161] text-[10px]">{caseClueTypeLabel(clue.type)} · {Math.round(clue.reliability * 100)}%</span>
+                    </div>
+                    <p className="text-[#9E9E9E] text-[11px] leading-snug mt-0.5 line-clamp-2">{clue.detail}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          {caseState.clues.length > 0 ? (
-            <ul className="space-y-0 mb-3">
-              {caseState.clues.map((clue) => (
-                <li key={clue.id} className="py-2.5 border-b border-[#2A2D34] last:border-b-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-[#C8A97E] text-sm font-semibold">{clue.title}</span>
-                    <span className="text-[#616161] text-xs">{caseClueTypeLabel(clue.type)} · 可信度 {Math.round(clue.reliability * 100)}%</span>
-                  </div>
-                  <p className="text-[#9E9E9E] text-xs leading-relaxed mt-1">{clue.detail}</p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[#616161] text-xs mb-3">尚未取得线索。可先套话、查档；专业鉴定用下方方法选择后点「鉴定」（同样消耗 1 调查点）。</p>
-          )}
-          <div className="flex flex-wrap gap-1.5">
-            {CASE_ACTION_ORDER.map((action) => {
-              const meta = caseActions[action];
-              if (!meta) return null;
-              const disabled = !canCaseInvestigate(action);
-              const used = caseUsed.includes(action);
-              return (
-                <button
-                  key={action}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onInvestigate(action)}
-                  className={`btn-secondary !h-8 !px-2.5 !text-xs touch-manipulation ${used ? 'opacity-40' : ''}`}
-                  title={meta.requires_staff === 'appraiser' && !state.staff.appraiser ? '需雇佣鉴定师' : undefined}
-                >
-                  {investigating ? '…' : used ? `已${meta.name_cn}` : meta.name_cn}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        </>
       )}
-      <div className="flex items-center justify-between gap-3 mb-3 shrink-0 font-sans">
+      <div className="hidden lg:flex items-center justify-between gap-3 mb-2 shrink-0 font-sans">
         <span className="text-xs text-[#616161] tracking-wide">柜台对话 · 可生成分享图</span>
         <ChatScreenshotButton
           state={state}
@@ -2314,7 +2423,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
           onError={onScreenshotError}
         />
       </div>
-      <div className="flex-1 overflow-y-auto custom-scrollbar pr-3 space-y-5 pb-6">
+      <div className="flex-1 min-h-[45vh] lg:min-h-0 overflow-y-auto custom-scrollbar pr-1 lg:pr-3 space-y-4 lg:space-y-5 pb-2">
         {customer.dialogue_history.map((turn, idx) => (
           turn.role === 'narrator' ? (
             <Chat key={idx} narrator>{turn.content}</Chat>
@@ -2327,7 +2436,7 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
         {customerThinking && <CustomerThinkingBubble customer={customer} />}
         <div ref={chatEndRef} />
       </div>
-      <div className="border-t border-[#2A2D34] pt-3 shrink-0">
+      <div className="border-t border-[#2A2D34] pt-3 shrink-0 hidden lg:block">
         {sessionClosed ? (
           <div className="animate-slide-up">
             <div className={`mb-4 px-4 py-4 border-l-2 ${sessionClosed === 'deal' ? 'border-[#4CAF50] bg-[rgba(76,175,80,0.08)]' : 'border-[#FF9800] bg-[rgba(255,152,0,0.08)]'}`}>
@@ -2352,85 +2461,39 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
           </div>
         ) : (
           <>
-        <div className="md:hidden space-y-2">
-          <div className="grid grid-cols-3 gap-1.5">
-            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">试探价</button>
-            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">当前价</button>
-            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-9 !px-1 !text-xs touch-manipulation">强势报价</button>
-          </div>
-          <form onSubmit={onNegotiate} className="flex gap-1.5">
-            <input
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              className="input-field flex-1 min-w-0 !h-10 !py-2"
-              style={{ paddingLeft: 12 }}
-              placeholder="用自然语言谈判..."
-            />
-            <button type="submit" disabled={loading} className="btn-primary !h-10 !px-4 shrink-0 touch-manipulation">谈判</button>
-          </form>
-          <div className="flex gap-1.5 items-stretch">
-            <select
-              value={appraisalMethod}
-              onChange={(event) => setAppraisalMethod(event.target.value)}
-              className="input-field !h-10 !px-2 !text-xs w-[5.5rem] shrink-0 touch-manipulation"
-            >
-              {Object.entries(state.appraisal_methods).map(([key, info]) => {
-                const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
-                return (
-                  <option key={key} value={key}>
-                    {info.name_cn.replace(/鉴定$/, '')} {formatAppraisalPercent(preview.fakeDetectionRate)}
-                  </option>
-                );
-              })}
-            </select>
-            <button
-              type="button"
-              onClick={() => onInvestigate('appraise')}
-              disabled={!canCaseInvestigate('appraise')}
-              title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
-              className="btn-secondary !h-10 !px-3 !text-sm shrink-0 touch-manipulation"
-            >
-              {investigating ? '…' : caseUsed.includes('appraise') ? '已鉴' : '鉴定'}
-            </button>
-            <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">成交</button>
-            <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-10 flex-1 min-w-0 !text-sm touch-manipulation">拒绝</button>
-          </div>
+        <div className="flex gap-2 mb-3">
+          <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button>
+          <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button>
+          <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button>
         </div>
-        <div className="hidden md:block">
-          <div className="flex gap-2 mb-3">
-            <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-8 !px-3 !text-xs">试探价</button>
-            <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-8 !px-3 !text-xs">当前价</button>
-            <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-8 !px-3 !text-xs">强势报价</button>
-          </div>
-          <form onSubmit={onNegotiate} className="flex gap-3">
-            <input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." />
-            <button type="submit" disabled={loading} className="btn-primary">谈判</button>
-          </form>
-          <div className="flex flex-row gap-2 mt-3">
-            <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 w-[180px]">
-              {Object.entries(state.appraisal_methods).map(([key, info]) => {
-                const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
-                return (
-                  <option key={key} value={key}>
-                    {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
-                  </option>
-                );
-              })}
-            </select>
-            <button
-              type="button"
-              onClick={() => onInvestigate('appraise')}
-              disabled={!canCaseInvestigate('appraise')}
-              title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
-              className="btn-secondary flex-1 !h-10"
-            >
-              {investigating ? '调查中...' : caseUsed.includes('appraise') ? '已鉴定' : '鉴定'}
-            </button>
-            <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
-            <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
-          </div>
+        <form onSubmit={onNegotiate} className="flex gap-3">
+          <input value={message} onChange={(event) => setMessage(event.target.value)} className="input-field flex-1" style={{ paddingLeft: 16 }} placeholder="用自然语言谈判..." />
+          <button type="submit" disabled={loading} className="btn-primary">谈判</button>
+        </form>
+        <div className="flex flex-row gap-2 mt-3">
+          <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 w-[180px]">
+            {Object.entries(state.appraisal_methods).map(([key, info]) => {
+              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+              return (
+                <option key={key} value={key}>
+                  {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
+                </option>
+              );
+            })}
+          </select>
+          <button
+            type="button"
+            onClick={() => onInvestigate('appraise')}
+            disabled={!canCaseInvestigate('appraise')}
+            title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
+            className="btn-secondary flex-1 !h-10"
+          >
+            {investigating ? '调查中...' : caseUsed.includes('appraise') ? '已鉴定' : '鉴定'}
+          </button>
+          <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary flex-1 !h-10">成交</button>
+          <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary flex-1 !h-10">拒绝</button>
         </div>
-        <p className="mt-2 text-[10px] md:text-xs text-[#616161] font-sans leading-snug line-clamp-2 md:line-clamp-none md:leading-relaxed">
+        <p className="mt-2 text-xs text-[#616161] font-sans leading-relaxed">
           {selectedAppraisal.name_cn}：预计 ${appraisalPreview.cost.toLocaleString()}；
           赝品识破率 {formatAppraisalPercent(appraisalPreview.fakeDetectionRate)}（若为赝品时判定为假）；
           估值误差 ±{formatAppraisalPercent(appraisalPreview.valueErrorMargin)}。
@@ -2439,6 +2502,78 @@ function LobbyTab({ appraisalMethod, investigating, chatEndRef, customerThinking
           </>
         )}
       </div>
+
+      {/* Mobile: fixed input dock — stays above bottom nav / keyboard */}
+      {!sessionClosed && (
+        <div className="mobile-lobby-dock lg:hidden">
+          <div className="max-w-3xl mx-auto">
+            <form onSubmit={onNegotiate} className="flex gap-1.5 mb-2">
+              <input
+                ref={negotiateInputRef}
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                onFocus={scrollChatToEnd}
+                className="input-field flex-1 min-w-0 !h-11 !py-2 !text-base"
+                style={{ paddingLeft: 12 }}
+                placeholder="用自然语言谈判..."
+                enterKeyHint="send"
+                autoComplete="off"
+                autoCorrect="on"
+              />
+              <button type="submit" disabled={loading} className="btn-primary !h-11 !px-4 shrink-0 touch-manipulation">发送</button>
+            </form>
+            <div className="mobile-lobby-dock__actions">
+              <button type="button" onClick={() => quickOffer(0.5)} className="btn-secondary !h-9 !px-2.5 !text-xs shrink-0 touch-manipulation">试探价</button>
+              <button type="button" onClick={() => quickOffer(1)} className="btn-secondary !h-9 !px-2.5 !text-xs shrink-0 touch-manipulation">当前价</button>
+              <button type="button" onClick={() => quickOffer(2)} className="btn-secondary !h-9 !px-2.5 !text-xs shrink-0 touch-manipulation">强势报价</button>
+              <select
+                value={appraisalMethod}
+                onChange={(event) => setAppraisalMethod(event.target.value)}
+                className="input-field !h-9 !px-2 !text-xs w-[5.25rem] shrink-0 touch-manipulation"
+              >
+                {Object.entries(state.appraisal_methods).map(([key, info]) => {
+                  const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+                  return (
+                    <option key={key} value={key}>
+                      {info.name_cn.replace(/鉴定$/, '')} {formatAppraisalPercent(preview.fakeDetectionRate)}
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                type="button"
+                onClick={() => onInvestigate('appraise')}
+                disabled={!canCaseInvestigate('appraise')}
+                title={casePointsLeft < 1 ? '调查点已用尽' : '消耗 1 调查点并完成鉴定'}
+                className="btn-secondary !h-9 !px-3 !text-xs shrink-0 touch-manipulation"
+              >
+                {investigating ? '…' : caseUsed.includes('appraise') ? '已鉴' : '鉴定'}
+              </button>
+              <button type="button" onClick={() => onAction('/api/deal', undefined, 'deal_result', '成交。', 'deal')} className="btn-secondary !h-9 !px-3 !text-xs shrink-0 touch-manipulation">成交</button>
+              <button type="button" onClick={() => onAction('/api/reject', undefined, 'result', '已拒绝。', 'reject')} className="btn-secondary !h-9 !px-3 !text-xs shrink-0 touch-manipulation">拒绝</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sessionClosed && (
+        <div className="lg:hidden mobile-lobby-dismiss">
+          <div className="max-w-3xl mx-auto animate-slide-up">
+            <div className={`mb-3 px-3 py-3 border-l-2 ${sessionClosed === 'deal' ? 'border-[#4CAF50] bg-[rgba(76,175,80,0.08)]' : 'border-[#FF9800] bg-[rgba(255,152,0,0.08)]'}`}>
+              <div className={`font-bold mb-1 text-sm ${sessionClosed === 'deal' ? 'text-[#4CAF50]' : 'text-[#FF9800]'}`}>
+                {sessionClosed === 'deal' ? '交易已落定' : '顾客告辞离去'}
+              </div>
+              <p className="text-xs text-[#9E9E9E] leading-relaxed">{customer.deal_summary || (sessionClosed === 'deal' ? '这笔买卖已经办妥。' : '对方没有继续谈下去。')}</p>
+            </div>
+            <div className="mb-2 flex justify-end">
+              <ChatScreenshotButton state={state} customer={customer} onSuccess={onScreenshotSuccess} onError={onScreenshotError} prominent />
+            </div>
+            <button onClick={onDismissCustomer} disabled={loading} className="btn-primary w-full !h-11 touch-manipulation">
+              {loading ? <><RefreshCw className="w-5 h-5 mr-2 animate-spin" />请稍候…</> : '送离顾客，迎接下一位'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
