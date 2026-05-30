@@ -202,7 +202,7 @@ const SECTIONS: TutorialSection[] = [
       <>
         <Term title="你可以说什么">
           支持自由输入：报价（「我出 5000」）、说服、追问来历、接受成交、拒绝。阿拉伯数字与「三千五」等中文数字均可识别。
-          能否成交、新报价、耐心变化，全凭顾客心性与你的谈价火候；谈判、魅力技能会暗中助你一臂。
+          能否成交、新报价、耐心变化，全凭顾客心性与你的谈价火候；<strong className="font-sans">谈判、魅力</strong>等级越高，越容易谈拢且不易把耐心聊崩（详见「技能·设施·员工」一章）。
         </Term>
         <Term title="耐心">
           每位顾客有耐心条（约 5～7 起）。报价太离谱会扣耐心；聊得好可能回升。耐心 ≤ 0 时顾客直接离场（walk_out），本单失败，有时声誉 -1。
@@ -328,14 +328,83 @@ const SECTIONS: TutorialSection[] = [
     id: 'upgrades',
     title: '技能·设施·员工',
     icon: <Crown className="w-4 h-4" />,
-    tagline: '宣传员、店面与其它投资',
+    tagline: '五项技能详解，以及设施与员工',
     body: (
       <>
         <div className="grid gap-0 font-sans text-sm">
-          <Term title="五项技能（1～10 级）">
-            谈判（价区间与成交）、鉴定（识破与误差）、修复（费用与成功率）、魅力（耐心与回头客概率）、商业（运营成本与系统出售价）。
-            通过日常经营攒经验升级。
+          <Term title="技能怎么升级（右侧五条进度条）">
+            <p>
+              五项技能各自独立，最高 <strong className="text-[#E0E0E0]">Lv.10</strong>。右侧金色进度条 = 当前等级经验；做对应操作会加经验，攒满升一级。
+              升级门槛随等级升高（越往后越慢），部分成就与随机事件也会一次性奖励大量经验。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              技能与<strong className="text-[#E0E0E0]">设施、员工</strong>叠加：例如鉴定 = 鉴定技能 + 鉴定室 + 鉴定师；不要只堆技能不升设施。
+            </p>
           </Term>
+          <Term title="谈判">
+            <p>
+              <strong className="text-[#E0E0E0]">作用</strong>：让顾客更愿意接受你接近底线的报价，还价时让步幅度更大；AI 谈判时会参考你的谈判等级。
+            </p>
+            <p className="mt-2">
+              <strong className="text-[#E0E0E0]">机制</strong>：每级约扩大 <strong className="font-sans">1.5%</strong> 的「可成交区间」（收购时更容易以较低价成交，出售时更容易以较高价成交）。
+              与<strong className="font-sans">魅力</strong>一起计算（魅力每级再 +1% 左右），满级谈判约 +15%，谈判 6 级 + 魅力 4 级时合计约 +13%。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              <strong className="text-[#E0E0E0]">怎么涨</strong>：大堂与顾客讨价还价（每轮主要来源）、谈成成交、随机事件选项。多谈价、多成交升得最快。
+            </p>
+          </Term>
+          <Term title="鉴定">
+            <p>
+              <strong className="text-[#E0E0E0]">作用</strong>：提高识破赝品的概率，缩小鉴定给出的估值区间（少被行情区间误导）。
+            </p>
+            <p className="mt-2">
+              <strong className="text-[#E0E0E0]">机制</strong>：等级越高，鉴定「准确度」越高、估值误差带越窄。赝品是否被识破仍有一定随机性，但高等级 + 深度鉴定 + 鉴定室 + 鉴定师会明显更稳。
+              费用主要受鉴定室与鉴定师影响，技能本身不直接减钱，而是让你<strong className="font-sans">少花冤枉钱在假货上</strong>。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              <strong className="text-[#E0E0E0]">怎么涨</strong>：大堂鉴定当前顾客的货、仓库对已入库物品做鉴定（每件只能鉴定一次）、案件调查相关操作、随机事件。
+              目测初鉴经验较少，标准 / 深度鉴定给得更多。
+            </p>
+          </Term>
+          <Term title="修复">
+            <p>
+              <strong className="text-[#E0E0E0]">作用</strong>：降低送修费用，提高修复完工时的成功率；失败时真值会受损，高修复技能能减少翻车。
+            </p>
+            <p className="mt-2">
+              <strong className="text-[#E0E0E0]">机制</strong>：每级约减 <strong className="font-sans">3%</strong> 修理费，并提高成功率（与修复工坊、修复师、所选方案「保守 / 标准 / 高阶」叠加）。
+              只有成色为较差（Poor）、良好（Good）的货能修，完好（Mint）不可再修；成功会升一级成色，市值与真值往往跳涨。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              <strong className="text-[#E0E0E0]">怎么涨</strong>：在仓库发起修复、修复日终推进并最终完工（完工时经验较多）。前期 Lv.1～2 时仍偏贵、偏险，适合修有潜力的 Poor 货。
+            </p>
+          </Term>
+          <Term title="魅力">
+            <p>
+              <strong className="text-[#E0E0E0]">作用</strong>：改善顾客初始耐心，谈判时少因闲聊掉耐心；略提高熟客、回头客相关概率；与谈判一起扩大可成交区间。
+            </p>
+            <p className="mt-2">
+              <strong className="text-[#E0E0E0]">机制</strong>：新顾客进门时耐心 <strong className="font-sans">+（魅力等级 ÷ 2，向下取整）</strong>（Lv.1 无加成，Lv.2 起 +1，Lv.6 约 +3，上限仍受系统封顶）。
+              <strong className="font-sans">Lv.4 起</strong>：只聊天、追问来历、说服而不报价时，对方耐心有机会回升而不是只掉。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              <strong className="text-[#E0E0E0]">怎么涨</strong>：谈判里用说服 / 提问类发言、接待顾客、部分随机事件（如招待名人）。常硬压价不聊天时魅力升得慢。
+            </p>
+          </Term>
+          <Term title="商业">
+            <p>
+              <strong className="text-[#E0E0E0]">作用</strong>：降低每日运营成本与库存持有成本，提高「系统出售」渠道的成交价。
+            </p>
+            <p className="mt-2">
+              <strong className="text-[#E0E0E0]">机制</strong>：每级约减 <strong className="font-sans">2.5%</strong> 日终「运营成本」（租金水电等，上限约减 25%）；库存持有费同样可减（上限约减 20%）。
+              在仓库点系统出售时，售价系数 <strong className="font-sans">+ 等级 × 约 2.5%</strong>，与展示柜、稀有度加成叠加。
+            </p>
+            <p className="mt-2 text-[#9E9E9E]">
+              <strong className="text-[#E0E0E0]">怎么涨</strong>：系统出售库存、谈成成交等。现金流紧、囤货多时商业很实用；前期可先靠几笔交易，有闲钱再刻意刷出售涨商业。
+            </p>
+          </Term>
+          <Tip>
+            前期建议：卖家上门先鉴定再压价（抬鉴定 + 谈判）；现金流紧优先商业或鉴定室；想博溢价再投修复与展示。五项技能没有「废技能」，只是见效场景不同。
+          </Tip>
           <Term title="店面（设施）">
             提高每日客流与高稀有度物品出现率；与当铺等级一起决定顶栏「客流」上限。在「当铺升级」页与其它设施一并升级。
           </Term>
