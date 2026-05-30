@@ -7,11 +7,14 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from game_state import GameStateManager, Item
 from past_self_service import (
+    PAST_SELF_BASE_CHANCE,
+    PAST_SELF_FIRST_MEET_CHANCE,
     PAST_SELF_MIN_DAY,
     PAST_SELF_MIN_QUOTES,
     build_past_self_customer,
     inject_past_self_customer_sync,
     past_self_style_prompt_block,
+    past_self_trigger_chance,
     quote_bank_eligible,
     record_player_quote,
     sample_past_self_quotes,
@@ -45,6 +48,15 @@ def test_record_player_quote_dedupes():
     record_player_quote(state, "这价还能再谈谈吗", "persuade", "seller")
     record_player_quote(state, "这价还能再谈谈吗", "persuade", "seller")
     assert len(state.player_quote_bank) == 1
+
+
+def test_first_meet_uses_higher_chance():
+    state = _state_with_bank()
+    assert past_self_trigger_chance(state) == PAST_SELF_FIRST_MEET_CHANCE
+    state.past_self_meta["total_triggers"] = 1
+    chance = past_self_trigger_chance(state)
+    assert chance == PAST_SELF_BASE_CHANCE + min(0.02, int(state.shop_level) * 0.003)
+    assert chance < PAST_SELF_FIRST_MEET_CHANCE
 
 
 def test_should_spawn_requires_bank_and_day():
@@ -125,6 +137,7 @@ def test_past_self_easter_hidden_before_meeting():
 if __name__ == "__main__":
     test_quote_bank_eligible()
     test_record_player_quote_dedupes()
+    test_first_meet_uses_higher_chance()
     test_should_spawn_requires_bank_and_day()
     test_build_past_self_uses_username()
     test_inject_replaces_queue_slot()

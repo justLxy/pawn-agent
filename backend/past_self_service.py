@@ -16,6 +16,7 @@ PAST_SELF_MIN_QUOTES = 8
 PAST_SELF_MIN_DAY = 5
 PAST_SELF_COOLDOWN_DAYS = 6
 PAST_SELF_BASE_CHANCE = 0.04
+PAST_SELF_FIRST_MEET_CHANCE = 0.28
 PAST_SELF_MAX_FRAGMENTS = 16
 
 QUOTE_KEYWORDS = (
@@ -72,6 +73,9 @@ def sample_past_self_quotes(state: "GameStateManager", count: Optional[int] = No
 
 
 def past_self_trigger_chance(state: "GameStateManager") -> float:
+    meta = getattr(state, "past_self_meta", None) or default_past_self_meta()
+    if int(meta.get("total_triggers", 0)) == 0:
+        return PAST_SELF_FIRST_MEET_CHANCE
     return PAST_SELF_BASE_CHANCE + min(0.02, int(state.shop_level) * 0.003)
 
 
