@@ -174,6 +174,20 @@ def init_db() -> None:
                 ON shop_orders(player_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_shop_orders_status
                 ON shop_orders(status, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS analytics_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_id INTEGER NOT NULL,
+                event_name TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY(player_id) REFERENCES players(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_analytics_player_created
+                ON analytics_events(player_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_analytics_event_created
+                ON analytics_events(event_name, created_at DESC);
             """
         )
         _migrate_shop_schema(conn)

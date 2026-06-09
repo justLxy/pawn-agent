@@ -1,7 +1,7 @@
 import json
 import time
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -21,6 +21,14 @@ GUESTBOOK_COOLDOWN_SECONDS = 10 * 60
 HOT_SHOWCASE_WINDOW_SECONDS = 7 * 24 * 60 * 60
 
 
+def record_analytics_event(player_id: int, event_name: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO analytics_events (player_id, event_name, payload_json, created_at) VALUES (?, ?, ?, ?)",
+            (player_id, event_name[:64], json.dumps(payload or {}, ensure_ascii=False), int(time.time())),
+        )
+
+
 def create_initial_state(shop_name: str) -> GameStateManager:
     state = GameStateManager()
     state.shop_name = shop_name
@@ -37,8 +45,19 @@ def load_state(player_id: int) -> GameStateManager:
 
 def save_state(player_id: int, state: GameStateManager) -> None:
     now = int(time.time())
-    payload = json.dumps(state.to_dict(for_client=False), ensure_ascii=False)
-    with get_connection() as conn:
+    with transaction() as conn:
+        current = conn.execute(
+            "SELECT state_json FROM game_saves WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+        if current:
+            stored_version = int(json.loads(current["state_json"]).get("state_version", 0))
+            if int(state.state_version) not in (0, stored_version):
+                raise HTTPException(status_code=409, detail="存档已被另一项操作更新，请刷新后重试。")
+            if int(state.state_version) == 0:
+                state.state_version = stored_version
+        state.state_version = int(state.state_version) + 1
+        payload = json.dumps(state.to_dict(for_client=False), ensure_ascii=False)
         conn.execute(
             """
             INSERT INTO game_saves (player_id, state_json, updated_at)
@@ -51,6 +70,11 @@ def save_state(player_id: int, state: GameStateManager) -> None:
             "UPDATE players SET reputation = ?, ranking_badge = ?, reward_bonus = ?, last_seen = ? WHERE id = ?",
             (state.reputation, state.ranking_badge, state.ranking_reward_bonus, now, player_id),
         )
+
+
+def _state_payload_for_transaction(state: GameStateManager) -> str:
+    state.state_version = int(state.state_version) + 1
+    return json.dumps(state.to_dict(for_client=False), ensure_ascii=False)
 
 
 def bootstrap_new_player_state(player_id: int, shop_name: str) -> GameStateManager:
@@ -80,14 +104,6 @@ async def ensure_player_state(player: Dict[str, Any], ai_client: Any) -> GameSta
     else:
         state = await bootstrap_new_player_state_async(player["id"], player["shop_name"], ai_client)
     state.owner_username = str(player.get("username") or state.owner_username or "").strip()
-    return state
-
-
-def import_state(player_id: int, state_dict: Dict[str, Any], shop_name: Optional[str] = None) -> GameStateManager:
-    state = GameStateManager.from_dict(state_dict)
-    if shop_name:
-        state.shop_name = shop_name
-    save_state(player_id, state)
     return state
 
 
@@ -196,7 +212,7 @@ def _rollback_buyer_trades(conn: Any, buyer_id: int, old_state: GameStateManager
     for seller_id, seller in sellers.items():
         conn.execute(
             "UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?",
-            (json.dumps(seller.to_dict(), ensure_ascii=False), now, seller_id),
+            (_state_payload_for_transaction(seller), now, seller_id),
         )
         conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (seller.reputation, seller_id))
 
@@ -218,13 +234,14 @@ def reset_player_data(player_id: int, shop_name: str, state: Optional[GameStateM
         conn.execute("DELETE FROM showcase_guestbook WHERE owner_id = ? OR author_id = ?", (player_id, player_id))
         conn.execute("DELETE FROM trade_logs WHERE buyer_id = ? OR seller_id = ?", (player_id, player_id))
         conn.execute("DELETE FROM leaderboard_snapshots WHERE player_id = ?", (player_id,))
+        conn.execute("DELETE FROM analytics_events WHERE player_id = ?", (player_id,))
         conn.execute(
             """
             INSERT INTO game_saves (player_id, state_json, updated_at)
             VALUES (?, ?, ?)
             ON CONFLICT(player_id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at
             """,
-            (player_id, json.dumps(state.to_dict(), ensure_ascii=False), now),
+            (player_id, _state_payload_for_transaction(state), now),
         )
         conn.execute(
             "UPDATE players SET reputation = ?, ranking_badge = NULL, reward_bonus = 0, last_seen = ? WHERE id = ?",
@@ -299,7 +316,7 @@ def list_item(player_id: int, item_id: str, price: int) -> Dict[str, Any]:
             VALUES (?, ?, ?)
             ON CONFLICT(player_id) DO UPDATE SET state_json = excluded.state_json, updated_at = excluded.updated_at
             """,
-            (player_id, json.dumps(state.to_dict(), ensure_ascii=False), now),
+            (player_id, _state_payload_for_transaction(state), now),
         )
     return {"success": True, "message": f"【{item.name}】已挂售，标价 ${price}。", "listing_id": listing_id}
 
@@ -322,7 +339,7 @@ def unlist_item(player_id: int, listing_id: str) -> Dict[str, Any]:
         now = int(time.time())
         _cancel_listing_offers(conn, listing_id, now)
         conn.execute("UPDATE market_listings SET status = 'cancelled', updated_at = ? WHERE id = ?", (now, listing_id))
-        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(state.to_dict(), ensure_ascii=False), now, player_id))
+        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (_state_payload_for_transaction(state), now, player_id))
     return {"success": True, "message": f"【{row['item_name']}】已下架并回到仓库。"}
 
 
@@ -344,7 +361,7 @@ def update_listing_price(player_id: int, listing_id: str, price: int) -> Dict[st
 
 
 def _public_item(item: Item) -> Dict[str, Any]:
-    return item.to_dict()
+    return item.to_dict(for_player_view=True, public_context="market")
 
 
 def set_showcase_price(player_id: int, item_id: str, price: Optional[int]) -> Dict[str, Any]:
@@ -469,8 +486,8 @@ def buy_showcase_item(buyer_id: int, owner_id: int, item_id: str) -> Dict[str, A
             "INSERT INTO trade_logs (buyer_id, seller_id, listing_id, item_name, price, tax, trade_type, created_at) VALUES (?, ?, ?, ?, ?, ?, 'showcase_sale', ?)",
             (buyer_id, owner_id, f"showcase:{item_id}", item.name, price, tax, now),
         )
-        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(buyer.to_dict(), ensure_ascii=False), now, buyer_id))
-        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(owner.to_dict(), ensure_ascii=False), now, owner_id))
+        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (_state_payload_for_transaction(buyer), now, buyer_id))
+        conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (_state_payload_for_transaction(owner), now, owner_id))
         conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (buyer.reputation, buyer_id))
         conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (owner.reputation, owner_id))
     return {"success": True, "message": f"你从对方橱窗买下了【{item.name}】，支付 ${price}。", "tax": tax}
@@ -569,8 +586,8 @@ def _execute_market_sale(
         "INSERT INTO trade_logs (buyer_id, seller_id, listing_id, item_name, price, tax, trade_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (buyer_id, seller_id, listing_id, item.name, price, tax, trade_type, now),
     )
-    conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(buyer.to_dict(), ensure_ascii=False), now, buyer_id))
-    conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (json.dumps(seller.to_dict(), ensure_ascii=False), now, seller_id))
+    conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (_state_payload_for_transaction(buyer), now, buyer_id))
+    conn.execute("UPDATE game_saves SET state_json = ?, updated_at = ? WHERE player_id = ?", (_state_payload_for_transaction(seller), now, seller_id))
     conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (buyer.reputation, buyer_id))
     conn.execute("UPDATE players SET reputation = ? WHERE id = ?", (seller.reputation, seller_id))
     return tax
@@ -604,7 +621,8 @@ def buy_listing(buyer_id: int, listing_id: str) -> Dict[str, Any]:
 
 
 def _offer_to_dict(row: Any) -> Dict[str, Any]:
-    listing = json.loads(row["item_json"]) if isinstance(row["item_json"], str) else row["item_json"]
+    raw_item = json.loads(row["item_json"]) if isinstance(row["item_json"], str) else row["item_json"]
+    listing = _public_item(Item.from_dict(raw_item))
     return {
         "id": row["offer_id"],
         "listing_id": row["listing_id"],
@@ -1006,7 +1024,7 @@ def _guestbook_entries(conn: Any, owner_id: int, limit: int = 30) -> List[Dict[s
 
 
 def _listing_to_dict(row: Any) -> Dict[str, Any]:
-    item = json.loads(row["item_json"])
+    item = _public_item(Item.from_dict(json.loads(row["item_json"])))
     return {
         "id": row["id"],
         "seller_id": row["seller_id"],
@@ -1125,8 +1143,11 @@ def _ensure_daily_rewards() -> None:
     today = date.today().isoformat()
     now = int(time.time())
     with get_connection() as conn:
-        exists = conn.execute("SELECT 1 FROM leaderboard_snapshots WHERE snapshot_date = ? LIMIT 1", (today,)).fetchone()
-        if exists:
+        existing_boards = conn.execute(
+            "SELECT COUNT(DISTINCT board_type) AS count FROM leaderboard_snapshots WHERE snapshot_date = ?",
+            (today,),
+        ).fetchone()
+        if existing_boards and int(existing_boards["count"]) >= 4:
             return
         saves = conn.execute(
             """
@@ -1137,16 +1158,26 @@ def _ensure_daily_rewards() -> None:
         rows: List[tuple[int, str, int]] = []
         for save in saves:
             state = GameStateManager.from_dict(json.loads(save["state_json"]))
-            rows.append((save["player_id"], "assets", _scores_for_state(state)["assets"]))
-        rows.sort(key=lambda item: item[2], reverse=True)
-        for rank, (player_id, board_type, score) in enumerate(rows[:100], start=1):
-            conn.execute(
-                "INSERT OR IGNORE INTO leaderboard_snapshots (snapshot_date, board_type, player_id, rank, score, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (today, board_type, player_id, rank, score, now),
+            for score_type, score in _scores_for_state(state).items():
+                rows.append((save["player_id"], score_type, score))
+        for score_type in ("assets", "reputation", "profit", "collection"):
+            board_rows = sorted(
+                [row for row in rows if row[1] == score_type],
+                key=lambda item: item[2],
+                reverse=True,
             )
-            badge = "全服第一当铺" if rank == 1 else None
-            bonus = max(1, 101 - rank)
-            conn.execute("UPDATE players SET ranking_badge = COALESCE(?, ranking_badge), reward_bonus = ? WHERE id = ?", (badge, bonus, player_id))
+            for rank, (player_id, board_type, score) in enumerate(board_rows[:100], start=1):
+                conn.execute(
+                    "INSERT OR IGNORE INTO leaderboard_snapshots (snapshot_date, board_type, player_id, rank, score, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (today, board_type, player_id, rank, score, now),
+                )
+                if board_type == "assets":
+                    badge = "全服第一当铺" if rank == 1 else None
+                    bonus = max(1, 101 - rank)
+                    conn.execute(
+                        "UPDATE players SET ranking_badge = COALESCE(?, ranking_badge), reward_bonus = ? WHERE id = ?",
+                        (badge, bonus, player_id),
+                    )
 
 
 def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
@@ -1159,6 +1190,11 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     except Exception:
         pass
     _ensure_daily_rewards()
+    today = date.today()
+    year_start = date(today.year, 1, 1)
+    season_index = (today - year_start).days // 28
+    season_start = year_start + timedelta(days=season_index * 28)
+    season_end = season_start + timedelta(days=27)
     with get_connection() as conn:
         rows = conn.execute(
             """
@@ -1169,6 +1205,23 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
             FROM game_saves gs JOIN players p ON p.id = gs.player_id
             """
         ).fetchall()
+        baseline_rows = conn.execute(
+            """
+            SELECT snapshots.player_id, snapshots.score
+            FROM leaderboard_snapshots snapshots
+            JOIN (
+                SELECT player_id, MIN(snapshot_date) AS first_date
+                FROM leaderboard_snapshots
+                WHERE board_type = ? AND snapshot_date >= ?
+                GROUP BY player_id
+            ) baselines
+              ON baselines.player_id = snapshots.player_id
+             AND baselines.first_date = snapshots.snapshot_date
+            WHERE snapshots.board_type = ?
+            """,
+            (board_type, season_start.isoformat(), board_type),
+        ).fetchall()
+    baselines = {int(row["player_id"]): int(row["score"]) for row in baseline_rows}
     now = int(time.time())
     ranking = []
     for row in rows:
@@ -1180,7 +1233,7 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
             "shop_name": state.shop_name or row["shop_name"],
             "online": player_is_online(row["last_seen"], now),
             "badge": row["ranking_badge"],
-            "score": scores[board_type],
+            "score": max(0, scores[board_type] - baselines.get(int(row["id"]), scores[board_type])),
             "assets": scores["assets"],
             "reputation": state.reputation,
             "profit": state.total_profit,
@@ -1192,4 +1245,15 @@ def get_leaderboard(board_type: str, player_id: int) -> Dict[str, Any]:
     for index, item in enumerate(ranking, start=1):
         item["rank"] = index
     my_rank = next((item for item in ranking if item["player_id"] == player_id), None)
-    return {"type": board_type, "entries": ranking[:100], "my_rank": my_rank, "updated_at": int(time.time())}
+    return {
+        "type": board_type,
+        "entries": ranking[:100],
+        "my_rank": my_rank,
+        "updated_at": int(time.time()),
+        "season": {
+            "id": f"{today.year}-S{season_index + 1}",
+            "start_date": season_start.isoformat(),
+            "end_date": season_end.isoformat(),
+            "days_remaining": max(1, (season_end - today).days + 1),
+        },
+    }

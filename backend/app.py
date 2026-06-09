@@ -15,7 +15,7 @@ from env_loader import load_env_file
 load_env_file()
 
 from ai_client import AIClient
-from auth import _public_player, count_online_players, current_player, delete_player_account, login_player, logout_player, recover_usernames_by_password, register_player
+from auth import _public_player, count_online_players, current_player, delete_player_account, login_player, logout_player, register_player
 from player_cosmetics import merge_cosmetics_into_player
 from shop_service import (
     create_manual_order,
@@ -46,9 +46,9 @@ from online_services import (
     get_my_offers,
     get_player_showcase,
     get_trade_logs,
-    import_state as import_cloud_state,
     list_item,
     post_guestbook,
+    record_analytics_event,
     reset_player_data,
     respond_offer,
     load_state,
@@ -431,10 +431,6 @@ class AuthRequest(BaseModel):
     shop_name: Optional[str] = None
 
 
-class RecoverUsernameRequest(BaseModel):
-    password: str
-
-
 class OfferRequest(BaseModel):
     message: str
     player_offer: Optional[int] = None
@@ -466,16 +462,21 @@ class FacilityRequest(BaseModel):
     facility: str
 
 
+class SpecializationRequest(BaseModel):
+    specialization: str
+
+
+class AnalyticsEventRequest(BaseModel):
+    event_name: str
+    payload: Optional[Dict[str, Any]] = None
+
+
 class AmountRequest(BaseModel):
     amount: int
 
 
 class EventChoiceRequest(BaseModel):
     choice_id: str
-
-
-class ImportStateRequest(BaseModel):
-    state: Dict[str, Any]
 
 
 class MarketListRequest(BaseModel):
@@ -672,39 +673,26 @@ async def negotiation_ai_response(
     player_offer: Optional[int],
     intent: str,
 ) -> Dict[str, Any]:
-    economy_context = {
-        "economy_index": state.economy_index,
-        "economic_pressure": state.economic_pressure,
-        "market_trend": state.market_trends.get(customer.item.category, 1.0),
-    }
-    customer_memory = {
-        "relationship_cn": customer.to_dict().get("relationship_cn"),
-        "visit_count": customer.visit_count,
-        "last_deal_summary": customer.last_deal_summary,
-    }
-    return await ai_client.generate_negotiation(
-        customer_name=customer.name,
-        trait=customer.trait,
-        trait_desc=customer.to_dict()["trait_desc"],
-        role=customer.role,
-        item_name=customer.item.name,
-        item_category=customer.item.category,
-        item_condition=customer.item.condition,
-        is_fake=customer.item.is_fake,
-        actual_value=customer.item.actual_value,
-        limit_price=customer.limit_price,
-        current_offer=customer.current_offer,
-        player_message=player_message,
-        player_offer=player_offer,
-        intent=intent,
-        patience=customer.patience,
+    from negotiation_engine import decide_negotiation
+
+    result = decide_negotiation(
+        customer,
+        player_message,
+        player_offer,
+        intent,
         negotiation_level=state.skills["negotiation"]["level"],
         charm_level=state.skills["charm"]["level"],
-        dialogue_history=customer.dialogue_history,
-        economy_context=economy_context,
-        customer_memory=customer_memory,
-        customer_context=customer.negotiation_context(),
     )
+    if ai_client.available():
+        dialogue = await ai_client.render_negotiation_decision(
+            customer.negotiation_context(),
+            player_message,
+            result,
+            customer.dialogue_history,
+        )
+        if dialogue:
+            result["dialogue"] = dialogue
+    return result
 
 
 def is_stale_negotiation_finalize(state: GameStateManager, stream_customer_id: str) -> bool:
@@ -719,6 +707,7 @@ def is_stale_negotiation_finalize(state: GameStateManager, stream_customer_id: s
 
 
 def build_stale_negotiation_payload(player: Dict[str, Any], state: GameStateManager) -> Dict[str, Any]:
+    _ = player
     return {
         "negotiation": {
             "stale": True,
@@ -731,7 +720,7 @@ def build_stale_negotiation_payload(player: Dict[str, Any], state: GameStateMana
         "deal_completed": False,
         "walk_out_completed": False,
         "stale": True,
-        "state": commit_state(player, state),
+        "state": state.to_dict(),
     }
 
 
@@ -812,6 +801,22 @@ def apply_negotiation_outcome(
         "parsed_offer": ai_response.get("parsed_offer", player_offer),
         "intent": intent,
     }
+    record_analytics_event(
+        int(player["id"]),
+        "negotiation_turn",
+        {
+            "day": state.day,
+            "customer_id": customer.customer_id,
+            "trait": customer.trait,
+            "role": customer.role,
+            "intent": intent,
+            "accepted": accepted,
+            "walk_out": walk_out,
+            "patience_change": patience_change,
+            "decision_reason": ai_response.get("decision_reason"),
+            "tactic": (ai_response.get("decision_meta") or {}).get("tactic"),
+        },
+    )
 
     if accepted:
         deal_result = state.deal()
@@ -840,23 +845,6 @@ async def register(req: AuthRequest):
     schedule_queue_refill(auth["player"], state)
     schedule_next_day_prewarm(auth["player"], state)
     return auth
-
-
-@app.post("/api/auth/recover_username")
-async def recover_username(req: RecoverUsernameRequest):
-    usernames = recover_usernames_by_password(req.password)
-    if not usernames:
-        return {
-            "usernames": [],
-            "count": 0,
-            "message": "未找到使用该密码的账号，请确认密码是否输入正确。",
-        }
-    if len(usernames) == 1:
-        message = f"找到 1 个账号：{usernames[0]}"
-    else:
-        joined = "、".join(usernames)
-        message = f"找到 {len(usernames)} 个使用该密码的账号：{joined}"
-    return {"usernames": usernames, "count": len(usernames), "message": message}
 
 
 @app.post("/api/auth/login")
@@ -988,22 +976,16 @@ async def cloud_state(player: Dict[str, Any] = Depends(current_player)):
     return state.to_dict()
 
 
-@app.post("/api/cloud/state")
-def save_cloud_state(req: ImportStateRequest, player: Dict[str, Any] = Depends(current_player)):
-    state = import_cloud_state(player["id"], req.state, player["shop_name"])
-    return state.to_dict()
-
-
-@app.post("/api/cloud/import_local")
-def import_local_state(req: ImportStateRequest, player: Dict[str, Any] = Depends(current_player)):
-    state = import_cloud_state(player["id"], req.state, player["shop_name"])
-    return state.to_dict()
-
-
-@app.post("/api/import_state")
-def import_state(req: ImportStateRequest, player: Dict[str, Any] = Depends(current_player)):
-    state = import_cloud_state(player["id"], req.state, player["shop_name"])
-    return state.to_dict()
+@app.post("/api/analytics/event")
+def analytics_event(req: AnalyticsEventRequest, player: Dict[str, Any] = Depends(current_player)):
+    allowed_events = {"session_open", "page_exit", "tab_view"}
+    if req.event_name not in allowed_events:
+        raise HTTPException(status_code=400, detail="未知埋点事件。")
+    payload = req.payload or {}
+    if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > 2048:
+        raise HTTPException(status_code=400, detail="埋点数据过大。")
+    record_analytics_event(player["id"], req.event_name, payload)
+    return {"success": True}
 
 
 @app.post("/api/restart")
@@ -1186,12 +1168,14 @@ async def appraise_item(req: Optional[AppraiseRequest] = None, player: Dict[str,
 @app.post("/api/case/investigate")
 async def investigate_case(req: CaseInvestigateRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
-    return state_response(
+    response = state_response(
         player,
         state,
         "investigation_result",
         await state.async_investigate_case(ai_client, req.action, req.method or "standard"),
     )
+    record_analytics_event(player["id"], "investigation", {"day": state.day, "action": req.action})
+    return response
 
 
 class AppraiseInventoryRequest(BaseModel):
@@ -1253,6 +1237,17 @@ async def upgrade_facility(req: FacilityRequest, player: Dict[str, Any] = Depend
     return state_response(player, state, "upgrade_result", state.upgrade_facility(req.facility))
 
 
+@app.post("/api/specialization")
+async def choose_specialization(req: SpecializationRequest, player: Dict[str, Any] = Depends(current_player)):
+    state = await get_engine(player)
+    return state_response(
+        player,
+        state,
+        "specialization_result",
+        state.choose_specialization(req.specialization),
+    )
+
+
 @app.post("/api/loan/borrow")
 async def borrow_loan(req: AmountRequest, player: Dict[str, Any] = Depends(current_player)):
     state = await get_engine(player)
@@ -1279,7 +1274,18 @@ async def end_day(player: Dict[str, Any] = Depends(current_player)):
         raise HTTPException(status_code=400, detail=summary["error"])
     if state.pending_event:
         apply_prewarmed_pending_event(int(player["id"]), state)
-    return {"summary": summary, "state": commit_state(player, state)}
+    payload = {"summary": summary, "state": commit_state(player, state)}
+    record_analytics_event(
+        player["id"],
+        "day_complete",
+        {
+            "day": state.day,
+            "net_profit": summary.get("net_profit", 0),
+            "customers_seen": state.customers_seen_today(),
+            "inventory_count": len(state.inventory),
+        },
+    )
+    return payload
 
 
 @app.post("/api/next_day")

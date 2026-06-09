@@ -241,8 +241,8 @@ const SECTIONS: TutorialSection[] = [
           赝品被识破后，顾客情绪会变，收购时可趁机压价。
         </Term>
         <Term title="市值 vs 真实价值">
-          <strong className="font-sans text-[#E0E0E0]">真实价值 actual_value</strong>：鉴定前不显示，决定货到底值多少钱。
-          <strong className="font-sans text-[#E0E0E0]">市值 market_value</strong>：会随日子波动，用于持有成本与系统出售；赝品、行情会让市值与真值偏离。
+          <strong className="font-sans text-[#E0E0E0]">真实价值</strong>：始终由服务器隐藏，决定货最终值多少钱。
+          <strong className="font-sans text-[#E0E0E0]">内部市值</strong>：会随日子波动，用于持有成本与系统出售；玩家只能看到鉴定区间和操作预览。
         </Term>
         <Tip>不鉴定就收购 = 博彩；欺诈型顾客尤其要先鉴定。</Tip>
       </>

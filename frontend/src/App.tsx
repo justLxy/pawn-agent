@@ -66,9 +66,6 @@ interface Item {
   name: string;
   category: string;
   condition: string;
-  is_fake: boolean;
-  actual_value: number;
-  market_value: number;
   appraised_value: number | null;
   appraised_value_low: number | null;
   appraised_value_high: number | null;
@@ -100,6 +97,11 @@ interface Item {
   holding_cost_paid: number;
   value_trend_note: string;
   showcase_price: number | null;
+  action_previews?: {
+    appraisal: Record<string, { cost: number; fake_detection_rate: number; value_error_margin: number }>;
+    repair: Record<string, { cost: number; days: number; success_bonus: number }>;
+    system_sell: { min_price: number; max_price: number };
+  };
 }
 
 interface CaseClue {
@@ -135,8 +137,8 @@ interface Customer {
   appearance: string;
   backstory: string;
   avatar_url: string;
-  transaction_prefs: string[];
-  persuasion_points: string[];
+  transaction_prefs?: string[];
+  persuasion_points?: string[];
   customer_id: string;
   is_returning: boolean;
   visit_count: number;
@@ -186,8 +188,8 @@ interface CustomerCodexEntry {
   appearance: string;
   backstory: string;
   avatar_url: string;
-  transaction_prefs: string[];
-  persuasion_points: string[];
+  transaction_prefs?: string[];
+  persuasion_points?: string[];
   is_returning: boolean;
   visit_count: number;
   relationship_level: string;
@@ -211,7 +213,6 @@ interface ItemCodexEntry {
   era: string;
   description: string;
   story: string;
-  market_value: number;
   appraised_value: number | null;
   appraisal_verdict: string | null;
   appraisal_confidence: number | null;
@@ -231,6 +232,7 @@ interface ItemCodexEntry {
 }
 
 interface GameState {
+  state_version: number;
   cash: number;
   day: number;
   shop_level: number;
@@ -239,6 +241,15 @@ interface GameState {
   total_profit: number;
   ranking_badge: string | null;
   ranking_reward_bonus: number;
+  specialization: string | null;
+  specialization_options: Record<string, { name_cn: string; desc: string; categories: string[] }>;
+  market_cycle: { headline?: string; hot_category?: string; cold_category?: string; next_hot_category?: string; days_remaining?: number };
+  daily_challenge: ProgressChallenge | null;
+  weekly_challenge: ProgressChallenge | null;
+  active_commission: { id: string; title: string; description: string; category: string; expires_day: number; reward_cash: number } | null;
+  completed_commissions: number;
+  collection_sets: Array<{ id: string; name: string; description: string; progress: number; target: number; reward_cash: number; completed: boolean; claimed: boolean }>;
+  theme_exhibition: { category?: string; category_cn?: string; displayed: number; target: number; active: boolean; daily_value_bonus: number };
   inventory: Item[];
   sold_items: Item[];
   transaction_log: TransactionEntry[];
@@ -298,6 +309,17 @@ interface GameState {
   skill_xp_to_next?: Record<string, number>;
 }
 
+interface ProgressChallenge {
+  id: string;
+  label: string;
+  target: number;
+  progress: number;
+  expires_day: number;
+  reward_cash: number;
+  completed: boolean;
+  claimed: boolean;
+}
+
 interface TransactionEntry {
   day: number;
   type: string;
@@ -333,6 +355,12 @@ interface LeaderboardEntry extends PlayerCosmetics {
   profit: number;
   collection: number;
   rank: number;
+}
+
+interface LeaderboardData {
+  entries: LeaderboardEntry[];
+  my_rank: LeaderboardEntry | null;
+  season: { id: string; start_date: string; end_date: string; days_remaining: number };
 }
 
 interface TradeLog {
@@ -425,7 +453,7 @@ interface OfferBundle {
 const CONDITION_MAP: Record<string, string> = { Mint: '极佳', Good: '良好', Poor: '较差' };
 const STATUS_MAP: Record<ItemStatus, string> = { stored: '仓库', repairing: '修复中', displayed: '展示中', sold: '已售出', listed: '挂售中' };
 const RARITY_COLOR: Record<string, string> = { common: 'text-[#9E9E9E]', rare: 'text-[#64B5F6]', epic: 'text-[#C8A97E]', legendary: 'text-[#FFB74D]' };
-const BOARD_LABEL: Record<BoardType, string> = { assets: '总资产', reputation: '当铺声誉', profit: '累计盈利', collection: '稀有收藏' };
+const BOARD_LABEL: Record<BoardType, string> = { assets: '资产增长', reputation: '声誉增长', profit: '盈利增长', collection: '收藏增长' };
 const CATEGORY_MAP: Record<string, string> = {
   'Pop Culture': '流行文化',
   Art: '艺术品',
@@ -433,26 +461,6 @@ const CATEGORY_MAP: Record<string, string> = {
   Antiquities: '古董文物',
   Historical: '历史藏品'
 };
-
-/** 与 backend/game_state.py appraise_active_item 保持一致 */
-function computeAppraisalPreview(
-  marketValue: number,
-  method: { cost_multiplier: number; accuracy_bonus: number; value_margin?: number },
-  appraisalSkillLevel: number,
-  appraisalRoomLevel: number,
-  hasAppraiser: boolean,
-  economyIndex = 1
-) {
-  const baseCost = Math.max(160, Math.floor(marketValue * 0.08 * economyIndex));
-  const discount = 0.08 * (appraisalRoomLevel - 1) + (hasAppraiser ? 0.35 : 0);
-  const cost = Math.max(120, Math.floor(baseCost * method.cost_multiplier * (1 - Math.min(0.58, discount))));
-  const fakeDetectionRate = Math.min(
-    0.92,
-    Math.max(0.25, 0.45 + appraisalSkillLevel * 0.035 + appraisalRoomLevel * 0.04 + (hasAppraiser ? 0.12 : 0) + method.accuracy_bonus)
-  );
-  const valueErrorMargin = Math.max(0.06, (method.value_margin ?? 0.30) - (appraisalSkillLevel - 1) * 0.015 - (appraisalRoomLevel - 1) * 0.02 - (hasAppraiser ? 0.04 : 0));
-  return { cost, fakeDetectionRate, valueErrorMargin };
-}
 
 function formatAppraisalPercent(rate: number): string {
   return `${Math.round(rate * 100)}%`;
@@ -604,7 +612,7 @@ export default function App() {
   const [inventoryAppraiseMethod, setInventoryAppraiseMethod] = useState<Record<string, string>>({});
   const [repairMethod, setRepairMethod] = useState<Record<string, string>>({});
   const [boardType, setBoardType] = useState<BoardType>('assets');
-  const [leaderboard, setLeaderboard] = useState<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardData | null>(null);
   const [showcase, setShowcase] = useState<ShowcaseData | null>(null);
   const [marketView, setMarketView] = useState<MarketView>('browse');
   const [marketSearch, setMarketSearch] = useState('');
@@ -616,13 +624,13 @@ export default function App() {
   const [hotShowcases, setHotShowcases] = useState<HotShowcaseEntry[]>([]);
   const [offerPrices, setOfferPrices] = useState<Record<string, number>>({});
   const [counterPrices, setCounterPrices] = useState<Record<string, number>>({});
-  const [authMode, setAuthMode] = useState<'login' | 'register' | 'recover'>('login');
-  const [recoveredUsernames, setRecoveredUsernames] = useState<string[]>([]);
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authForm, setAuthForm] = useState({ username: '', password: '', shop_name: '' });
   const [loading, setLoading] = useState(false);
   const [authBusy, setAuthBusy] = useState<'register' | 'login' | null>(null);
   const [sessionBooting, setSessionBooting] = useState(() => Boolean(localStorage.getItem(TOKEN_KEY)));
   const [dayTransition, setDayTransition] = useState<'end_day' | 'next_day' | null>(null);
+  const playerId = player?.id;
   const [resetting, setResetting] = useState(false);
   const [investigating, setInvestigating] = useState(false);
   const [inventoryAppraisingId, setInventoryAppraisingId] = useState<string | null>(null);
@@ -815,6 +823,38 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!playerId) return;
+    void apiPost('/api/analytics/event', {
+      event_name: 'session_open',
+      payload: {}
+    }).catch(() => {});
+  }, [playerId]);
+
+  useEffect(() => {
+    if (!playerId) return;
+    const handlePageExit = () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) return;
+      void fetch(`${API_BASE_URL}/api/analytics/event`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ event_name: 'page_exit', payload: { tab: activeTab, day: state?.day ?? null } }),
+        keepalive: true
+      });
+    };
+    window.addEventListener('pagehide', handlePageExit);
+    return () => window.removeEventListener('pagehide', handlePageExit);
+  }, [playerId, activeTab, state?.day]);
+
+  useEffect(() => {
+    if (!playerId) return;
+    void apiPost('/api/analytics/event', {
+      event_name: 'tab_view',
+      payload: { tab: activeTab, day: state?.day ?? null }
+    }).catch(() => {});
+  }, [playerId, activeTab, state?.day]);
+
+  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [state?.active_customer?.dialogue_history, customerThinking]);
 
@@ -843,7 +883,7 @@ export default function App() {
   }, [state?.achievement_unlocks]);
 
   const loadLeaderboard = async () => {
-    const data = await apiGet<{ entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null }>(`/api/leaderboard?type=${boardType}`);
+    const data = await apiGet<LeaderboardData>(`/api/leaderboard?type=${boardType}`);
     setLeaderboard(data);
   };
 
@@ -926,24 +966,8 @@ export default function App() {
   const handleAuth = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
-    setRecoveredUsernames([]);
-    const busyMode = authMode === 'register' ? 'register' : authMode === 'login' ? 'login' : null;
-    if (busyMode) setAuthBusy(busyMode);
+    setAuthBusy(authMode);
     try {
-      if (authMode === 'recover') {
-        const data = await apiPost<{ usernames: string[]; count: number; message: string }>('/api/auth/recover_username', {
-          password: authForm.password
-        });
-        setRecoveredUsernames(data.usernames);
-        if (data.count > 0) {
-          setSuccessMsg(data.message);
-          setErrorMsg(null);
-        } else {
-          setSuccessMsg(null);
-          setErrorMsg(data.message);
-        }
-        return;
-      }
       const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/register';
       const isRegister = authMode === 'register';
       const data = await apiPost<{ token: string; player: Player }>(endpoint, authForm);
@@ -967,17 +991,8 @@ export default function App() {
     }
   };
 
-  const changeAuthMode = (mode: 'login' | 'register' | 'recover') => {
+  const changeAuthMode = (mode: 'login' | 'register') => {
     setAuthMode(mode);
-    if (mode !== 'recover') setRecoveredUsernames([]);
-  };
-
-  const useRecoveredUsername = (username: string) => {
-    setAuthForm({ ...authForm, username });
-    setRecoveredUsernames([]);
-    setAuthMode('login');
-    setSuccessMsg(`已填入用户名「${username}」，请输入密码登录。`);
-    setErrorMsg(null);
   };
 
   const logout = async () => {
@@ -1333,11 +1348,9 @@ export default function App() {
             authForm={authForm}
             authMode={authMode}
             loading={loading}
-            recoveredUsernames={recoveredUsernames}
             setAuthForm={setAuthForm}
             setAuthMode={changeAuthMode}
             onSubmit={handleAuth}
-            onUseRecoveredUsername={useRecoveredUsername}
             onOpenTutorial={() => setTutorialOpen(true)}
           />
         )}
@@ -1556,19 +1569,17 @@ export default function App() {
 
 function AuthScreen(props: {
   authForm: { username: string; password: string; shop_name: string };
-  authMode: 'login' | 'register' | 'recover';
+  authMode: 'login' | 'register';
   loading: boolean;
-  recoveredUsernames: string[];
   setAuthForm: (form: { username: string; password: string; shop_name: string }) => void;
-  setAuthMode: (mode: 'login' | 'register' | 'recover') => void;
+  setAuthMode: (mode: 'login' | 'register') => void;
   onSubmit: (event: React.FormEvent) => void;
-  onUseRecoveredUsername: (username: string) => void;
   onOpenTutorial: () => void;
 }) {
-  const { authForm, authMode, loading, onSubmit, recoveredUsernames, setAuthForm, setAuthMode, onUseRecoveredUsername, onOpenTutorial } = props;
+  const { authForm, authMode, loading, onSubmit, setAuthForm, setAuthMode, onOpenTutorial } = props;
   const [onlineCount, setOnlineCount] = useState<number | null>(null);
 
-  const switchMode = (mode: 'login' | 'register' | 'recover') => {
+  const switchMode = (mode: 'login' | 'register') => {
     setAuthMode(mode);
   };
 
@@ -1612,8 +1623,7 @@ function AuthScreen(props: {
         <div className="flex gap-6 md:gap-8 overflow-x-auto custom-scrollbar min-w-0">
           {([
             ['login', '登录账号'],
-            ['register', '注册当铺'],
-            ['recover', '找回账号']
+            ['register', '注册当铺']
           ] as const).map(([mode, label]) => (
             <button
               key={mode}
@@ -1634,40 +1644,7 @@ function AuthScreen(props: {
           新手教程
         </button>
       </div>
-      {authMode === 'recover' ? (
-        <form onSubmit={onSubmit} className="space-y-4">
-          <p className="text-sm text-[#9E9E9E] font-sans leading-relaxed border-l-2 border-[#C8A97E] pl-4">
-            忘记用户名了？输入你注册时设置的密码，系统会列出所有使用该密码的账号。若多人碰巧密码相同，会一并显示。
-          </p>
-          <input
-            className="input-field w-full"
-            style={{ paddingLeft: 16 }}
-            placeholder="注册时使用的密码"
-            type="password"
-            value={authForm.password}
-            onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-          />
-          <button disabled={loading} className="btn-primary w-full">
-            {loading ? '查找中…' : '查找用户名'}
-          </button>
-          {recoveredUsernames.length > 0 && (
-            <div className="border-t border-[#2A2D34] pt-4 space-y-2">
-              <p className="text-xs text-[#616161] font-sans">点击用户名可填入登录页：</p>
-              {recoveredUsernames.map((username) => (
-                <button
-                  key={username}
-                  type="button"
-                  onClick={() => onUseRecoveredUsername(username)}
-                  className="w-full text-left px-4 py-3 border-l-2 border-[#C8A97E] bg-[rgba(200,169,126,0.08)] hover:bg-[rgba(200,169,126,0.14)] transition-colors font-sans text-[#E0E0E0]"
-                >
-                  {username}
-                </button>
-              ))}
-            </div>
-          )}
-        </form>
-      ) : (
-        <form onSubmit={onSubmit} className="space-y-4">
+      <form onSubmit={onSubmit} className="space-y-4">
           <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="用户名（支持中文）" value={authForm.username} onChange={(event) => setAuthForm({ ...authForm, username: event.target.value })} />
           <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="密码" type="password" value={authForm.password} onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })} />
           {authMode === 'register' && <input className="input-field w-full" style={{ paddingLeft: 16 }} placeholder="当铺名称" value={authForm.shop_name} onChange={(event) => setAuthForm({ ...authForm, shop_name: event.target.value })} />}
@@ -1675,20 +1652,12 @@ function AuthScreen(props: {
             {loading
               ? authMode === 'register'
                 ? '正在创建当铺…'
-                : authMode === 'login'
-                  ? '正在进入…'
-                  : '查询中…'
+                : '正在进入…'
               : authMode === 'login'
                 ? '进入当铺'
                 : '挂牌开业'}
           </button>
-          {authMode === 'login' && (
-            <button type="button" onClick={() => switchMode('recover')} className="w-full text-center text-sm text-[#9E9E9E] font-sans hover:text-[#C8A97E] transition-colors">
-              忘记用户名？用密码找回
-            </button>
-          )}
-        </form>
-      )}
+      </form>
     </div>
   );
 }
@@ -2303,22 +2272,14 @@ function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, cust
     setMessage(lines[Math.floor(Math.random() * lines.length)]);
   };
   const selectedAppraisal = state.appraisal_methods[appraisalMethod] || state.appraisal_methods.standard;
-  const appraisalSkillLevel = state.skills.appraisal?.level ?? 1;
-  const appraisalRoomLevel = state.facilities.appraisal_room ?? 1;
-  const appraisalContext = {
-    marketValue: customer.item.market_value,
-    skillLevel: appraisalSkillLevel,
-    roomLevel: appraisalRoomLevel,
-    hasAppraiser: Boolean(state.staff.appraiser)
-  };
-  const appraisalPreview = computeAppraisalPreview(
-    appraisalContext.marketValue,
-    selectedAppraisal,
-    appraisalContext.skillLevel,
-    appraisalContext.roomLevel,
-    appraisalContext.hasAppraiser,
-    state.economy_index || 1
-  );
+  const serverAppraisalPreview = customer.item.action_previews?.appraisal?.[appraisalMethod];
+  const appraisalPreview = serverAppraisalPreview
+    ? {
+        cost: serverAppraisalPreview.cost,
+        fakeDetectionRate: serverAppraisalPreview.fake_detection_rate,
+        valueErrorMargin: serverAppraisalPreview.value_error_margin
+      }
+    : { cost: 0, fakeDetectionRate: 0, valueErrorMargin: 0 };
   const tradeMode = getTradeMode(customer);
   const sessionClosed = customer.session_closed;
   const caseState = customer.case_state;
@@ -2484,10 +2445,10 @@ function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, cust
         <div className="flex flex-row gap-2 mt-3">
           <select value={appraisalMethod} onChange={(event) => setAppraisalMethod(event.target.value)} className="input-field !h-10 !px-3 w-[180px]">
             {Object.entries(state.appraisal_methods).map(([key, info]) => {
-              const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+              const preview = customer.item.action_previews?.appraisal?.[key];
               return (
                 <option key={key} value={key}>
-                  {info.name_cn}（识破 {formatAppraisalPercent(preview.fakeDetectionRate)}）
+                  {info.name_cn}（识破 {formatAppraisalPercent(preview?.fake_detection_rate ?? 0)}）
                 </option>
               );
             })}
@@ -2543,10 +2504,10 @@ function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, cust
                 className="input-field !h-9 !px-2 !text-xs w-[5.25rem] shrink-0 touch-manipulation"
               >
                 {Object.entries(state.appraisal_methods).map(([key, info]) => {
-                  const preview = computeAppraisalPreview(appraisalContext.marketValue, info, appraisalContext.skillLevel, appraisalContext.roomLevel, appraisalContext.hasAppraiser, state.economy_index || 1);
+                  const preview = customer.item.action_previews?.appraisal?.[key];
                   return (
                     <option key={key} value={key}>
-                      {info.name_cn.replace(/鉴定$/, '')} {formatAppraisalPercent(preview.fakeDetectionRate)}
+                      {info.name_cn.replace(/鉴定$/, '')} {formatAppraisalPercent(preview?.fake_detection_rate ?? 0)}
                     </option>
                   );
                 })}
@@ -3037,33 +2998,23 @@ function InventoryTab({ state, listingPrice, repairMethod, inventoryAppraiseMeth
     const method = state.repair_methods[repairMethod[item.id] || 'standard'] || state.repair_methods.standard;
     const nextCondition = item.condition === 'Poor' ? 'Good' : item.condition === 'Good' ? 'Mint' : item.condition;
     const multiplier = item.condition === 'Poor' ? 1.35 : item.condition === 'Good' ? 1.55 : 1;
-    const baseCost = Math.max(60, Math.round(item.market_value * (0.08 + item.repair_difficulty * 0.015) * (state.economy_index || 1) * (1 - 0.05 * (state.facilities.restoration_workshop - 1) - 0.03 * (state.skills.restoration.level - 1))));
-    const staffCost = state.staff.restorer ? Math.round(baseCost * 0.75) : baseCost;
-    const cost = Math.max(30, Math.round(staffCost * method.cost_multiplier));
-    const days = Math.max(1, item.repair_difficulty - Math.floor(state.facilities.restoration_workshop / 2) + method.days_delta);
+    const serverPreview = item.action_previews?.repair?.[repairMethod[item.id] || 'standard'];
+    const cost = serverPreview?.cost ?? 0;
+    const days = serverPreview?.days ?? 0;
     return { cost, days, method, nextCondition, multiplier };
   };
   const systemSellPreview = (item: Item) => {
     const commerce = state.skills.commerce?.level ?? 1;
     const showcaseBonus = item.status === 'displayed' ? 0.04 * state.facilities.showcase : 0;
     const rarityBonus = { common: 0, rare: 0.06, epic: 0.12, legendary: 0.2 }[item.rarity as 'common' | 'rare' | 'epic' | 'legendary'] ?? 0;
-    const fixedBonus = commerce * 0.025 + showcaseBonus + rarityBonus;
-    const minPercent = 0.72 + fixedBonus;
-    const maxPercent = 0.92 + fixedBonus;
-    
-    let minVal = null;
-    let maxVal = null;
-    if (item.appraised_value_low !== null && item.appraised_value_high !== null) {
-      minVal = Math.max(10, Math.floor(item.appraised_value_low * minPercent));
-      maxVal = Math.max(10, Math.floor(item.appraised_value_high * maxPercent));
-    } else if (item.appraised_value !== null) {
-      minVal = Math.max(10, Math.floor(item.appraised_value * minPercent));
-      maxVal = Math.max(10, Math.floor(item.appraised_value * maxPercent));
-    }
+    const minPercent = Math.round((0.72 + commerce * 0.025 + showcaseBonus + rarityBonus) * 100);
+    const maxPercent = Math.round((0.92 + commerce * 0.025 + showcaseBonus + rarityBonus) * 100);
+    const minVal = item.action_previews?.system_sell.min_price ?? null;
+    const maxVal = item.action_previews?.system_sell.max_price ?? null;
 
     return {
-      minPercent: Math.round(minPercent * 100),
-      maxPercent: Math.round(maxPercent * 100),
+      minPercent,
+      maxPercent,
       minVal,
       maxVal,
       commerce,
@@ -3410,16 +3361,14 @@ function MarketTab(props: {
 }
 
 function leaderboardScore(entry: LeaderboardEntry, boardType: BoardType): number {
-  if (boardType === 'reputation') return entry.reputation;
-  if (boardType === 'profit') return entry.profit;
-  if (boardType === 'collection') return entry.collection;
-  return entry.assets;
+  void boardType;
+  return entry.score;
 }
 
-function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: { entries: LeaderboardEntry[]; my_rank: LeaderboardEntry | null } | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void>; openMarketHot: () => void }) {
+function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh, setBoardType }: { boardType: BoardType; setBoardType: (value: BoardType) => void; data: LeaderboardData | null; refresh: () => Promise<void>; openShowcase: (ownerId: number) => Promise<void>; openMarketHot: () => void }) {
   const scoreLabel = BOARD_LABEL[boardType];
   return (
-    <ListPage title="全服排行榜" subtitle="10 秒自动刷新；点击当铺名或「参观橱窗」可浏览他人展示柜与在售藏品。前 100 名获每日声誉与稀有刷新奖励。">
+    <ListPage title="赛季排行榜" subtitle={`${data?.season.id || '当前赛季'} · 剩余 ${data?.season.days_remaining ?? 0} 天；按赛季内增长排名，前 100 名获每日声誉与稀有刷新奖励。`}>
       <div className="py-3 border-b border-[#2A2D34] mb-2 flex justify-between items-center gap-3">
         <button type="button" onClick={openMarketHot} className="text-sm text-[#9E9E9E] hover:text-[#C8A97E] inline-flex items-center gap-2">
           查看热门橱窗榜
@@ -3459,7 +3408,7 @@ function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh,
                 </button>
                 <span className="mt-1 block text-[11px] text-[#616161] truncate">{entry.username}</span>
               </div>
-              <span className="font-sans tabular-nums">${leaderboardScore(entry, boardType).toLocaleString()}</span>
+              <span className="font-sans tabular-nums">{boardType === 'assets' || boardType === 'profit' ? '$' : ''}{leaderboardScore(entry, boardType).toLocaleString()}</span>
               <span className="text-sm text-[#9E9E9E]">声誉 {entry.reputation}</span>
               <span className={`text-sm ${entry.online ? 'text-[#4CAF50]' : 'text-[#616161]'}`}>{entry.online ? '在线' : '离线'}</span>
               <button
@@ -3478,7 +3427,7 @@ function LeaderboardTab({ boardType, data, openMarketHot, openShowcase, refresh,
         <div className="sticky bottom-0 mt-8 py-4 bg-[#0D0F12]/95 backdrop-blur border-t border-[#C8A97E] flex flex-wrap justify-between gap-3 text-[#C8A97E] font-sans">
           <span>我的排名 #{data.my_rank.rank}</span>
           <span>{data.my_rank.shop_name}<span className="block text-xs text-[#9E9E9E] font-normal">{data.my_rank.username}</span></span>
-          <span>{scoreLabel} {leaderboardScore(data.my_rank, boardType).toLocaleString()}</span>
+          <span>{scoreLabel} {boardType === 'assets' || boardType === 'profit' ? '$' : ''}{leaderboardScore(data.my_rank, boardType).toLocaleString()}</span>
         </div>
       )}
     </ListPage>
@@ -3792,6 +3741,67 @@ function ManagementTab({ loanAmount, onAction, setLoanAmount, state }: { state: 
   const operatingEstimate = Math.round((260 + state.shop_level * 90 + Object.values(state.facilities).reduce((sum, value) => sum + value, 0) * 18) * (state.economy_index || 1));
   return (
     <ListPage title="经营财务" subtitle="技能、贷款、税务和市场趋势共同影响长期竞争。">
+      <div className="py-5 border-b border-[#2A2D34]">
+        <h3 className="text-[#C8A97E] font-bold mb-2">店铺专精</h3>
+        {state.specialization ? (
+          <p className="text-sm text-[#9E9E9E]">
+            {state.specialization_options[state.specialization]?.name_cn}：{state.specialization_options[state.specialization]?.desc}
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {Object.entries(state.specialization_options).map(([key, info]) => (
+              <button
+                key={key}
+                onClick={() => onAction('/api/specialization', { specialization: key }, 'specialization_result', '专精已确定。', 'upgrade')}
+                className="text-left border border-[#2A2D34] p-3 hover:border-[#C8A97E] transition-colors"
+              >
+                <span className="block text-[#E0E0E0] font-bold text-sm">{info.name_cn}</span>
+                <span className="block text-[#616161] text-xs mt-1">{info.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="py-5 border-b border-[#2A2D34] space-y-3">
+        <div>
+          <h3 className="text-[#C8A97E] font-bold">七日行情</h3>
+          <p className="text-sm text-[#9E9E9E] mt-1">{state.market_cycle.headline}</p>
+          <p className="text-xs text-[#616161] mt-1">
+            剩余 {state.market_cycle.days_remaining ?? 0} 天，下周期预计 {categoryLabel(state.market_cycle.next_hot_category || '')} 走强。
+          </p>
+        </div>
+        {[state.daily_challenge, state.weekly_challenge].filter(Boolean).map((challenge) => challenge && (
+          <div key={challenge.id} className="border-l-2 border-[#C8A97E] pl-3 text-sm">
+            <div className="flex justify-between gap-3">
+              <span>{challenge.label}</span>
+              <span className="text-[#C8A97E]">{Math.min(challenge.progress, challenge.target)}/{challenge.target}</span>
+            </div>
+            <p className="text-xs text-[#616161] mt-1">截止第 {challenge.expires_day} 天，奖励 ${challenge.reward_cash.toLocaleString()}</p>
+          </div>
+        ))}
+        {state.active_commission && (
+          <div className="border-l-2 border-[#4CAF50] pl-3">
+            <div className="text-sm font-bold">{state.active_commission.title}</div>
+            <p className="text-xs text-[#9E9E9E] mt-1">{state.active_commission.description}</p>
+            <p className="text-xs text-[#616161] mt-1">截止第 {state.active_commission.expires_day} 天，奖励 ${state.active_commission.reward_cash.toLocaleString()}</p>
+          </div>
+        )}
+        <div className={`border-l-2 pl-3 ${state.theme_exhibition.active ? 'border-[#4CAF50]' : 'border-[#616161]'}`}>
+          <div className="text-sm font-bold">本周主题展：{state.theme_exhibition.category_cn}</div>
+          <p className="text-xs text-[#9E9E9E] mt-1">
+            展示进度 {state.theme_exhibition.displayed}/{state.theme_exhibition.target}；激活后热点藏品每日额外增值 {(state.theme_exhibition.daily_value_bonus * 100).toFixed(1)}%。
+          </p>
+        </div>
+        {state.collection_sets.map((set) => (
+          <div key={set.id} className="border-l-2 border-[#C8A97E] pl-3 text-sm">
+            <div className="flex justify-between gap-3">
+              <span>{set.name}{set.claimed ? ' · 已领奖' : ''}</span>
+              <span className="text-[#C8A97E]">{Math.min(set.progress, set.target)}/{set.target}</span>
+            </div>
+            <p className="text-xs text-[#616161] mt-1">{set.description} 奖励 ${set.reward_cash.toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-[#2A2D34] pb-5 mb-2 text-sm">
         <Stat label="经济指数" value={`${(state.economy_index || 1).toFixed(3)} · ${pressureLabel}`} />
         <Stat label="日变化" value={formatSignedPercent(state.inflation_rate || 0)} />

@@ -3,6 +3,7 @@ import hmac
 import os
 import secrets
 import time
+from collections import defaultdict, deque
 from typing import Any, Dict, Optional
 
 from fastapi import Header, HTTPException
@@ -12,6 +13,9 @@ from player_cosmetics import merge_cosmetics_into_player
 from shop_service import is_shop_admin_username
 
 ONLINE_IDLE_SECONDS = int(os.getenv("PLAYER_ONLINE_IDLE_SECONDS", "300"))
+LOGIN_RATE_WINDOW_SECONDS = int(os.getenv("LOGIN_RATE_WINDOW_SECONDS", "300"))
+LOGIN_RATE_MAX_ATTEMPTS = int(os.getenv("LOGIN_RATE_MAX_ATTEMPTS", "8"))
+_login_attempts: Dict[str, deque[int]] = defaultdict(deque)
 
 
 def player_is_online(last_seen: int, now: Optional[int] = None) -> bool:
@@ -66,8 +70,8 @@ def register_player(username: str, password: str, shop_name: str) -> Dict[str, A
     username = _normalize_username(username)
     shop_name = shop_name.strip()
     _validate_username(username)
-    if len(password) < 4:
-        raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")
+    if len(password) < 8:
+        raise HTTPException(status_code=400, detail="密码至少需要 8 个字符。")
     if not shop_name:
         raise HTTPException(status_code=400, detail="请输入当铺名称。")
 
@@ -100,22 +104,25 @@ def count_online_players(now: Optional[int] = None) -> int:
     return int(row["c"] or 0)
 
 
-def recover_usernames_by_password(password: str) -> list[str]:
-    if len(password) < 4:
-        raise HTTPException(status_code=400, detail="密码至少需要 4 个字符。")
-    matches: list[str] = []
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT username, password_hash, salt FROM players WHERE COALESCE(is_system_player, 0) = 0"
-        ).fetchall()
-    for row in rows:
-        if _verify_password(password, row["password_hash"], row["salt"]):
-            matches.append(row["username"])
-    return sorted(matches)
+def _check_login_rate_limit(username: str) -> None:
+    now = int(time.time())
+    key = _normalize_username(username).casefold()
+    attempts = _login_attempts[key]
+    cutoff = now - LOGIN_RATE_WINDOW_SECONDS
+    while attempts and attempts[0] <= cutoff:
+        attempts.popleft()
+    if len(attempts) >= LOGIN_RATE_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="登录尝试过于频繁，请稍后再试。")
+    attempts.append(now)
+
+
+def _clear_login_attempts(username: str) -> None:
+    _login_attempts.pop(_normalize_username(username).casefold(), None)
 
 
 def login_player(username: str, password: str) -> Dict[str, Any]:
     username = _normalize_username(username)
+    _check_login_rate_limit(username)
     now = int(time.time())
     token = secrets.token_urlsafe(32)
     with get_connection() as conn:
@@ -126,6 +133,7 @@ def login_player(username: str, password: str) -> Dict[str, Any]:
             raise HTTPException(status_code=401, detail="用户名或密码错误。")
         conn.execute("UPDATE players SET token = ?, online = 1, last_seen = ? WHERE id = ?", (token, now, player["id"]))
         player = conn.execute("SELECT * FROM players WHERE id = ?", (player["id"],)).fetchone()
+    _clear_login_attempts(username)
     return {"token": token, "player": merge_cosmetics_into_player(_public_player(player), player)}
 
 

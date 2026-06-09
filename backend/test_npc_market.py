@@ -27,7 +27,6 @@ from npc_market_service import (
 from npc_personas import active_personas
 from npc_personas import active_personas
 from online_services import get_leaderboard, reference_price
-from auth import recover_usernames_by_password
 from db_maintenance import is_test_username, purge_test_players
 
 
@@ -188,15 +187,6 @@ class NpcMarketTests(unittest.TestCase):
         self.assertTrue(is_test_username("buyer_f"))
         self.assertTrue(is_test_username("recover_a_abc123"))
         self.assertFalse(is_test_username("milk"))
-
-    def test_recover_username_skips_system_players(self):
-        full_seed_npc_shops(reset=True)
-        password = "testpass1234"
-        self._create_real_player("human_one", "人类当铺", password)
-        names = recover_usernames_by_password(password)
-        self.assertEqual(names, ["human_one"])
-        for persona in active_personas():
-            self.assertNotIn(persona.username, names)
 
     def _create_real_player(self, username: str, shop_name: str, password: str = "pw1234") -> int:
         import secrets
