@@ -12,13 +12,13 @@ load_env_file()
 
 logger = logging.getLogger(__name__)
 
-API_URL = os.getenv("DOUBAO_API_URL", "https://ark.cn-beijing.volces.com/api/v3/chat/completions")
-MODEL_ENDPOINT = os.getenv("DOUBAO_MODEL_ENDPOINT", "ep-20260215154235-cjxx7")
+API_URL = os.getenv("QWEN_API_URL", "https://ws-nl8tvztfpss60i8t.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions")
+MODEL_ENDPOINT = os.getenv("QWEN_MODEL", "qwen3.5-flash")
 
 
 class AIClient:
     def __init__(self):
-        self.api_key = os.getenv("DOUBAO_API_KEY", "")
+        self.api_key = os.getenv("QWEN_API_KEY", "")
         self.model = MODEL_ENDPOINT
         self.api_url = API_URL
 
@@ -189,7 +189,7 @@ class AIClient:
                 {"role": "user", "content": user_message},
             ],
             "temperature": 0.75,
-            "reasoning_effort": "low",
+            "enable_thinking": False,
             "stream": True,
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
@@ -212,7 +212,7 @@ class AIClient:
 
     async def _chat_json(self, system_prompt: str, user_message: str, timeout: float = 10.0, temperature: float = 0.7) -> Dict[str, Any]:
         if not self.available():
-            raise RuntimeError("DOUBAO_API_KEY is not configured")
+            raise RuntimeError("QWEN_API_KEY is not configured")
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 self.api_url,
@@ -224,7 +224,7 @@ class AIClient:
                         {"role": "user", "content": user_message},
                     ],
                     "temperature": temperature,
-                    "reasoning_effort": "low",
+                    "enable_thinking": False,
                     "response_format": {"type": "json_object"},
                 },
             )
@@ -256,7 +256,7 @@ class AIClient:
                 "model": self.model,
                 "messages": [{"role": "system", "content": system_prompt}],
                 "temperature": 0.9,
-                "reasoning_effort": "low",
+                "enable_thinking": False,
             }
             if prompt_type == "item_details":
                 payload["response_format"] = {"type": "json_object"}

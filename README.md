@@ -107,11 +107,11 @@
 
 ```env
 # 必填：启用 AI 生成（稀奇物品、顾客故事、谈判台词；不填则本地占位，玩法仍完整）
-DOUBAO_API_KEY=你的_API_Key
+QWEN_API_KEY=你的_API_Key
 
 # 可选
-DOUBAO_API_URL=https://ark.cn-beijing.volces.com/api/v3/chat/completions
-DOUBAO_MODEL_ENDPOINT=你的模型_endpoint
+QWEN_API_URL=https://ws-nl8tvztfpss60i8t.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+QWEN_MODEL=qwen3.5-flash
 
 # 可选：数据库路径、CORS
 PAWNSHOP_DB_PATH=backend/pawnshop_online.db
