@@ -1,6 +1,7 @@
 """Deterministic, server-authoritative pawn negotiation decisions."""
 from __future__ import annotations
 
+import random
 import re
 from typing import Any, Dict, Optional
 
@@ -21,9 +22,14 @@ HOSTILE_WORDS = ("骗", "滚", "蠢", "垃圾", "闭嘴", "宰", "坑我")
 def _initial_state(customer: Any) -> Dict[str, Any]:
     rules = TRAIT_RULES.get(customer.trait, TRAIT_RULES["hesitant"])
     relationship_bonus = 0.12 if customer.relationship_level in ("loyal", "vip") else 0.05 if customer.is_returning else 0.0
+    # 隐藏保留价扰动：每位顾客一个固定但玩家不可见的心理价扰动（±6%），
+    # 让"精确压到极限价"变成一场赌博而非可解的最优出价。熟客扰动更小（更好谈）。
+    noise_span = 0.03 if customer.relationship_level in ("loyal", "vip") else 0.06
+    reserve_noise = round(random.uniform(-noise_span, noise_span), 4)
     return {
         "urgency": min(1.0, rules["urgency"] + relationship_bonus),
         "trust": max(0.0, min(1.0, customer.satisfaction / 100.0)),
+        "reserve_noise": reserve_noise,
         "strategy": {
             "hardball": "anchor",
             "eager": "close_fast",
@@ -87,7 +93,8 @@ def decide_negotiation(
     trust = float(state.get("trust", 0.5))
     urgency = float(state.get("urgency", rules["urgency"]))
     skill = min(0.18, negotiation_level * 0.012 + charm_level * 0.008)
-    evidence_bonus = 0.16 if has_evidence else 0.0
+    # 证据加成随重复使用递减：同一套"亮线索"说辞刷第二、三次收益骤降，逼玩家换真招
+    evidence_bonus = (0.16 * max(0.25, 1.0 - repeat_count * 0.45)) if has_evidence else 0.0
     repetition_penalty = min(0.22, repeat_count * 0.08)
     courtesy = 0.04 if any(word in player_message for word in COURTESY_WORDS) else 0.0
     hostility = 0.16 if any(word in player_message for word in HOSTILE_WORDS) else 0.0
@@ -139,16 +146,18 @@ def decide_negotiation(
 
     offer = max(1, int(player_offer))
     state["last_player_offer"] = offer
+    reserve_noise = float(state.get("reserve_noise", 0.0))
     if customer.role == "seller":
         extreme = offer < int(current * rules["extreme"])
-        effective_limit = int(limit_price * max(0.90, 1.02 - skill - trust * 0.035 - evidence_bonus * 0.35))
+        # 保留价叠加隐藏扰动：玩家算不出精确阈值，压极限价有翻车风险
+        effective_limit = int(limit_price * max(0.90, 1.02 - skill - trust * 0.035 - evidence_bonus * 0.35) * (1 + reserve_noise))
         accepted = offer >= current or offer >= effective_limit
         gap = max(0, current - limit_price)
         quality = max(0.03, rules["concession"] + urgency * 0.08 + skill + evidence_bonus - repetition_penalty - hostility)
         new_offer = min(current, max(limit_price, int(current - gap * min(0.55, quality))))
     else:
         extreme = offer > int(current * (2.2 + rules["extreme"]))
-        effective_limit = int(limit_price * min(1.10, 0.98 + skill + trust * 0.035 + evidence_bonus * 0.35))
+        effective_limit = int(limit_price * min(1.10, 0.98 + skill + trust * 0.035 + evidence_bonus * 0.35) * (1 + reserve_noise))
         accepted = offer <= current or offer <= effective_limit
         gap = max(0, limit_price - current)
         quality = max(0.03, rules["concession"] + urgency * 0.08 + skill + evidence_bonus - repetition_penalty - hostility)

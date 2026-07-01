@@ -31,19 +31,22 @@ def should_auto_accept_negotiation(
     intent: str,
     negotiation_level: int = 1,
     charm_level: int = 1,
+    reserve_noise: float = 0.0,
 ) -> bool:
     if intent == "accept":
         return True
     if player_offer is None or player_offer <= 0:
         return False
     relief = _skill_relief(negotiation_level, charm_level)
+    # 隐藏保留价扰动：玩家看不到、也算不出精确阈值，压极限价有翻车风险。
+    noise = 1.0 + float(reserve_noise)
     if role == "seller":
         if player_offer >= current_offer:
             return True
-        return player_offer >= int(limit_price * (1 - relief))
+        return player_offer >= int(limit_price * (1 - relief) * noise)
     if player_offer <= current_offer:
         return True
-    return player_offer <= int(limit_price * (1 + relief))
+    return player_offer <= int(limit_price * (1 + relief) * noise)
 
 
 def dialogue_contradicts_economics(
@@ -98,9 +101,10 @@ def reconcile_negotiation_economics(
     role = customer.role
     current_offer = int(customer.current_offer)
     limit_price = int(customer.limit_price)
+    reserve_noise = float((getattr(customer, "negotiation_state", None) or {}).get("reserve_noise", 0.0))
 
     auto_accept = should_auto_accept_negotiation(
-        role, player_offer, current_offer, limit_price, intent, negotiation_level, charm_level
+        role, player_offer, current_offer, limit_price, intent, negotiation_level, charm_level, reserve_noise
     )
     if auto_accept:
         deal_price = negotiation_deal_price(role, player_offer, current_offer)

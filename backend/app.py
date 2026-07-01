@@ -87,7 +87,9 @@ queue_refill_cache: Dict[int, Dict[str, Any]] = {}
 queue_refill_tasks: Dict[int, asyncio.Task] = {}
 queue_refill_generations: Dict[int, int] = {}
 PREWARM_GENERATION_TIMEOUT = 75.0
-NEXT_DAY_PREWARM_WAIT = 180.0
+# 玩家点"开启新一天"时最多等待在途预热多久；超时即走本地兜底秒开。
+# 预热在上一天结算时就已后台启动，通常早已就绪，无需让玩家干等分钟级。
+NEXT_DAY_PREWARM_WAIT = 22.0
 
 
 def next_day_prewarm_signature(state: GameStateManager) -> str:

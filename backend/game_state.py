@@ -336,10 +336,14 @@ SPECIALIZATIONS = {
 
 
 def skill_xp_to_next_level(current_level: int) -> int:
-    """从 current_level 升到下一级所需经验。"""
+    """从 current_level 升到下一级所需经验。
+
+    降低高段位的平方项权重（原 80 + 145L + 22L²），让 5~9 级的成长仍可感知，
+    缓解中期"数值几乎不动"的磨耗期；总需求约从 13.5k 降到 8.4k xp/技能。
+    """
     if current_level >= SKILL_MAX_LEVEL:
         return 0
-    return int(80 + current_level * 145 + current_level ** 2 * 22)
+    return int(70 + current_level * 110 + current_level ** 2 * 10)
 
 RARITY_INFO = {
     "common": {"name_cn": "普通", "multiplier": 1.0},
@@ -349,6 +353,7 @@ RARITY_INFO = {
 }
 
 CONDITION_UPGRADE = {"Poor": "Good", "Good": "Mint"}
+CONDITION_DOWNGRADE = {"Mint": "Good", "Good": "Poor"}
 CONDITION_MULTIPLIER = {"Poor": 0.72, "Good": 1.0, "Mint": 1.35}
 CONDITION_CN = {"Poor": "较差", "Good": "良好", "Mint": "极佳"}
 
@@ -439,6 +444,9 @@ CONDITION_VALUE_DRIFT = {
 AI_DAY_GENERATION_TIMEOUT = 180.0
 AI_CUSTOMER_GENERATION_TIMEOUT = 60.0
 AI_ITEM_GENERATION_ATTEMPTS = 4
+# 刚从玩家市场/同业购入的货，24h 内系统出售不给差价（防低买-秒卖套利）。
+# 与 online_services.TRADE_COOLDOWN_SECONDS 对齐；此处独立定义避免反向依赖。
+RESELL_COOLDOWN_SECONDS = 24 * 60 * 60
 SELLER_CUSTOMER_RATIO = 0.62
 EVENT_BASE_CHANCE = 0.62
 EVENT_GUARANTEE_AFTER_QUIET_DAYS = 1
@@ -1360,6 +1368,7 @@ class GameStateManager:
         self.skills = skill_template()
         self.facilities = facility_template()
         self.loan = {"principal": 0, "interest_rate": 0.02}
+        self.bankruptcy_streak = 0  # 连续触发应急授信的天数；越滚越贵，逼玩家管理现金流
         self.tax = {"next_due_day": 7, "rate": 0.08, "last_paid": 0}
         self.market_trends: Dict[str, float] = {category: 1.0 for category in ITEM_TEMPLATES}
         self.economy_index = 1.0
@@ -3436,6 +3445,10 @@ class GameStateManager:
         if self.specialization == "jewelry" and item.category == "Jewelry":
             multiplier += 0.05
         price = max(10, int(item.market_value * multiplier))
+        # 反套利：刚从玩家市场/同业购入的货，冷却期内系统出售不给正差价，
+        # 最多按购入价回收（可回本、不能无风险刷利润）。散客收来的货不受影响。
+        if item.last_trade_at and int(time.time()) - int(item.last_trade_at) < RESELL_COOLDOWN_SECONDS:
+            price = min(price, max(10, int(item.purchase_price or 0)))
         self.cash += price
         item.selling_price = price
         item.status = "sold"
@@ -3700,8 +3713,19 @@ class GameStateManager:
                 self.add_skill_xp("restoration", 20)
                 self.achievement_stats["repairs_completed"] = int(self.achievement_stats.get("repairs_completed", 0)) + 1
             else:
-                item.actual_value = max(10, int(item.actual_value * 0.92))
-                events.append(f"修复意外：【{item.name}】修复失败，价值略有受损。")
+                # 修复失败要有真实代价：市值同步下调（此前只降 actual_value，导致"修了必赚"）；
+                # 并有尾部风险把成色修坏一档，让高价货的修复成为真正的赌注。
+                botched = random.random() < 0.28
+                if botched and item.condition in CONDITION_DOWNGRADE:
+                    downgraded = CONDITION_DOWNGRADE[item.condition]
+                    item.condition = downgraded
+                    item.actual_value = max(10, int(item.actual_value * 0.70))
+                    item.market_value = max(10, int(item.market_value * 0.72))
+                    events.append(f"修复事故：【{item.name}】被修坏，成色跌到 {downgraded}，价值明显受损。")
+                else:
+                    item.actual_value = max(10, int(item.actual_value * 0.90))
+                    item.market_value = max(10, int(item.market_value * 0.92))
+                    events.append(f"修复意外：【{item.name}】修复失败，成色未提升且价值略有受损。")
                 self.achievement_stats["repair_failures"] = int(self.achievement_stats.get("repair_failures", 0)) + 1
             item.status = "stored"
             item.repair_days_remaining = 0
@@ -4100,10 +4124,21 @@ class GameStateManager:
             principal_cap = 250000 + self.shop_level * 100000
             self.loan["principal"] = min(principal_cap, int(self.loan.get("principal", 0)) + emergency_credit)
             self.cash = 500
-            self.reputation = max(0, self.reputation - 1)
-            self.daily_summary["events"].append(
-                f"现金流告急，银行自动启用周转授信 ${emergency_credit:,}，声誉 -1。"
-            )
+            # 连续告急递增代价：每多熬一天，利率上台阶、声誉扣得更狠，避免"无脑贷款囤货零成本"。
+            self.bankruptcy_streak = int(getattr(self, "bankruptcy_streak", 0)) + 1
+            rep_penalty = min(5, self.bankruptcy_streak)
+            self.reputation = max(0, self.reputation - rep_penalty)
+            if self.bankruptcy_streak >= 2:
+                self.loan["interest_rate"] = round(min(0.08, float(self.loan.get("interest_rate", 0.02)) + 0.01), 4)
+                self.daily_summary["events"].append(
+                    f"现金流连续告急 {self.bankruptcy_streak} 天，银行上调授信利率至 {self.loan['interest_rate'] * 100:.1f}%，声誉 -{rep_penalty}。"
+                )
+            else:
+                self.daily_summary["events"].append(
+                    f"现金流告急，银行自动启用周转授信 ${emergency_credit:,}，声誉 -{rep_penalty}。"
+                )
+        else:
+            self.bankruptcy_streak = 0
         self.daily_summary["salaries"] = salary_total
         self.daily_summary["operating_cost"] = operating_cost
         self.daily_summary["loan_interest"] = interest
@@ -4169,6 +4204,7 @@ class GameStateManager:
             "facilities": self.facilities,
             "facility_info": self.facility_info_for_state(),
             "loan": self.loan,
+            "bankruptcy_streak": int(getattr(self, "bankruptcy_streak", 0)),
             "tax": self.tax,
             "market_trends": self.market_trends,
             "economy_index": self.economy_index,
@@ -4266,6 +4302,7 @@ class GameStateManager:
             if key in state.facilities:
                 state.facilities[key] = clamp(int(value), 1, FACILITY_MAX_LEVEL)
         state.loan = {"principal": int(data.get("loan", {}).get("principal", 0)), "interest_rate": float(data.get("loan", {}).get("interest_rate", 0.02))}
+        state.bankruptcy_streak = int(data.get("bankruptcy_streak", 0))
         state.tax = {
             "next_due_day": int(data.get("tax", {}).get("next_due_day", 7)),
             "rate": float(data.get("tax", {}).get("rate", 0.08)),

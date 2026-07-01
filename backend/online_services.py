@@ -66,10 +66,21 @@ def save_state(player_id: int, state: GameStateManager) -> None:
             """,
             (player_id, payload, now),
         )
-        conn.execute(
-            "UPDATE players SET reputation = ?, ranking_badge = ?, reward_bonus = ?, last_seen = ? WHERE id = ?",
-            (state.reputation, state.ranking_badge, state.ranking_reward_bonus, now, player_id),
-        )
+        # NPC（系统玩家）的在线状态只由 presence/heartbeat 管理，普通存档写入不应顺带把
+        # last_seen 刷成 now，否则后台补货/资料同步会把离线 NPC 误拉上线（曾致 presence 测试偶发失败）。
+        sys_row = conn.execute(
+            "SELECT COALESCE(is_system_player, 0) AS s FROM players WHERE id = ?", (player_id,)
+        ).fetchone()
+        if sys_row and int(sys_row["s"]):
+            conn.execute(
+                "UPDATE players SET reputation = ?, ranking_badge = ?, reward_bonus = ? WHERE id = ?",
+                (state.reputation, state.ranking_badge, state.ranking_reward_bonus, player_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE players SET reputation = ?, ranking_badge = ?, reward_bonus = ?, last_seen = ? WHERE id = ?",
+                (state.reputation, state.ranking_badge, state.ranking_reward_bonus, now, player_id),
+            )
 
 
 def _state_payload_for_transaction(state: GameStateManager) -> str:
@@ -85,11 +96,12 @@ def bootstrap_new_player_state(player_id: int, shop_name: str) -> GameStateManag
     return state
 
 
-async def bootstrap_new_player_state_async(player_id: int, shop_name: str, ai_client: Any) -> GameStateManager:
-    """新账号优先等待 AI 生成当日顾客；失败再退回本地占位。"""
+async def bootstrap_new_player_state_async(player_id: int, shop_name: str, ai_client: Any, ai_timeout: float = 9.0) -> GameStateManager:
+    """新账号开局：给 AI 一个很短的抢跑窗口，超时立即用本地占位秒开，
+    其余 AI 稀奇货由后台补货（schedule_queue_refill）随后补上，避免注册被分钟级加载堵死。"""
     state = create_initial_state(shop_name)
     if bool(getattr(ai_client, "available", lambda: False)()):
-        await state.async_initialize_day_with_fallback(ai_client)
+        await state.async_initialize_day_with_fallback(ai_client, timeout=ai_timeout)
     else:
         state.initialize_day_fast()
     save_state(player_id, state)
@@ -259,36 +271,42 @@ def reference_price(item: Item) -> int:
 
 
 def list_item(player_id: int, item_id: str, price: int) -> Dict[str, Any]:
-    state = load_state(player_id)
-    item = state.get_item(item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="未找到该物品。")
-    if item.status not in ["stored", "displayed"]:
-        raise HTTPException(status_code=400, detail="只有仓库或展示中的物品可以挂售。")
-    if item.last_trade_at and int(time.time()) - int(item.last_trade_at) < TRADE_COOLDOWN_SECONDS:
-        raise HTTPException(status_code=400, detail="该物品刚从玩家市场购入，24小时内不能再次挂售。")
+    # 全程在同一事务内读取、复核、扣库存并写入，避免并发/连点导致同一件货被挂售两次
+    # （参照 unlist_item 的安全写法）。事务外只做与库存无关的价格区间预校验。
+    now = int(time.time())
+    listing_id = str(uuid.uuid4())[:12]
+    with transaction() as conn:
+        state_row = conn.execute(
+            "SELECT state_json FROM game_saves WHERE player_id = ?", (player_id,)
+        ).fetchone()
+        if not state_row:
+            raise HTTPException(status_code=404, detail="未找到存档。")
+        state = GameStateManager.from_dict(json.loads(state_row["state_json"]))
+        item = state.get_item(item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="未找到该物品。")
+        if item.status not in ["stored", "displayed"]:
+            raise HTTPException(status_code=400, detail="只有仓库或展示中的物品可以挂售。")
+        if item.last_trade_at and now - int(item.last_trade_at) < TRADE_COOLDOWN_SECONDS:
+            raise HTTPException(status_code=400, detail="该物品刚从玩家市场购入，24小时内不能再次挂售。")
 
-    ref = reference_price(item)
-    min_price = int(ref * 0.3)
-    max_price = int(ref * 3)
-    if price < min_price or price > max_price:
-        raise HTTPException(status_code=400, detail=f"挂售价必须在参考价区间 ${min_price} - ${max_price} 内。")
+        ref = reference_price(item)
+        min_price = int(ref * 0.3)
+        max_price = int(ref * 3)
+        if price < min_price or price > max_price:
+            raise HTTPException(status_code=400, detail=f"挂售价必须在参考价区间 ${min_price} - ${max_price} 内。")
 
-    with get_connection() as conn:
         active_count = conn.execute(
             "SELECT COUNT(*) AS c FROM market_listings WHERE seller_id = ? AND status = 'active'",
             (player_id,),
         ).fetchone()["c"]
-    if active_count >= active_listing_limit(state.shop_level):
-        raise HTTPException(status_code=400, detail="当前摊位已满，请升级当铺或下架其他物品。")
+        if active_count >= active_listing_limit(state.shop_level):
+            raise HTTPException(status_code=400, detail="当前摊位已满，请升级当铺或下架其他物品。")
 
-    state.inventory = [existing for existing in state.inventory if existing.id != item_id]
-    item.status = "listed"
-    item.display_slot = None
-    state._record_item_encounter(item, "market_list")
-    now = int(time.time())
-    listing_id = str(uuid.uuid4())[:12]
-    with transaction() as conn:
+        state.inventory = [existing for existing in state.inventory if existing.id != item_id]
+        item.status = "listed"
+        item.display_slot = None
+        state._record_item_encounter(item, "market_list")
         conn.execute(
             """
             INSERT INTO market_listings

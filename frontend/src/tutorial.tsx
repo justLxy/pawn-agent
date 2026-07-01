@@ -625,6 +625,117 @@ export function TutorialPanel({
   );
 }
 
+const QUICK_STEPS: { icon: React.ReactNode; title: string; body: string }[] = [
+  {
+    icon: <Users className="w-5 h-5" />,
+    title: '1 · 看清来客',
+    body: '顾客上门时，先看气泡上方的标签：「收购」是他要卖货给你（你压价买入），「出售」是他想买你的藏品（你抬价卖出）。方向别弄反。',
+  },
+  {
+    icon: <Scale className="w-5 h-5" />,
+    title: '2 · 拿不准就鉴定',
+    body: '贵重或可疑的货，成交前先点「鉴定」估个真伪与价值。看走眼收了赝品会吞掉利润——宁可多花一步，别赌运气。',
+  },
+  {
+    icon: <HandCoins className="w-5 h-5" />,
+    title: '3 · 谈价成交',
+    body: '在对话框里出价或说明理由，顶栏会显示当前价。谈到满意就点「成交」。收购往低压、出售往高抬，但别把对方逼走。',
+  },
+  {
+    icon: <Store className="w-5 h-5" />,
+    title: '4 · 出货回本',
+    body: '收来的货进仓库，可「系统出售」快速回本，或摆进展示柜等买家出价。一天客人接待完，点「营业结算」进入下一天。',
+  },
+];
+
+/**
+ * 首日极简上手引导：只讲"看标签→鉴定→谈价→出货"四步，替代 14 章手册糊脸。
+ * 想深入的玩家可从这里或顶栏「学士帽」打开完整手册。
+ */
+export function QuickStartOverlay({
+  open,
+  onClose,
+  onOpenFullManual,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpenFullManual: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-end md:items-center justify-center bg-[rgba(0,0,0,0.78)] backdrop-blur-sm p-0 md:p-6"
+      role="dialog"
+      aria-modal
+      aria-labelledby="quickstart-title"
+      onClick={onClose}
+    >
+      <div
+        className="w-full md:max-w-lg bg-[#0D0F12] border-t md:border border-[#2A2D34] md:rounded-sm shadow-2xl animate-slide-up overflow-hidden flex flex-col max-h-[94vh]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="shrink-0 flex items-center justify-between gap-4 px-5 md:px-6 py-4 border-b border-[#2A2D34] bg-[#14171C]/60">
+          <div className="flex items-center gap-3 min-w-0">
+            <Sparkles className="w-6 h-6 text-[#C8A97E] shrink-0" />
+            <div className="min-w-0">
+              <h2 id="quickstart-title" className="text-lg font-bold text-[#C8A97E] font-sans truncate">
+                开张四步走
+              </h2>
+              <p className="text-xs text-[#616161] font-sans truncate">花一分钟看完，就能上手接客</p>
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="btn-icon shrink-0" aria-label="关闭">
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-5 md:px-6 py-5 space-y-4">
+          {QUICK_STEPS.map((step) => (
+            <div key={step.title} className="flex gap-3">
+              <span className="text-[#C8A97E] shrink-0 mt-0.5">{step.icon}</span>
+              <div>
+                <h3 className="text-[15px] font-semibold text-[#E0E0E0] font-sans">{step.title}</h3>
+                <p className="text-sm text-[#9E9E9E] font-sans leading-relaxed mt-1">{step.body}</p>
+              </div>
+            </div>
+          ))}
+          <p className="text-xs text-[#616161] font-sans pt-1 leading-relaxed">
+            没有强制结局，慢慢经营就好。更多机制（鉴定线索、关系、技能、税费等）会在遇到时再解锁说明。
+          </p>
+        </div>
+
+        <footer className="shrink-0 flex items-center justify-between gap-3 px-5 md:px-6 py-4 border-t border-[#2A2D34] bg-[#14171C]/40 font-sans">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onOpenFullManual();
+            }}
+            className="btn-secondary !h-10 !px-4 !text-sm"
+          >
+            <BookOpen className="w-4 h-4 mr-1.5" />
+            查看完整手册
+          </button>
+          <button type="button" onClick={onClose} className="btn-primary !h-10 !px-5 !text-sm">
+            <Award className="w-4 h-4 mr-1.5" />
+            开始营业
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 export function TutorialHelpButton({ onClick, className = '' }: { onClick: () => void; className?: string }) {
   return (
     <button

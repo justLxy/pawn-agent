@@ -40,7 +40,7 @@ import {
 } from './chatScreenshot';
 import { ShopNameLine, ShowcaseCover, SponsorSubtitle, playerChatBubbleClass, type PlayerCosmetics } from './cosmetics';
 import { ShopTab } from './shopTab';
-import { TutorialHelpButton, TutorialPanel, isTutorialSeen } from './tutorial';
+import { TutorialHelpButton, TutorialPanel, QuickStartOverlay, isTutorialSeen, markTutorialSeen } from './tutorial';
 import { useMobileViewport } from './useMobileViewport';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -552,11 +552,19 @@ async function readApiError(response: Response, fallback: string): Promise<strin
   return fallback;
 }
 
-async function apiRequest<T>(path: string, options: RequestInit, fallback: string): Promise<T> {
+async function apiRequest<T>(path: string, options: RequestInit, fallback: string, timeoutMs = 90000): Promise<T> {
   let response: Response;
+  // 客户端超时兜底：即使后端异常挂起，也不让界面无限 loading。
+  // 90s 足够覆盖较慢的 AI 生成，又能在真正卡死时给出可重试的提示。
+  const timeoutSignal = typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+    ? AbortSignal.timeout(timeoutMs)
+    : undefined;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, options);
-  } catch {
+    response = await fetch(`${API_BASE_URL}${path}`, { ...options, signal: options.signal ?? timeoutSignal });
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error('服务器响应超时，进度已保存，请稍候重试。');
+    }
     throw new Error('网络请求失败，请检查后端服务或跨域配置。');
   }
   if (!response.ok) {
@@ -640,6 +648,7 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [quickStartOpen, setQuickStartOpen] = useState(false);
   const { keyboardOpen } = useMobileViewport();
   const tutorialAutoOpenedRef = useRef(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -959,7 +968,7 @@ export default function App() {
     if (!player || !state || tutorialAutoOpenedRef.current) return;
     if (state.day === 1 && !isTutorialSeen(player.username)) {
       tutorialAutoOpenedRef.current = true;
-      setTutorialOpen(true);
+      setQuickStartOpen(true);
     }
   }, [player, state]);
 
@@ -980,7 +989,7 @@ export default function App() {
       await loadCloudState();
       if (isRegister && !isTutorialSeen(data.player.username)) {
         tutorialAutoOpenedRef.current = true;
-        setTutorialOpen(true);
+        setQuickStartOpen(true);
       }
       setSuccessMsg(authMode === 'login' ? '欢迎回来。' : '当铺创建成功，可以开始营业了。');
     } catch (err) {
@@ -1561,6 +1570,16 @@ export default function App() {
           open={tutorialOpen}
           onClose={() => setTutorialOpen(false)}
           username={player.username}
+        />
+      )}
+      {player && (
+        <QuickStartOverlay
+          open={quickStartOpen}
+          onClose={() => {
+            setQuickStartOpen(false);
+            markTutorialSeen(player.username);
+          }}
+          onOpenFullManual={() => setTutorialOpen(true)}
         />
       )}
     </div>
@@ -2151,14 +2170,14 @@ function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, cust
           经济指数 {(state.daily_summary.economy_index || state.economy_index || 1).toFixed(3)}，
           日变化 {formatSignedPercent(state.daily_summary.inflation_rate || state.inflation_rate || 0)}。
         </p>
-        <div className="my-8 space-y-3">{state.daily_summary.events.map((event, idx) => <p key={idx} className="border-l border-[#2A2D34] pl-4 text-[#9E9E9E]">{event}</p>)}</div>
+        <div className="my-8 space-y-3">{(state.daily_summary.events ?? []).map((event, idx) => <p key={idx} className="border-l border-[#2A2D34] pl-4 text-[#9E9E9E]">{event}</p>)}</div>
         {state.pending_event && (
           <div className="border-y border-[#2A2D34] py-5 mb-6">
             <h2 className="text-[#C8A97E] text-xl font-bold mb-2">{state.pending_event.title}</h2>
             <p className="text-[#E0E0E0] mb-4">{state.pending_event.description}</p>
             <p className="text-xs text-[#9E9E9E] font-sans mb-3 tracking-wide">请做出选择（点击选项生效）</p>
             <div className="space-y-3">
-              {state.pending_event.choices.map((choice) => (
+              {(state.pending_event.choices ?? []).map((choice) => (
                 <button
                   key={choice.id}
                   type="button"
@@ -2317,7 +2336,7 @@ function LobbyTab({ appraisalMethod, chatAccent, investigating, chatEndRef, cust
           </div>
         </div>
       </div>
-      {!sessionClosed && caseState && (
+      {!sessionClosed && caseState && state.day >= 2 && (
         <>
           <MobileCaseFilePanel
             caseState={caseState}
