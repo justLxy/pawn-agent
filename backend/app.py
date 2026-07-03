@@ -668,12 +668,42 @@ def prepare_negotiation_ai_response(
     return reconciled, force_terminal
 
 
+def negotiation_memory_for(state: GameStateManager, customer: Any) -> Dict[str, Any]:
+    """从 customer_registry 取该顾客的跨天记忆，喂给谈判引擎的初始状态。"""
+    record = (getattr(state, "customer_registry", None) or {}).get(customer.customer_id)
+    if not record:
+        return {}
+    return {
+        "positive_deals": int(record.get("positive_deals", 0) or 0),
+        "negative_deals": int(record.get("negative_deals", 0) or 0),
+        "satisfaction": int(record.get("satisfaction", customer.satisfaction) or customer.satisfaction),
+    }
+
+
+async def assess_negotiation_persuasion(
+    customer: Any,
+    player_message: str,
+    player_offer: Optional[int],
+    intent: str,
+) -> Optional[Dict[str, Any]]:
+    """仅在说服/追问且未明确报价时评估说服力，避免拖慢每轮谈判。"""
+    if player_offer is not None or intent not in ("persuade", "question"):
+        return None
+    try:
+        return await ai_client.assess_player_persuasion(
+            player_message, customer.negotiation_context(), intent
+        )
+    except Exception:
+        return None
+
+
 async def negotiation_ai_response(
     state: GameStateManager,
     customer: Any,
     player_message: str,
     player_offer: Optional[int],
     intent: str,
+    persuasion: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     from negotiation_engine import decide_negotiation
 
@@ -684,6 +714,8 @@ async def negotiation_ai_response(
         intent,
         negotiation_level=state.skills["negotiation"]["level"],
         charm_level=state.skills["charm"]["level"],
+        memory=negotiation_memory_for(state, customer),
+        persuasion=persuasion,
     )
     if ai_client.available():
         dialogue = await ai_client.render_negotiation_decision(
@@ -1025,7 +1057,10 @@ async def negotiate(req: OfferRequest, player: Dict[str, Any] = Depends(current_
     player_message = req.message.strip()
     customer.dialogue_history.append({"role": "player", "content": player_message})
     state.record_player_quote(player_message, intent, customer.role)
-    ai_response = await negotiation_ai_response(state, customer, player_message, player_offer, intent)
+    persuasion = await assess_negotiation_persuasion(customer, player_message, player_offer, intent)
+    ai_response = await negotiation_ai_response(
+        state, customer, player_message, player_offer, intent, persuasion=persuasion
+    )
     return apply_negotiation_outcome(player, state, ai_response, player_offer, intent)
 
 
@@ -1066,7 +1101,10 @@ async def negotiate_stream(req: OfferRequest, player: Dict[str, Any] = Depends(c
     }
     customer_context = customer.negotiation_context()
     previous_offer = customer.current_offer
-    ai_response = await negotiation_ai_response(state, customer, player_message, player_offer, intent)
+    persuasion = await assess_negotiation_persuasion(customer, player_message, player_offer, intent)
+    ai_response = await negotiation_ai_response(
+        state, customer, player_message, player_offer, intent, persuasion=persuasion
+    )
     ai_response, force_terminal = prepare_negotiation_ai_response(
         state, customer, ai_response, player_offer, intent
     )
